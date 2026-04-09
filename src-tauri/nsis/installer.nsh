@@ -108,7 +108,7 @@ NkkPostDone:
   DetailPrint "================================================================"
   DetailPrint "  NKK Secure Access — Setup abgeschlossen."
   DetailPrint "  Logs: ${NKK_LOG_DIR}"
-  DetailPrint "  Support: support@kronsolutions.de"
+  DetailPrint "  Support: support@ticket.kronsolutions.de"
   DetailPrint "================================================================"
 !macroend
 
