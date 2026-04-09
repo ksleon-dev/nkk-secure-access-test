@@ -1,58 +1,120 @@
 # NKK Secure Access
 
-Whitelabel-fähiger Tauri Desktop Client für Netbird WireGuard VPN. Pilotkunde: **Naturkost Kontor Bremen GmbH (NKK)**. Anbieter: **KronSolutions GmbH**.
+Whitelabel-fähiger Tauri Desktop Client + Windows Installer für **NetBird WireGuard VPN**. Pilotkunde **Naturkost Kontor Bremen GmbH (NKK)**, gebaut von **KronSolutions GmbH**.
 
-Der Client ist ein dünnes UX-Layer über dem Netbird Daemon. Er ersetzt die generische Securepoint Client UI durch ein gebrandetes Mitarbeiter Interface mit Quick-Launch Buttons für Terminalserver, Status Indikator und systemweitem Tray Icon.
+Der Client ist ein dünnes UX-Layer über dem NetBird Daemon. Er ersetzt die generische Securepoint Client UI durch ein gebrandetes Mitarbeiter Interface mit Cherry Logo, Quick Launch Buttons für Terminalserver, Status Indikator, Diagnose Panel für Support und systemweitem Tray Icon.
 
-## Features (MVP)
-
-- Tauri 2.x + React 18 + TypeScript + Tailwind 3
-- Setup Key Enrollment, Key wird im OS Keystore gespeichert (macOS Keychain / Windows Credential Manager)
-- Großer Connect / Disconnect Button mit Live Status
-- Status Polling alle 3 Sekunden über `netbird status --json`
-- Peer Liste mit Latenz und Verbindungstyp
-- Quick Launch RDP Buttons (Terminalserver 1 + Terminalserver 2 als Standard)
-- Systray Icon mit Open / Connect / Disconnect / Quit
-- Schließen minimiert in Tray statt App zu beenden
-- Autostart Toggle (Login Item)
-- Diagnose Logs (letzte 200 Zeilen Netbird Output für Support)
-- Branding über externe `branding.json` (white-label ready)
-- Deutsche UI
+Der Windows Installer bündelt den offiziellen NetBird Client und installiert ihn beim Setup automatisch silent mit — der Mitarbeiter klickt nur auf die EXE.
 
 ## Architektur
 
 ```
-React UI (webview)  ──invoke──►  Rust Tauri Core  ──spawn──►  netbird CLI  ──gRPC──►  netbird daemon  ──WG──►  vpn.nkk-hb.de
+┌──────────────────────────────────────────┐
+│   NKK Secure Access (Tauri 2.x)          │
+│   ┌─────────────┐    invoke    ┌───────┐ │
+│   │ React UI    │ ────────────►│ Rust  │ │
+│   │ TypeScript  │ ◄────────────│ Core  │ │
+│   └─────────────┘    events    └───┬───┘ │
+└──────────────────────────────────────┼───┘
+                                       │ spawn
+                                       ▼
+                              ┌────────────────┐
+                              │ netbird CLI    │
+                              └────────┬───────┘
+                                       │ local socket
+                                       ▼
+                              ┌────────────────┐
+                              │ NetBird Daemon │  Windows Service / launchd
+                              │ (WireGuard)    │
+                              └────────┬───────┘
+                                       │ WireGuard UDP
+                                       ▼
+                              netbird.nkkhb.de:33073
 ```
 
-## Voraussetzungen
+## Features
 
-- Node.js 18+
-- Rust stable (`rustup default stable`)
-- Netbird Client installiert (https://netbird.io/download)
-  - macOS: `brew install --cask netbird`
-  - Windows: MSI von netbird.io
-  - Linux: `.deb` / `.rpm` Pakete
+| | |
+|---|---|
+| **Tech Stack** | Tauri 2.x + Rust + React 18 + TypeScript + Vite + Tailwind 3 |
+| **Branding** | Externe `branding.json` — white-label per Kunde austauschbar |
+| **Multi Profile Credentials** | OS Keystore (macOS Keychain / Windows Credential Manager / Linux Secret Service) |
+| **Status Polling** | 30 s Hintergrund Loop, on-demand Refresh im Diagnose Panel |
+| **Quick Launch** | RDP zu Terminalservern (TS1/TS2) — frischer Login Prompt jedes Mal |
+| **Tray Icon** | Custom Right-Click Menü, dynamischer Tooltip nach VPN Status |
+| **Autostart** | OS-native (LaunchAgent / Run Key) — opt-in über Settings |
+| **Diagnose Panel** | 4 Ampeln + Public IP / WireGuard IP / OS / Hostname / Logs / „Diagnose kopieren" |
+| **NSIS Installer** | Bundled NetBird Silent Install + Defender Exclusion + ESET Pause + Autostart Service |
+| **Custom Uninstaller** | Programs & Features Eintrag, NetBird Cleanup, Wintun Driver bleibt erhalten |
+| **Setup Key Injection** | `/SETUPKEY=...` CLI Param oder `setup.conf` neben EXE |
+| **Logging** | `%PROGRAMDATA%\KronSolutions\NKK-Secure-Access\logs\` (Windows), `~/Library/Application Support/NKK Secure Access/logs/` (macOS) |
 
-## Entwicklung
+## Schnellstart für Mitarbeiter (Windows)
+
+1. **Installer doppelklicken** → `NKK Secure Access_X.Y.Z_x64-setup.exe`
+2. SmartScreen Warnung → „Weitere Informationen" → „Trotzdem ausführen" (einmalig, weil unsigned)
+3. Wizard durchklicken (3× Weiter) — der NetBird Client wird im Hintergrund silent mitinstalliert
+4. **Startmenü** → `KronSolutions → NKK Secure Access verbinden`
+5. Setup Key eingeben (falls nicht via Installer Parameter mitgegeben)
+6. **Verbinden** klicken → fertig
+
+## Voraussetzungen für Entwicklung
+
+- **Node.js** 20+
+- **Rust** stable (`rustup default stable`)
+- **NetBird Client** (für lokales Testen — Tauri-Build holt sich die Windows Variante automatisch via `fetch-netbird.sh`)
+- macOS: Xcode Command Line Tools
+- Windows: Visual Studio Build Tools („Desktop development with C++") + WebView2 Runtime (in Win11 vorinstalliert)
+- Linux: `libwebkit2gtk-4.1-dev`, `librsvg2-dev`, `patchelf`
+
+## Lokale Entwicklung
 
 ```bash
+git clone https://github.com/leonkro-test/nkk-secure-access-test.git
+cd nkk-secure-access-test
 npm install
 npm run tauri dev
 ```
 
-Beim ersten Start dauert der Rust Build mehrere Minuten (alle Crates müssen kompiliert werden).
+Beim ersten Start dauert der Rust Compile mehrere Minuten. Vite HMR + Tauri's File Watcher reload alles live während du arbeitest.
 
-## Build
+## Build (lokal)
 
+### macOS DMG
+```bash
+npm run tauri build
+# Output: src-tauri/target/release/bundle/dmg/*.dmg
+```
+
+### Windows EXE (auf Windows!)
+```powershell
+npm ci
+pwsh src-tauri\bin\fetch-netbird.ps1   # lädt Netbird Installer ins bin/
+npm run tauri build -- --bundles nsis
+# Output: src-tauri\target\release\bundle\nsis\*.exe
+```
+
+### Linux .deb / .AppImage
 ```bash
 npm run tauri build
 ```
 
-Output:
-- macOS: `src-tauri/target/release/bundle/dmg/`
-- Windows: `src-tauri/target/release/bundle/msi/`
-- Linux: `src-tauri/target/release/bundle/deb/` und `appimage/`
+## Build via GitHub Actions (empfohlen für Windows)
+
+Push auf `main` oder Tag `v*.*.*` triggert automatisch den Workflow `.github/workflows/build-windows.yml`:
+
+1. Checkout
+2. Node + Rust + Cache
+3. `npm ci`
+4. `pwsh src-tauri/bin/fetch-netbird.ps1` — pinnt aktuelle NetBird Version
+5. `npm run tauri build -- --bundles nsis`
+6. Upload Artifact `nkk-secure-access-windows`
+7. Bei Tag → automatisches GitHub Release
+
+Manuelles Triggern:
+```bash
+gh workflow run build-windows.yml
+```
 
 ## Branding anpassen (White Label)
 
@@ -62,22 +124,23 @@ Alle Brand-spezifischen Werte stehen in `src-tauri/resources/branding.json`. Bei
 {
   "product": {
     "name": "Acme Secure Access",
-    "shortName": "Acme VPN",
-    "version": "0.1.0"
+    "shortName": "ACME",
+    "version": "0.1.0",
+    "tagline": "Dein Großhandel",
+    "logoText": ["Acme", "Inc"]
   },
   "vendor": {
     "name": "KronSolutions GmbH",
     "footer": "Powered by KronSolutions",
-    "supportEmail": "support@kronsolutions.de",
+    "supportEmail": "support@ticket.kronsolutions.de",
     "supportUrl": "https://kronsolutions.de"
   },
   "theme": {
     "primary": "#1E40AF",
     "primaryHover": "#1E3A8A",
     "accent": "#60A5FA",
-    "background": "#FFFFFF",
-    "foreground": "#1A1A1A",
-    "logoPath": "assets/acme-logo.svg"
+    "background": "#F5F5F5",
+    "foreground": "#1A1A1A"
   },
   "netbird": {
     "managementUrl": "https://vpn.acme.example",
@@ -89,95 +152,119 @@ Alle Brand-spezifischen Werte stehen in `src-tauri/resources/branding.json`. Bei
 }
 ```
 
-Logo SVG: ist nur ein Fallback. Das Initialen-Logo wird aktuell direkt aus `product.shortName` zur Laufzeit gerendert (siehe `src/components/Logo.tsx`).
+Logo SVG (`src-tauri/resources/assets/nkk-logo.svg`) und die Tray/Bundle Icons in `src-tauri/icons/` müssen für ein neues Branding ebenfalls ausgetauscht werden.
 
 ## Projektstruktur
 
 ```
 nkk-secure-access/
-├── src/                          React Frontend
-│   ├── App.tsx                   Top-Level Routing + Bootstrap
-│   ├── main.tsx                  React Entry
-│   ├── index.css                 Tailwind + Custom Properties
+├── src/                                   React Frontend
+│   ├── App.tsx                            Top-Level Routing + State
+│   ├── main.tsx                           React Entry + Context Menu Block
+│   ├── index.css                          Tailwind + Brand CSS Variables
+│   ├── vite-env.d.ts                      SVG/PNG Module Declarations
 │   ├── components/
-│   │   ├── ConnectButton.tsx
-│   │   ├── Logo.tsx              Auto-generierter Initialen-Logo
-│   │   ├── PeerList.tsx
-│   │   ├── QuickLaunch.tsx       RDP / SMB / URL Buttons
-│   │   ├── StatusBadge.tsx
-│   │   └── Toast.tsx
+│   │   ├── Avatar.tsx                     Initialen Avatar für Profile
+│   │   ├── CherryDivider.tsx              Brand Divider mit Mini-Cherry SVG
+│   │   ├── ConnectButton.tsx              Pill Style Connect/Disconnect
+│   │   ├── Decor.tsx                      Cream Blob + Bio Sprig SVG Background
+│   │   ├── Logo.tsx                       NKK Logo (traced SVG)
+│   │   ├── PeerList.tsx                   NetBird Peer List (Diagnose only)
+│   │   ├── StatusBadge.tsx                Status Pill (Verbunden / Verbinde / Fehler)
+│   │   ├── TaglineMark.tsx                "Dein Bio-Großhandel" Vector
+│   │   └── Toast.tsx                      Custom Toast System
 │   ├── screens/
-│   │   ├── EnrollmentScreen.tsx
-│   │   ├── MainScreen.tsx
-│   │   ├── SettingsScreen.tsx
-│   │   └── AboutDialog.tsx
-│   ├── types/{branding,netbird}.ts
-│   └── i18n/de.ts
+│   │   ├── EnrollmentScreen.tsx           First-Run Setup Key Eingabe
+│   │   ├── MainScreen.tsx                 Hero + Greeting + Launch Cards
+│   │   ├── SettingsScreen.tsx             Profile / Autostart / Logs / Reset
+│   │   ├── DiagnosePanel.tsx              KronSolutions Support Diagnose
+│   │   ├── CredentialsModal.tsx           Profile CRUD Modal
+│   │   └── AboutDialog.tsx                Version + Vendor + Support Links
+│   ├── types/
+│   │   ├── branding.ts
+│   │   ├── credentials.ts
+│   │   ├── debug.ts
+│   │   └── netbird.ts
+│   ├── lib/greeting.ts                    Time-of-day greeting helpers
+│   ├── i18n/de.ts                         German strings
+│   ├── demo.ts                            Demo Mode (kein NetBird)
+│   └── assets/
+│       ├── nkk-logo.svg                   Traced VPN Icon (in-app)
+│       └── dein-grosshandel.svg           Brand Tagline Vector
 ├── src-tauri/
 │   ├── src/
-│   │   ├── main.rs               Binary Entry
-│   │   ├── lib.rs                Tauri Builder, Plugin Registration
-│   │   ├── error.rs              AppError + AppResult
-│   │   ├── branding.rs           branding.json Loader
-│   │   ├── netbird.rs            CLI Wrapper + Status JSON Parser
-│   │   ├── commands.rs           Tauri Commands + Status Polling
-│   │   ├── tray.rs               Systray Icon + Menu
-│   │   └── logging.rs            tracing + rolling file appender
+│   │   ├── main.rs                        Binary Entry
+│   │   ├── lib.rs                         Tauri Builder, Plugin Registration
+│   │   ├── error.rs                       AppError + AppResult + Serialize
+│   │   ├── branding.rs                    branding.json Loader (cached)
+│   │   ├── netbird.rs                     CLI Wrapper + Status JSON Parser + tests
+│   │   ├── commands.rs                    Tauri Commands + Polling + Validators
+│   │   ├── tray.rs                        Systray Icon + Right-Click Menu
+│   │   └── logging.rs                     tracing + rolling file appender
+│   ├── nsis/installer.nsh                 NSIS Hooks (Defender / NetBird / ESET)
+│   ├── bin/
+│   │   ├── fetch-netbird.sh               macOS/Linux fetch script
+│   │   ├── fetch-netbird.ps1              Windows fetch script
+│   │   ├── netbird-installer.exe          [gitignored] aktueller NetBird Installer
+│   │   └── README.md
 │   ├── resources/
-│   │   ├── branding.json         White-label Config
-│   │   └── assets/nkk-logo.svg   Fallback Logo
-│   ├── icons/                    Generated by `tauri icon`
+│   │   ├── branding.json                  White-label Config
+│   │   └── assets/nkk-logo.svg            Bundled vector logo
+│   ├── icons/                             Multi-Resolution App Icons
 │   ├── capabilities/default.json
 │   ├── tauri.conf.json
+│   ├── build.rs
 │   └── Cargo.toml
-└── package.json
+├── .github/workflows/
+│   └── build-windows.yml                  CI Build + Release on tag
+├── docs/
+│   ├── ROLLOUT.md                         NKK Admin Distribution Anleitung
+│   ├── TROUBLESHOOTING.md                 Häufige Probleme + Fixes
+│   └── DESIGN_DECISIONS.md                Architecture rationale
+├── CHANGELOG.md
+├── README.md
+├── package.json
+├── tsconfig.json
+├── tailwind.config.js
+└── vite.config.ts
 ```
 
-## Tauri Commands (Rust → Frontend)
+## Tauri Commands (Rust ↔ Frontend)
 
 | Command | Zweck |
 |---|---|
-| `nb_connect(setup_key?)` | `netbird up` ausführen, Key in Keyring speichern |
+| `nb_connect(setup_key?)` | Validiert Setup Key, persistiert in Keyring, ruft `netbird up` |
 | `nb_disconnect()` | `netbird down` |
-| `nb_status()` | `netbird status --json` parsen |
-| `nb_is_enrolled()` | Prüft ob Setup Key im Keyring liegt |
+| `nb_status()` | `netbird status --json` parsen, mit Schema-Toleranz |
+| `nb_is_enrolled()` | Prüft Setup Key in Keyring |
 | `nb_reset_enrollment()` | Tunnel down + Key löschen |
-| `nb_logs(lines)` | In-Memory Log Buffer (Support Bundle) |
-| `open_rdp(target)` | Plattform-RDP Client starten |
-| `open_smb(target)` | Plattform-SMB Mount öffnen |
-| `open_url(url)` | URL im Default Browser öffnen |
+| `nb_logs(lines)` | In-Memory Log Buffer (max 500 Zeilen) |
+| `open_rdp(target)` | Smart Launcher: Auto-Connect VPN if offline → mstsc / open rdp |
+| `open_smb(target)` | UNC SMB Mount öffnen |
+| `open_url(url)` | Whitelist (https/http/mailto) → Default Browser |
 | `get_branding()` | branding.json zurückgeben |
 | `set_autostart(enable)` | Login Item ein/aus |
 | `is_autostart_enabled()` | Status Login Item |
-| `quit_app()` | Hard Quit (verlässt auch Tray) |
+| `quit_app()` | Hard Exit |
+| `creds_list()` | Alle Profile (ohne Passwörter) |
+| `creds_save({id?, label, username, password, domain})` | Upsert mit Round-Trip Verify |
+| `creds_delete(id)` | Profil löschen |
+| `creds_test()` | Keyring Roundtrip Diagnostic |
+| `creds_default_username()` | OS User Name |
+| `get_debug_info()` | Vollständiger Diagnose Snapshot (parallel checks) |
 
-## Events (Rust → Frontend)
+## Rollout / Distribution
 
-| Event | Payload |
-|---|---|
-| `netbird-status-changed` | `StatusDto` |
-| `netbird-error` | `string` |
-| `tray-connect` | `()` |
-| `tray-disconnect` | `()` |
+Siehe [`docs/ROLLOUT.md`](docs/ROLLOUT.md) für detaillierte Anleitung zur Verteilung an NKK Mitarbeiter (GPO, File Share, Mail, etc.).
 
-## Plattform-spezifisches Verhalten
+## Troubleshooting
 
-| Aktion | Windows | macOS | Linux |
-|---|---|---|---|
-| RDP | `mstsc.exe /v:host` | `open rdp://...` (MS Remote Desktop) | `xfreerdp /v:host` |
-| SMB | `explorer \\host\share` | `open smb://host/share` | nicht unterstützt |
-| Autostart | Registry Run Key (via Plugin) | LaunchAgent Plist | systemd-user / .desktop |
-| Keystore | Credential Manager (DPAPI) | Keychain | Secret Service |
-
-## Phase 2 Roadmap
-
-- Direkter gRPC Daemon Socket statt CLI Wrapping (geringere Latenz, kein Subprocess)
-- Code Signing (Windows: EV Cert, macOS: Developer ID + Notarization)
-- Auto Update (Tauri Updater + signed manifests)
-- Health Probes pro Quick Launch Target (Ping/TCP)
-- Keycloak SSO Login statt Setup Key
-- Multi Tenant Backend Sync für Service Listen pro User Gruppe
+Siehe [`docs/TROUBLESHOOTING.md`](docs/TROUBLESHOOTING.md).
 
 ## Lizenz
 
 Proprietär — KronSolutions GmbH. Alle Rechte vorbehalten.
+
+---
+
+KronSolutions GmbH · Zukunftssicher. Technologie mit Wirkung.

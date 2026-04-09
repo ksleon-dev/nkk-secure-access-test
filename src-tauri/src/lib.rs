@@ -10,9 +10,12 @@ use tauri::Manager;
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     logging::init();
-    tracing::info!("NKK Secure Access startet …");
+    tracing::info!(
+        "NKK Secure Access {} startet …",
+        env!("CARGO_PKG_VERSION")
+    );
 
-    tauri::Builder::default()
+    let result = tauri::Builder::default()
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_notification::init())
@@ -22,13 +25,28 @@ pub fn run() {
         ))
         .manage(commands::AppState::new())
         .setup(|app| {
-            tray::setup(app.handle())?;
+            // Tray setup is non-fatal — if it fails the user can still use
+            // the main window and the rest of the app keeps working.
+            if let Err(e) = tray::setup(app.handle()) {
+                tracing::warn!("Tray Icon konnte nicht erstellt werden: {}", e);
+            }
+
             commands::start_status_polling(app.handle().clone());
 
-            // Try to eagerly load branding so failures show up early
-            if let Ok(resource_dir) = app.path().resource_dir() {
-                if let Err(e) = branding::load(&resource_dir) {
-                    tracing::warn!("Branding konnte nicht geladen werden: {}", e);
+            // Eagerly load branding so a missing/broken branding.json shows
+            // up in the logs at startup, not on first user interaction.
+            match app.path().resource_dir() {
+                Ok(resource_dir) => {
+                    if let Err(e) = branding::load(&resource_dir) {
+                        tracing::warn!(
+                            "Branding konnte nicht geladen werden ({}). \
+                             App nutzt Fallback Werte.",
+                            e
+                        );
+                    }
+                }
+                Err(e) => {
+                    tracing::warn!("resource_dir() fehlgeschlagen: {}", e);
                 }
             }
             Ok(())
@@ -61,6 +79,11 @@ pub fn run() {
                 api.prevent_close();
             }
         })
-        .run(tauri::generate_context!())
-        .expect("Tauri runtime error");
+        .run(tauri::generate_context!());
+
+    if let Err(e) = result {
+        tracing::error!("Tauri Runtime ist abgestürzt: {}", e);
+        // Exit with a non-zero code so the OS / launcher knows it failed.
+        std::process::exit(1);
+    }
 }

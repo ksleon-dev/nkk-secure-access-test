@@ -3,16 +3,31 @@
 ;  KronSolutions GmbH · IT Partner für Naturkost Kontor Bremen GmbH
 ; ===========================================================================
 ;
-;  These macros are injected into Tauri's auto-generated NSIS template at
-;  build time. They handle the setup steps that are SPECIFIC to our rollout:
+;  Production-grade hooks injected into Tauri's NSIS template:
 ;
-;    1. Pause ESET Network Protection (Wintun driver interference)
-;    2. Silently install the bundled NetBird Windows client
-;    3. Verify the netbird service is running
-;    4. Inject the optional /SETUPKEY=... command line parameter into
-;       NetBird via "netbird up --setup-key <KEY> --management-url <URL>"
-;    5. Resume ESET Network Protection
-;    6. Log every step to %PROGRAMDATA%\KronSolutions\NKK-Secure-Access\logs\
+;    PRE-INSTALL:
+;      1. Create logging directory under %PROGRAMDATA%\KronSolutions
+;      2. Read /SETUPKEY=... from command line OR setup.conf
+;      3. Add NetBird program dirs to Windows Defender exclusion list
+;      4. Pause ESET Network Protection (best effort, idempotent)
+;
+;    POST-INSTALL:
+;      5. Detect existing NetBird install and skip MSI if present
+;      6. Otherwise silently install bundled NetBird .exe
+;      7. Wait for the netbird Windows Service, set it to AUTOMATIC start
+;      8. Inject /SETUPKEY into "netbird up" if provided
+;      9. Resume ESET Network Protection
+;
+;    PRE-UNINSTALL:
+;      10. netbird down — close the active tunnel
+;
+;    POST-UNINSTALL:
+;      11. Stop and delete netbird service
+;      12. Run NetBird's own NSIS uninstaller silently
+;      13. Remove leftover Program Files / ProgramData / LocalAppData dirs
+;      14. Wintun driver is intentionally KEPT (other WG tools may use it)
+;
+;  Logs: %PROGRAMDATA%\KronSolutions\NKK-Secure-Access\logs\
 
 !include "FileFunc.nsh"
 !include "LogicLib.nsh"
@@ -20,69 +35,102 @@
 !define NKK_LOG_DIR "$PROGRAMDATA\KronSolutions\NKK-Secure-Access\logs"
 !define NKK_DATA_DIR "$PROGRAMDATA\KronSolutions\NKK-Secure-Access"
 !define NKK_NETBIRD_BIN "$PROGRAMFILES64\NetBird\netbird.exe"
+!define NKK_NETBIRD_UNINST "$PROGRAMFILES64\NetBird\Uninstall.exe"
 !define NKK_MGMT_URL "https://netbird.nkkhb.de:33073"
 
 Var NkkSetupKey
 Var NkkNetbirdInstaller
 Var NkkExitCode
 
-; Pull /SETUPKEY=... from the installer command line, fall back to setup.conf
 !macro NSIS_HOOK_PREINSTALL
+  ; --- Set up data + log directory under ProgramData (per-machine, persistent) -
   CreateDirectory "${NKK_DATA_DIR}"
   CreateDirectory "${NKK_LOG_DIR}"
 
+  ; --- Read /SETUPKEY=... from command line ---------------------------------
   ${GetParameters} $R0
   ClearErrors
   ${GetOptions} $R0 "/SETUPKEY=" $NkkSetupKey
 
+  ; --- Fall back to setup.conf next to the installer EXE --------------------
   ${If} $NkkSetupKey == ""
-    IfFileExists "$EXEDIR\setup.conf" 0 +5
+    IfFileExists "$EXEDIR\setup.conf" 0 nkk_no_conf
       ClearErrors
       FileOpen $0 "$EXEDIR\setup.conf" r
       FileRead $0 $NkkSetupKey
       FileClose $0
+    nkk_no_conf:
   ${EndIf}
 
-  ; Strip trailing whitespace / newlines from the key
+  ; Strip trailing whitespace / CR / LF / tabs from the key
   ${If} $NkkSetupKey != ""
     Push $NkkSetupKey
     Call NkkTrim
     Pop $NkkSetupKey
   ${EndIf}
 
-  DetailPrint "NKK: Pausiere ESET Network Protection (5 Minuten) ..."
-  nsExec::ExecToLog 'powershell -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -Command "try { & netsh advfirewall set allprofiles state on | Out-Null } catch {}; Start-Sleep -Milliseconds 100"'
+  ; --- Add Defender exclusions for NetBird directories ----------------------
+  ; Wintun driver registration triggers Defender real-time scanning which can
+  ; block the NetBird MSI from finishing. Adding the install path as exclusion
+  ; before triggering the install prevents that. Best effort — silent on fail.
+  DetailPrint "NKK: Defender Exclusion fuer NetBird ..."
+  nsExec::ExecToLog 'powershell -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -Command "try { Add-MpPreference -ExclusionPath $\"$PROGRAMFILES64\NetBird$\" -ErrorAction SilentlyContinue; Add-MpPreference -ExclusionProcess $\"netbird.exe$\" -ErrorAction SilentlyContinue; Add-MpPreference -ExclusionProcess $\"netbird-ui.exe$\" -ErrorAction SilentlyContinue } catch {}"'
+  Pop $NkkExitCode
+
+  ; --- Pause ESET (best effort, only if installed) --------------------------
+  DetailPrint "NKK: Pausiere ESET Network Protection (falls installiert) ..."
+  nsExec::ExecToLog 'powershell -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -Command "try { $svc = Get-Service -Name $\"ekrn$\" -ErrorAction SilentlyContinue; if ($svc) { Stop-Service -Name $\"ekrn$\" -Force -ErrorAction SilentlyContinue } } catch {}"'
+  Pop $NkkExitCode
 !macroend
 
-; After Tauri has finished installing the NKK Secure Access binary itself,
-; install NetBird and apply the optional setup key.
 !macro NSIS_HOOK_POSTINSTALL
   StrCpy $NkkNetbirdInstaller "$INSTDIR\resources\bin\netbird-installer.exe"
 
-  IfFileExists "$NkkNetbirdInstaller" NkkNetbirdFound NkkNetbirdMissing
+  ; --- Detect existing NetBird install --------------------------------------
+  IfFileExists "${NKK_NETBIRD_BIN}" nkk_netbird_already nkk_netbird_install
 
-NkkNetbirdFound:
+nkk_netbird_already:
+  DetailPrint "NKK: NetBird ist bereits installiert — ueberspringe MSI."
+  Goto nkk_netbird_done
+
+nkk_netbird_install:
+  IfFileExists "$NkkNetbirdInstaller" nkk_netbird_run nkk_netbird_missing
+
+nkk_netbird_run:
   DetailPrint "NKK: Installiere NetBird Client (silent) ..."
   nsExec::ExecToLog '"$NkkNetbirdInstaller" /S'
   Pop $NkkExitCode
+  ${If} $NkkExitCode != 0
+    DetailPrint "NKK: NetBird Installer Exit Code $NkkExitCode — versuche Retry ..."
+    Sleep 2000
+    nsExec::ExecToLog '"$NkkNetbirdInstaller" /S'
+    Pop $NkkExitCode
+  ${EndIf}
   ${If} $NkkExitCode == 0
-    DetailPrint "NKK: NetBird Client installiert."
+    DetailPrint "NKK: NetBird Client erfolgreich installiert."
   ${Else}
     DetailPrint "NKK: NetBird Installer Exit Code $NkkExitCode (nicht blockierend)."
   ${EndIf}
+  Goto nkk_netbird_done
 
-  ; Wait briefly for the netbird service to register
+nkk_netbird_missing:
+  DetailPrint "NKK: WARNUNG — kein NetBird Bundle gefunden, bitte separat installieren!"
+  Goto nkk_netbird_done
+
+nkk_netbird_done:
+
+  ; --- Wait for the netbird service to register -----------------------------
   Sleep 3000
 
-  ; Make sure the netbird Windows Service is set to AUTOMATIC start so the
-  ; tunnel comes up before user login — required for the NKK Secure Access
-  ; autostart chain to work end to end.
+  ; --- Force the NetBird service to start automatically on boot -------------
+  ; (Required so the tunnel is up BEFORE the user logs in and our app starts.)
   DetailPrint "NKK: Setze NetBird Service auf Autostart ..."
   nsExec::ExecToLog 'sc.exe config netbird start= auto'
   Pop $NkkExitCode
   nsExec::ExecToLog 'sc.exe start netbird'
   Pop $NkkExitCode
 
+  ; --- Inject the setup key + management URL --------------------------------
   ${If} $NkkSetupKey != ""
     DetailPrint "NKK: Konfiguriere NetBird mit NKK Management Server ..."
     nsExec::ExecToLog '"${NKK_NETBIRD_BIN}" up --setup-key $NkkSetupKey --management-url ${NKK_MGMT_URL}'
@@ -93,17 +141,14 @@ NkkNetbirdFound:
       DetailPrint "NKK: NetBird Enrollment Exit Code $NkkExitCode (nicht blockierend)."
     ${EndIf}
   ${Else}
-    DetailPrint "NKK: Kein /SETUPKEY= übergeben — User aktiviert später aus der App heraus."
+    DetailPrint "NKK: Kein /SETUPKEY= uebergeben — User aktiviert spaeter aus der App."
   ${EndIf}
 
-  Goto NkkPostDone
+  ; --- Resume ESET ----------------------------------------------------------
+  DetailPrint "NKK: Reaktiviere ESET Network Protection ..."
+  nsExec::ExecToLog 'powershell -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -Command "try { $svc = Get-Service -Name $\"ekrn$\" -ErrorAction SilentlyContinue; if ($svc -and $svc.Status -ne $\"Running$\") { Start-Service -Name $\"ekrn$\" -ErrorAction SilentlyContinue } } catch {}"'
+  Pop $NkkExitCode
 
-NkkNetbirdMissing:
-  DetailPrint "NKK: Kein NetBird Paket im Bundle — bitte separat installieren."
-  Goto NkkPostDone
-
-NkkPostDone:
-  DetailPrint "NKK: ESET Network Protection wieder aktiv."
   DetailPrint ""
   DetailPrint "================================================================"
   DetailPrint "  NKK Secure Access — Setup abgeschlossen."
@@ -126,14 +171,14 @@ NkkPostDone:
   nsExec::ExecToLog 'sc.exe stop netbird'
   Pop $NkkExitCode
 
-  ; Find and run the NetBird uninstaller (NSIS based, in Program Files)
-  IfFileExists "$PROGRAMFILES64\NetBird\Uninstall.exe" NkkNbUninstFound NkkNbUninstSkip
-NkkNbUninstFound:
+  ; Run NetBird's own NSIS uninstaller silently
+  IfFileExists "${NKK_NETBIRD_UNINST}" nkk_unb_found nkk_unb_skip
+nkk_unb_found:
   DetailPrint "NKK: Deinstalliere gebundlete NetBird Komponente ..."
-  nsExec::ExecToLog '"$PROGRAMFILES64\NetBird\Uninstall.exe" /S'
+  nsExec::ExecToLog '"${NKK_NETBIRD_UNINST}" /S'
   Pop $NkkExitCode
   Sleep 2000
-NkkNbUninstSkip:
+nkk_unb_skip:
 
   DetailPrint "NKK: Entferne NetBird Reste ..."
   RMDir /r "$PROGRAMFILES64\NetBird"
@@ -142,6 +187,11 @@ NkkNbUninstSkip:
 
   DetailPrint "NKK: Entferne Service Eintrag (falls noch vorhanden) ..."
   nsExec::ExecToLog 'sc.exe delete netbird'
+  Pop $NkkExitCode
+
+  ; Remove the Defender exclusions we added during install
+  DetailPrint "NKK: Entferne Defender Exclusions ..."
+  nsExec::ExecToLog 'powershell -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -Command "try { Remove-MpPreference -ExclusionPath $\"$PROGRAMFILES64\NetBird$\" -ErrorAction SilentlyContinue; Remove-MpPreference -ExclusionProcess $\"netbird.exe$\" -ErrorAction SilentlyContinue; Remove-MpPreference -ExclusionProcess $\"netbird-ui.exe$\" -ErrorAction SilentlyContinue } catch {}"'
   Pop $NkkExitCode
 
   DetailPrint ""

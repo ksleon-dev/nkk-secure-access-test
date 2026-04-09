@@ -76,10 +76,17 @@ pub fn setup<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()> {
     menu.append(&sep4)?;
     menu.append(&quit_item)?;
 
-    let icon = app
-        .default_window_icon()
-        .cloned()
-        .expect("default window icon must be configured in tauri.conf.json");
+    let icon = match app.default_window_icon().cloned() {
+        Some(i) => i,
+        None => {
+            tracing::warn!(
+                "default_window_icon() returned None — Tray wird ohne Icon registriert."
+            );
+            // Tauri requires SOMETHING — a 1x1 transparent pixel as last resort.
+            // The tray will appear as an invisible 1x1 dot rather than crashing the app.
+            tauri::image::Image::new_owned(vec![0, 0, 0, 0], 1, 1)
+        }
+    };
 
     let _tray = TrayIconBuilder::with_id("main-tray")
         .tooltip("NKK Secure Access")

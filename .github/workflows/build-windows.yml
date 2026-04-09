@@ -2,26 +2,41 @@ name: Build Windows Installer
 
 on:
   push:
+    branches: [main]
     tags:
       - "v*.*.*"
   workflow_dispatch:
 
+# Cancel in-progress runs of the same workflow on the same branch — only the
+# latest commit is built.
+concurrency:
+  group: build-windows-${{ github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: write
+
 jobs:
   build:
     runs-on: windows-latest
-    permissions:
-      contents: write
+    timeout-minutes: 30
 
     steps:
-      - uses: actions/checkout@v4
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0  # for git describe
 
       - name: Setup Node
         uses: actions/setup-node@v4
         with:
           node-version: "20"
+          cache: "npm"
 
       - name: Setup Rust
         uses: dtolnay/rust-toolchain@stable
+        with:
+          components: clippy
 
       - name: Rust cache
         uses: swatinem/rust-cache@v2
@@ -31,25 +46,67 @@ jobs:
       - name: Install npm dependencies
         run: npm ci
 
-      - name: Download bundled Netbird client
+      - name: Run Rust unit tests
+        working-directory: src-tauri
+        run: cargo test --release --quiet
+        continue-on-error: true  # don't gate the build on tests during pilot
+
+      - name: Download bundled NetBird client
         shell: pwsh
         run: pwsh src-tauri/bin/fetch-netbird.ps1
 
-      - name: Build Tauri (NSIS)
+      - name: Build Tauri (NSIS only)
         run: npm run tauri build -- --bundles nsis
+        env:
+          # Tauri reads version from tauri.conf.json — overriden by --version later if needed
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Locate built installer
+        id: find_installer
+        shell: pwsh
+        run: |
+          $exe = Get-ChildItem -Path src-tauri/target/release/bundle/nsis -Filter "*.exe" -Recurse | Select-Object -First 1
+          if (-not $exe) {
+            Write-Error "No NSIS installer produced"
+            exit 1
+          }
+          Write-Host "Found: $($exe.FullName)"
+          Write-Host "Size:  $([math]::Round($exe.Length / 1MB, 2)) MB"
+          "path=$($exe.FullName)" >> $env:GITHUB_OUTPUT
+          "name=$($exe.Name)" >> $env:GITHUB_OUTPUT
 
       - name: Upload installer artifact
         uses: actions/upload-artifact@v4
         with:
           name: nkk-secure-access-windows
-          path: |
-            src-tauri/target/release/bundle/nsis/*.exe
+          path: ${{ steps.find_installer.outputs.path }}
           if-no-files-found: error
+          retention-days: 30
 
-      - name: Create GitHub Release
+      - name: Create GitHub Release on tag
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
-          files: src-tauri/target/release/bundle/nsis/*.exe
+          files: ${{ steps.find_installer.outputs.path }}
           generate_release_notes: true
           draft: false
+          prerelease: false
+          name: "NKK Secure Access ${{ github.ref_name }}"
+          body: |
+            ## NKK Secure Access ${{ github.ref_name }}
+
+            Windows Installer mit eingebettetem NetBird Client.
+
+            **Download:** `${{ steps.find_installer.outputs.name }}`
+
+            ### Installation
+            1. EXE doppelklicken
+            2. Setup läuft durch (NetBird wird automatisch mitinstalliert)
+            3. Aus dem Startmenü unter `KronSolutions → NKK Secure Access` starten
+
+            ### Silent Install (für GPO Rollout)
+            ```
+            NKK-Setup.exe /S /SETUPKEY=<key>
+            ```
+
+            Support: support@ticket.kronsolutions.de

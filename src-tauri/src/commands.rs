@@ -91,14 +91,28 @@ fn random_id() -> String {
     format!("p_{:x}_{:x}", now, pid)
 }
 
+/// Returns the cached profile list, populating the cache from the OS keystore
+/// on first call. Every subsequent call within this app session avoids the
+/// macOS Keychain prompt because we have the data in memory already.
+async fn cached_profiles(state: &AppState) -> AppResult<Vec<CredentialProfile>> {
+    let mut g = state.profiles_cache.lock().await;
+    if let Some(p) = g.as_ref() {
+        return Ok(p.clone());
+    }
+    let loaded = load_profiles()?;
+    *g = Some(loaded.clone());
+    Ok(loaded)
+}
+
 #[tauri::command]
-pub async fn creds_list() -> AppResult<Vec<CredentialProfileMeta>> {
-    let profiles = load_profiles()?;
+pub async fn creds_list(state: State<'_, AppState>) -> AppResult<Vec<CredentialProfileMeta>> {
+    let profiles = cached_profiles(&state).await?;
     Ok(profiles.iter().map(CredentialProfileMeta::from).collect())
 }
 
 #[tauri::command]
 pub async fn creds_save(
+    state: State<'_, AppState>,
     id: Option<String>,
     label: String,
     username: String,
@@ -112,10 +126,12 @@ pub async fn creds_save(
         label.trim().to_string()
     };
     if username.is_empty() {
-        return Err(AppError::Internal("Benutzername darf nicht leer sein".into()));
+        return Err(AppError::Internal(
+            "Benutzername darf nicht leer sein.".into(),
+        ));
     }
     if password.is_empty() {
-        return Err(AppError::Internal("Passwort darf nicht leer sein".into()));
+        return Err(AppError::Internal("Passwort darf nicht leer sein.".into()));
     }
     let domain = domain.and_then(|d| {
         let t = d.trim();
@@ -126,12 +142,15 @@ pub async fn creds_save(
         }
     });
 
-    let mut profiles = load_profiles()?;
+    let mut cache = state.profiles_cache.lock().await;
+    let mut profiles = match cache.take() {
+        Some(p) => p,
+        None => load_profiles()?, // First call this session
+    };
     let now = now_iso();
     let saved_meta;
 
     if let Some(id) = id.filter(|s| !s.is_empty()) {
-        // Update existing
         let pos = profiles
             .iter()
             .position(|p| p.id == id)
@@ -144,7 +163,6 @@ pub async fn creds_save(
         p.updated_at = now;
         saved_meta = CredentialProfileMeta::from(&*p);
     } else {
-        // Insert new
         let new = CredentialProfile {
             id: random_id(),
             label,
@@ -158,38 +176,40 @@ pub async fn creds_save(
         profiles.push(new);
     }
 
+    // Single keystore write — no round-trip verify (that triggered an extra
+    // Keychain prompt on macOS for each save).
     store_profiles(&profiles)?;
-
-    // Round trip verify — load again and confirm the entry exists.
-    let verify = load_profiles()?;
-    if !verify.iter().any(|p| p.id == saved_meta.id) {
-        return Err(AppError::Keyring(
-            "Speichern hat funktioniert, aber Lesen nicht — OS Keystore Zugriff prüfen.".into(),
-        ));
-    }
+    *cache = Some(profiles);
 
     Ok(saved_meta)
 }
 
 #[tauri::command]
-pub async fn creds_delete(id: String) -> AppResult<()> {
-    let mut profiles = load_profiles()?;
+pub async fn creds_delete(state: State<'_, AppState>, id: String) -> AppResult<()> {
+    let mut cache = state.profiles_cache.lock().await;
+    let mut profiles = match cache.take() {
+        Some(p) => p,
+        None => load_profiles()?,
+    };
     let before = profiles.len();
     profiles.retain(|p| p.id != id);
     if profiles.len() == before {
+        *cache = Some(profiles);
         return Ok(()); // already gone
     }
+
     if profiles.is_empty() {
-        // Wipe keyring entry entirely
         let entry = profiles_entry()?;
         match entry.delete_credential() {
-            Ok(_) => Ok(()),
-            Err(keyring::Error::NoEntry) => Ok(()),
-            Err(e) => Err(AppError::Keyring(e.to_string())),
+            Ok(_) => {}
+            Err(keyring::Error::NoEntry) => {}
+            Err(e) => return Err(AppError::Keyring(e.to_string())),
         }
     } else {
-        store_profiles(&profiles)
+        store_profiles(&profiles)?;
     }
+    *cache = Some(profiles);
+    Ok(())
 }
 
 #[derive(Serialize, Clone, Debug)]
@@ -267,6 +287,10 @@ pub fn creds_default_username() -> String {
 pub struct AppState {
     pub netbird: NetbirdClient,
     pub branding: AsyncMutex<Option<BrandingDto>>,
+    /// In-memory cache of credential profiles. We populate this lazily on
+    /// first read so we only ever hit the OS keystore once per app session
+    /// instead of triggering the macOS Keychain prompt on every save / list.
+    pub profiles_cache: AsyncMutex<Option<Vec<CredentialProfile>>>,
 }
 
 impl Default for AppState {
@@ -280,6 +304,7 @@ impl AppState {
         Self {
             netbird: NetbirdClient::new(),
             branding: AsyncMutex::new(None),
+            profiles_cache: AsyncMutex::new(None),
         }
     }
 }
@@ -326,6 +351,35 @@ async fn ensure_branding(app: &AppHandle, state: &State<'_, AppState>) -> AppRes
     Ok(b)
 }
 
+/// Validate a NetBird setup key. Setup keys are typically UUIDs or long
+/// alphanumeric strings — we accept anything between 8 and 128 chars made up
+/// of alphanumerics and dashes. This blocks accidental command injection
+/// attempts and copy/paste mistakes (whitespace, quotes, control chars).
+fn validate_setup_key(key: &str) -> AppResult<String> {
+    let trimmed = key.trim();
+    if trimmed.is_empty() {
+        return Err(AppError::Internal(
+            "Setup Key darf nicht leer sein.".into(),
+        ));
+    }
+    if trimmed.len() < 8 || trimmed.len() > 128 {
+        return Err(AppError::Internal(format!(
+            "Setup Key hat ungültige Länge ({} Zeichen). Erwartet werden 8 bis 128.",
+            trimmed.len()
+        )));
+    }
+    if !trimmed
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || c == '-' || c == '_')
+    {
+        return Err(AppError::Internal(
+            "Setup Key enthält ungültige Zeichen. Erlaubt sind Buchstaben, Ziffern, - und _."
+                .into(),
+        ));
+    }
+    Ok(trimmed.to_string())
+}
+
 #[tauri::command]
 pub async fn nb_connect(
     app: AppHandle,
@@ -335,8 +389,9 @@ pub async fn nb_connect(
     let branding = ensure_branding(&app, &state).await?;
     let key = match setup_key {
         Some(k) if !k.trim().is_empty() => {
-            save_setup_key(k.trim())?;
-            Some(k.trim().to_string())
+            let validated = validate_setup_key(&k)?;
+            save_setup_key(&validated)?;
+            Some(validated)
         }
         _ => load_setup_key()?,
     };
@@ -346,7 +401,7 @@ pub async fn nb_connect(
         .up(&branding.netbird.management_url, key.as_deref())
         .await?;
 
-    // Trigger an immediate status push
+    // Trigger an immediate status push so the UI feels snappy
     if let Ok(s) = state.netbird.status().await {
         let _ = app.emit("netbird-status-changed", &s);
     }
@@ -616,16 +671,35 @@ async fn wait_for_vpn_connected(client: &NetbirdClient, max: Duration) -> bool {
     false
 }
 
+/// Allow only host-like targets: letters, digits, dots, dashes, optional port.
+/// Blocks shell metacharacters even though we pass args separately.
+fn validate_host_target(target: &str) -> AppResult<String> {
+    let trimmed = target.trim();
+    if trimmed.is_empty() {
+        return Err(AppError::Internal("Ziel darf nicht leer sein.".into()));
+    }
+    if trimmed.len() > 255 {
+        return Err(AppError::Internal("Ziel ist zu lang.".into()));
+    }
+    if !trimmed
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '-' || c == ':')
+    {
+        return Err(AppError::Internal(format!(
+            "Ungültiges Verbindungsziel: {}",
+            trimmed
+        )));
+    }
+    Ok(trimmed.to_string())
+}
+
 #[tauri::command]
 pub async fn open_rdp(
     app: AppHandle,
     target: String,
     state: State<'_, AppState>,
 ) -> AppResult<()> {
-    let target = target.trim().to_string();
-    if target.is_empty() {
-        return Err(AppError::Internal("RDP Target ist leer".into()));
-    }
+    let target = validate_host_target(&target)?;
 
     // Smart launcher: if netbird CLI exists, ensure tunnel is up before launching.
     // If netbird CLI is missing, assume the user is on the corporate network another
@@ -694,7 +768,17 @@ pub async fn open_rdp(
 pub async fn open_smb(target: String) -> AppResult<()> {
     let target = target.trim().to_string();
     if target.is_empty() {
-        return Err(AppError::Internal("SMB Target ist leer".into()));
+        return Err(AppError::Internal("SMB Ziel ist leer.".into()));
+    }
+    // Allow UNC syntax (\\host\share) plus normal hostnames
+    let safe = target
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '-' | '\\' | '/' | '_' | '$'));
+    if !safe {
+        return Err(AppError::Internal(format!(
+            "Ungültiges SMB Ziel: {}",
+            target
+        )));
     }
     #[cfg(target_os = "windows")]
     {
@@ -728,7 +812,18 @@ pub async fn open_smb(target: String) -> AppResult<()> {
 pub async fn open_url(url: String) -> AppResult<()> {
     let url = url.trim().to_string();
     if url.is_empty() {
-        return Err(AppError::Internal("URL ist leer".into()));
+        return Err(AppError::Internal("URL ist leer.".into()));
+    }
+    // Only allow well-known safe schemes — blocks file://, javascript:, etc.
+    let lower = url.to_lowercase();
+    let allowed = lower.starts_with("https://")
+        || lower.starts_with("http://")
+        || lower.starts_with("mailto:");
+    if !allowed {
+        return Err(AppError::Internal(format!(
+            "URL Schema nicht erlaubt: {}",
+            url
+        )));
     }
     #[cfg(target_os = "windows")]
     let cmd = "explorer.exe";
