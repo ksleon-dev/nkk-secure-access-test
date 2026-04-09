@@ -233,9 +233,21 @@ export function DiagnosePanel({ branding, profile, onClose }: Props) {
             <ClipboardCopy size={13} />
             Diagnose für Support kopieren
           </button>
-          <div className="text-center text-[9px] text-muted mt-1.5">
+          <button
+            type="button"
+            onClick={async () => {
+              try {
+                await navigator.clipboard.writeText(branding.vendor.supportEmail);
+                toast.success("Support Email kopiert.");
+              } catch {
+                toast.error("Konnte nicht kopieren.");
+              }
+            }}
+            className="block w-full text-center text-[9px] text-[color:var(--brand-fg)]/80 mt-1.5 hover:text-[color:var(--brand-primary)] transition cursor-pointer"
+            title="Klicken zum Kopieren"
+          >
             {branding.vendor.supportEmail}
-          </div>
+          </button>
         </div>
       </div>
     </div>

@@ -1,6 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { ExternalLink, Mail, X } from "lucide-react";
 import { Logo } from "../components/Logo";
+import { useToast } from "../components/Toast";
 import { de } from "../i18n/de";
 import type { BrandingDto } from "../types/branding";
 
@@ -10,13 +11,17 @@ interface Props {
 }
 
 export function AboutDialog({ branding, onClose }: Props) {
+  const toast = useToast();
   function openSupport() {
     invoke("open_url", { url: branding.vendor.supportUrl }).catch(() => {});
   }
-  function openMail() {
-    invoke("open_url", { url: `mailto:${branding.vendor.supportEmail}` }).catch(
-      () => {}
-    );
+  async function copyMail() {
+    try {
+      await navigator.clipboard.writeText(branding.vendor.supportEmail);
+      toast.success("Support Email kopiert.");
+    } catch {
+      toast.error("Konnte nicht kopieren.");
+    }
   }
 
   return (
@@ -51,8 +56,9 @@ export function AboutDialog({ branding, onClose }: Props) {
 
         <div className="mt-4 flex flex-col gap-1.5">
           <button
-            onClick={openMail}
+            onClick={copyMail}
             className="surface hover:border-[color:var(--brand-primary)] rounded-md py-2 text-xs flex items-center justify-center gap-1.5 transition"
+            title="Klicken zum Kopieren"
           >
             <Mail size={12} />
             {branding.vendor.supportEmail}
