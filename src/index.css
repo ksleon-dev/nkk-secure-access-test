@@ -1,0 +1,201 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Brand colors are FIXED — no dark mode override. NKK is always
+   cream + tan + cherry red regardless of the operating system theme. */
+:root {
+  color-scheme: light;
+  --brand-primary: #b51f29;
+  --brand-primary-hover: #8c141f;
+  --brand-accent: #baae90;
+  --brand-bg: #f5ebd7;
+  --brand-bg-soft: #ecdfc4;
+  --brand-fg: #0a0603;
+  --brand-surface: #fbf6e9;
+  --brand-border: rgba(60, 40, 15, 0.32);
+  --brand-muted: #2a1d10;
+  --brand-shadow: 0 10px 30px -12px rgba(80, 50, 20, 0.25);
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+  padding: 0;
+  font-family:
+    -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial,
+    sans-serif;
+  background: var(--brand-bg);
+  color: var(--brand-fg);
+  overflow: hidden;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+
+  /* Native app feel — no text selection / drag on UI chrome */
+  user-select: none;
+  -webkit-user-select: none;
+  -webkit-user-drag: none;
+  cursor: default;
+}
+
+/* Inputs, textareas and the diagnose log pre block still allow selection */
+input,
+textarea,
+[contenteditable="true"],
+pre.allow-select,
+.allow-select {
+  user-select: text;
+  -webkit-user-select: text;
+  cursor: text;
+}
+
+img,
+svg {
+  -webkit-user-drag: none;
+  pointer-events: auto;
+}
+
+button {
+  font-family: inherit;
+  cursor: pointer;
+}
+button:disabled {
+  cursor: not-allowed;
+}
+
+.font-serif-display {
+  font-family:
+    "Cooper Black", "Bookman Old Style", Georgia, "Times New Roman", serif;
+  font-weight: 900;
+  letter-spacing: -0.01em;
+}
+
+.font-script {
+  font-family: Georgia, "Times New Roman", serif;
+  font-style: italic;
+  font-weight: 500;
+  letter-spacing: 0.01em;
+}
+
+.font-italic-tan {
+  font-style: italic;
+  color: var(--brand-accent);
+  font-family: Georgia, "Times New Roman", serif;
+  font-weight: 500;
+}
+
+::-webkit-scrollbar {
+  width: 8px;
+  height: 8px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--brand-border);
+  border-radius: 4px;
+}
+
+@layer components {
+  .surface {
+    background: var(--brand-surface);
+    border: 1px solid var(--brand-border);
+  }
+  .text-muted {
+    color: var(--brand-muted);
+  }
+  .btn-primary {
+    background: var(--brand-primary);
+    color: white;
+    transition:
+      background-color 150ms ease,
+      transform 50ms ease,
+      box-shadow 150ms ease;
+    box-shadow: var(--brand-shadow);
+  }
+  .btn-primary:hover:not(:disabled) {
+    background: var(--brand-primary-hover);
+  }
+  .btn-primary:active:not(:disabled) {
+    transform: scale(0.98);
+  }
+  .btn-primary:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+    box-shadow: none;
+  }
+  .btn-ghost {
+    background: transparent;
+    color: var(--brand-fg);
+    transition: background-color 150ms ease;
+  }
+  .btn-ghost:hover:not(:disabled) {
+    background: rgba(124, 92, 49, 0.1);
+  }
+  .pill {
+    border-radius: 9999px;
+    padding: 0.35rem 0.85rem;
+    font-size: 0.7rem;
+    font-weight: 700;
+    letter-spacing: 0.03em;
+    text-transform: uppercase;
+  }
+  .decor-circle {
+    position: absolute;
+    border-radius: 50%;
+    background: var(--brand-bg-soft);
+    pointer-events: none;
+    z-index: 0;
+  }
+}
+
+@keyframes fade-up {
+  from {
+    opacity: 0;
+    transform: translateY(8px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.animate-fade-up {
+  animation: fade-up 320ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+}
+
+@keyframes fade-up-soft {
+  from {
+    opacity: 0;
+    transform: translateY(14px) scale(0.97);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0) scale(1);
+  }
+}
+.fade-in-1 {
+  animation: fade-up-soft 460ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+  animation-delay: 0ms;
+}
+.fade-in-2 {
+  animation: fade-up-soft 460ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+  animation-delay: 90ms;
+}
+.fade-in-3 {
+  animation: fade-up-soft 460ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+  animation-delay: 180ms;
+}
+.fade-in-4 {
+  animation: fade-up-soft 460ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+  animation-delay: 270ms;
+}
+.fade-in-5 {
+  animation: fade-up-soft 460ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+  animation-delay: 360ms;
+}
+.fade-in-6 {
+  animation: fade-up-soft 460ms cubic-bezier(0.2, 0.8, 0.2, 1) both;
+  animation-delay: 450ms;
+}

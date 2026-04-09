@@ -1,0 +1,44 @@
+{
+  "product": {
+    "name": "NKK Secure Access",
+    "shortName": "NKK",
+    "tagline": "Dein Bio-Großhandel",
+    "logoText": ["Naturkost", "Kontor", "BREMEN"],
+    "version": "0.1.0"
+  },
+  "vendor": {
+    "name": "KronSolutions GmbH",
+    "footer": "Powered by KronSolutions",
+    "supportEmail": "support@kronsolutions.de",
+    "supportUrl": "https://kronsolutions.de"
+  },
+  "theme": {
+    "primary": "#B51F29",
+    "primaryHover": "#8C141F",
+    "accent": "#BAAE90",
+    "background": "#F5EBD7",
+    "foreground": "#1A1208",
+    "logoPath": "assets/nkk-logo.svg"
+  },
+  "netbird": {
+    "managementUrl": "https://vpn.nkk-hb.de",
+    "adminUrl": "https://vpn.nkk-hb.de"
+  },
+  "quickLaunch": [
+    {
+      "label": "Terminalserver 2",
+      "description": "Standard — Warenwirtschaft",
+      "type": "rdp",
+      "target": "192.168.0.20",
+      "default": true,
+      "icon": "computer"
+    },
+    {
+      "label": "Terminalserver 1",
+      "description": "Kassensystem",
+      "type": "rdp",
+      "target": "192.168.0.19",
+      "icon": "computer"
+    }
+  ]
+}
