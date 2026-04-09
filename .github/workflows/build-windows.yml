@@ -46,14 +46,16 @@ jobs:
       - name: Install npm dependencies
         run: npm ci
 
-      - name: Run Rust unit tests
-        working-directory: src-tauri
-        run: cargo test --release --quiet
-        continue-on-error: true  # don't gate the build on tests during pilot
-
       - name: Download bundled NetBird client
         shell: pwsh
         run: pwsh src-tauri/bin/fetch-netbird.ps1
+
+      - name: Run Rust unit tests
+        working-directory: src-tauri
+        # Tests need to run AFTER netbird-installer.exe is fetched because
+        # the Tauri build script verifies bundled resource paths exist.
+        run: cargo test --release --quiet --lib
+        continue-on-error: true  # don't gate the build on tests during pilot
 
       - name: Bake setup key into installer (if secret is set)
         shell: pwsh
