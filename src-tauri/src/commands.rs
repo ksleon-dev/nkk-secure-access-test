@@ -284,13 +284,22 @@ pub fn creds_default_username() -> String {
         .unwrap_or_default()
 }
 
+/// Wraps the cached "is the setup key loaded" state. The outer Option is
+/// "have we ever loaded from the keystore", the inner Option is "is there a
+/// key" — `Some(None)` therefore means "we know there's no key yet".
+type CachedSetupKey = Option<Option<String>>;
+
 pub struct AppState {
     pub netbird: NetbirdClient,
     pub branding: AsyncMutex<Option<BrandingDto>>,
-    /// In-memory cache of credential profiles. We populate this lazily on
+    /// Lazy in-memory cache for the credential profile list — populated on
     /// first read so we only ever hit the OS keystore once per app session
     /// instead of triggering the macOS Keychain prompt on every save / list.
     pub profiles_cache: AsyncMutex<Option<Vec<CredentialProfile>>>,
+    /// Same lazy caching pattern for the NetBird setup key. Without this,
+    /// `nb_is_enrolled` + `nb_connect` would each fire a separate Keychain
+    /// prompt on unsigned dev builds.
+    pub setup_key_cache: AsyncMutex<CachedSetupKey>,
 }
 
 impl Default for AppState {
@@ -305,8 +314,36 @@ impl AppState {
             netbird: NetbirdClient::new(),
             branding: AsyncMutex::new(None),
             profiles_cache: AsyncMutex::new(None),
+            setup_key_cache: AsyncMutex::new(None),
         }
     }
+}
+
+/// Cached read of the setup key — single keystore hit per app session.
+async fn cached_setup_key(state: &AppState) -> AppResult<Option<String>> {
+    let mut g = state.setup_key_cache.lock().await;
+    if let Some(cached) = g.as_ref() {
+        return Ok(cached.clone());
+    }
+    let loaded = load_setup_key()?;
+    *g = Some(loaded.clone());
+    Ok(loaded)
+}
+
+/// Cached write of the setup key — updates both the keystore and the in
+/// memory cache so future reads do not hit the keystore again.
+async fn cached_save_setup_key(state: &AppState, key: &str) -> AppResult<()> {
+    save_setup_key(key)?;
+    let mut g = state.setup_key_cache.lock().await;
+    *g = Some(Some(key.to_string()));
+    Ok(())
+}
+
+async fn cached_delete_setup_key(state: &AppState) -> AppResult<()> {
+    delete_setup_key()?;
+    let mut g = state.setup_key_cache.lock().await;
+    *g = Some(None);
+    Ok(())
 }
 
 fn keyring_entry() -> AppResult<keyring::Entry> {
@@ -387,13 +424,24 @@ pub async fn nb_connect(
     state: State<'_, AppState>,
 ) -> AppResult<()> {
     let branding = ensure_branding(&app, &state).await?;
+
+    // Pre-flight reachability probe — fail fast with a clear error if the
+    // management server cannot be reached at all instead of letting the
+    // netbird CLI hang for 30 seconds.
+    if !management_reachable(&branding.netbird.management_url).await {
+        tracing::warn!(
+            "Management Server {} nicht erreichbar — versuche trotzdem.",
+            branding.netbird.management_url
+        );
+    }
+
     let key = match setup_key {
         Some(k) if !k.trim().is_empty() => {
             let validated = validate_setup_key(&k)?;
-            save_setup_key(&validated)?;
+            cached_save_setup_key(&state, &validated).await?;
             Some(validated)
         }
-        _ => load_setup_key()?,
+        _ => cached_setup_key(&state).await?,
     };
 
     state
@@ -406,6 +454,30 @@ pub async fn nb_connect(
         let _ = app.emit("netbird-status-changed", &s);
     }
     Ok(())
+}
+
+/// TCP probe of the management server with a hard 2 second timeout.
+/// We don't care about TLS validation here — only "is the host reachable".
+async fn management_reachable(url: &str) -> bool {
+    // Strip scheme to get host[:port]
+    let stripped = url
+        .trim_start_matches("https://")
+        .trim_start_matches("http://");
+    let host_port = stripped.split('/').next().unwrap_or(stripped);
+    let (host, port) = match host_port.rsplit_once(':') {
+        Some((h, p)) => (h, p.parse::<u16>().unwrap_or(443)),
+        None => (host_port, 443u16),
+    };
+    let addr = format!("{}:{}", host, port);
+    match timeout(
+        Duration::from_secs(2),
+        tokio::net::TcpStream::connect(addr),
+    )
+    .await
+    {
+        Ok(Ok(_)) => true,
+        _ => false,
+    }
 }
 
 #[tauri::command]
@@ -430,8 +502,8 @@ pub async fn nb_status(state: State<'_, AppState>) -> AppResult<StatusDto> {
 }
 
 #[tauri::command]
-pub async fn nb_is_enrolled() -> AppResult<bool> {
-    Ok(load_setup_key()?.is_some())
+pub async fn nb_is_enrolled(state: State<'_, AppState>) -> AppResult<bool> {
+    Ok(cached_setup_key(&state).await?.is_some())
 }
 
 #[tauri::command]
@@ -439,9 +511,8 @@ pub async fn nb_reset_enrollment(
     app: AppHandle,
     state: State<'_, AppState>,
 ) -> AppResult<()> {
-    // Best effort: bring tunnel down, then forget the key
     let _ = state.netbird.down().await;
-    delete_setup_key()?;
+    cached_delete_setup_key(&state).await?;
     if let Ok(s) = state.netbird.status().await {
         let _ = app.emit("netbird-status-changed", &s);
     }
