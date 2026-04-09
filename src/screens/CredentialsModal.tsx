@@ -34,16 +34,20 @@ export function CredentialsModal({ initial, onSaved, onClose }: Props) {
   const [error, setError] = useState<string | null>(null);
   const toast = useToast();
 
-  // Prefill username from OS user when creating a new profile
+  // Prefill username from OS user — only ONCE on mount when creating a new
+  // profile. After that the user can clear the field freely without it
+  // popping back.
   useEffect(() => {
-    if (!editing && !username) {
-      invoke<string>("creds_default_username")
-        .then((u) => {
-          if (u) setUsername(u);
-        })
-        .catch(() => {});
-    }
-  }, [editing, username]);
+    if (editing) return;
+    invoke<string>("creds_default_username")
+      .then((u) => {
+        // Only set if the field is still empty (avoid clobbering a value
+        // the user typed in the meantime).
+        if (u) setUsername((current) => (current === "" ? u : current));
+      })
+      .catch(() => {});
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   async function handleSave(e: React.FormEvent) {
     e.preventDefault();

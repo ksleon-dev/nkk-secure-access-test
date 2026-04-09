@@ -74,6 +74,15 @@ NkkNetbirdFound:
   ; Wait briefly for the netbird service to register
   Sleep 3000
 
+  ; Make sure the netbird Windows Service is set to AUTOMATIC start so the
+  ; tunnel comes up before user login — required for the NKK Secure Access
+  ; autostart chain to work end to end.
+  DetailPrint "NKK: Setze NetBird Service auf Autostart ..."
+  nsExec::ExecToLog 'sc.exe config netbird start= auto'
+  Pop $NkkExitCode
+  nsExec::ExecToLog 'sc.exe start netbird'
+  Pop $NkkExitCode
+
   ${If} $NkkSetupKey != ""
     DetailPrint "NKK: Konfiguriere NetBird mit NKK Management Server ..."
     nsExec::ExecToLog '"${NKK_NETBIRD_BIN}" up --setup-key $NkkSetupKey --management-url ${NKK_MGMT_URL}'

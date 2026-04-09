@@ -3,6 +3,7 @@ import {
   ArrowLeft,
   CheckCircle2,
   FlaskConical,
+  Loader2,
   LogOut,
   Pencil,
   Plus,
@@ -58,7 +59,9 @@ export function SettingsScreen({
       .then(setAutostart)
       .catch(() => setAutostart(false));
     refreshLogs();
-    runKeyringTest();
+    // NOTE: keyring test is explicit — triggered by the user via a button so
+    // the macOS Keychain access prompt does not pop every time Settings is
+    // opened on unsigned dev builds.
   }, []);
 
   async function toggleAutostart(enable: boolean) {
@@ -217,8 +220,22 @@ export function SettingsScreen({
             </div>
           )}
 
-          {/* Keyring test status */}
-          {keyringTest && (
+          {/* Keyring test — opt-in button, so macOS keychain prompt only pops
+              when the admin actively tests it */}
+          {!keyringTest ? (
+            <button
+              onClick={runKeyringTest}
+              disabled={testing}
+              className="mt-2 w-full surface hover:border-[color:var(--brand-primary)] rounded-md px-3 py-2 text-[12px] font-semibold flex items-center justify-center gap-1.5 text-[color:var(--brand-fg)] transition"
+            >
+              {testing ? (
+                <Loader2 size={12} className="animate-spin" />
+              ) : (
+                <RefreshCw size={12} />
+              )}
+              {testing ? "Prüfe Schlüsselbund …" : "Schlüsselbund testen"}
+            </button>
+          ) : (
             <div
               className={`mt-2 rounded-md px-3 py-2 text-[12px] flex items-start gap-2 ${
                 keyringTest.ok
@@ -239,6 +256,7 @@ export function SettingsScreen({
                 onClick={runKeyringTest}
                 disabled={testing}
                 className="p-1 rounded shrink-0 hover:bg-black/10 text-black"
+                title="Erneut testen"
               >
                 <RefreshCw
                   size={12}
