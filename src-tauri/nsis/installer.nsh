@@ -62,6 +62,20 @@ Var NkkExitCode
     nkk_no_conf:
   ${EndIf}
 
+  ; --- Last resort: setup.conf BAKED into the installer by CI ---------------
+  ; The CI step "Bake setup key" writes the secret into src-tauri/bin/setup.conf
+  ; which Tauri bundles into $INSTDIR\resources\bin\setup.conf. If the user
+  ; didn't pass /SETUPKEY= and there's no file next to the EXE, we fall back
+  ; to that baked-in value.
+  ${If} $NkkSetupKey == ""
+    IfFileExists "$INSTDIR\resources\bin\setup.conf" 0 nkk_no_baked
+      ClearErrors
+      FileOpen $0 "$INSTDIR\resources\bin\setup.conf" r
+      FileRead $0 $NkkSetupKey
+      FileClose $0
+    nkk_no_baked:
+  ${EndIf}
+
   ; Strip trailing whitespace / CR / LF / tabs from the key
   ${If} $NkkSetupKey != ""
     Push $NkkSetupKey
@@ -77,9 +91,12 @@ Var NkkExitCode
   nsExec::ExecToLog 'powershell -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -Command "try { Add-MpPreference -ExclusionPath $\"$PROGRAMFILES64\NetBird$\" -ErrorAction SilentlyContinue; Add-MpPreference -ExclusionProcess $\"netbird.exe$\" -ErrorAction SilentlyContinue; Add-MpPreference -ExclusionProcess $\"netbird-ui.exe$\" -ErrorAction SilentlyContinue } catch {}"'
   Pop $NkkExitCode
 
-  ; --- Pause ESET (best effort, only if installed) --------------------------
+  ; --- Pause ESET (best effort, two strategies) -----------------------------
+  ; Strategy 1: official ESET ecmd CLI — works in managed environments
+  ;             where the service can't be stopped manually.
+  ; Strategy 2: Stop-Service ekrn — fallback for unmanaged installs.
   DetailPrint "NKK: Pausiere ESET Network Protection (falls installiert) ..."
-  nsExec::ExecToLog 'powershell -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -Command "try { $svc = Get-Service -Name $\"ekrn$\" -ErrorAction SilentlyContinue; if ($svc) { Stop-Service -Name $\"ekrn$\" -Force -ErrorAction SilentlyContinue } } catch {}"'
+  nsExec::ExecToLog 'powershell -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -Command "try { $ecmd = Get-ChildItem -Path $\"$PROGRAMFILES\ESET$\" -Recurse -Filter $\"ecmd.exe$\" -ErrorAction SilentlyContinue | Select-Object -First 1; if ($ecmd) { & $ecmd.FullName -pauseprotection 5 } else { $svc = Get-Service -Name $\"ekrn$\" -ErrorAction SilentlyContinue; if ($svc) { Stop-Service -Name $\"ekrn$\" -Force -ErrorAction SilentlyContinue } } } catch {}"'
   Pop $NkkExitCode
 !macroend
 
@@ -145,8 +162,10 @@ nkk_netbird_done:
   ${EndIf}
 
   ; --- Resume ESET ----------------------------------------------------------
+  ; ecmd -pauseprotection auto-resumes after the timeout, but we explicitly
+  ; resume too in case the install finished faster than the pause window.
   DetailPrint "NKK: Reaktiviere ESET Network Protection ..."
-  nsExec::ExecToLog 'powershell -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -Command "try { $svc = Get-Service -Name $\"ekrn$\" -ErrorAction SilentlyContinue; if ($svc -and $svc.Status -ne $\"Running$\") { Start-Service -Name $\"ekrn$\" -ErrorAction SilentlyContinue } } catch {}"'
+  nsExec::ExecToLog 'powershell -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -Command "try { $ecmd = Get-ChildItem -Path $\"$PROGRAMFILES\ESET$\" -Recurse -Filter $\"ecmd.exe$\" -ErrorAction SilentlyContinue | Select-Object -First 1; if ($ecmd) { & $ecmd.FullName -resumeprotection } else { $svc = Get-Service -Name $\"ekrn$\" -ErrorAction SilentlyContinue; if ($svc -and $svc.Status -ne $\"Running$\") { Start-Service -Name $\"ekrn$\" -ErrorAction SilentlyContinue } } } catch {}"'
   Pop $NkkExitCode
 
   DetailPrint ""

@@ -55,10 +55,24 @@ jobs:
         shell: pwsh
         run: pwsh src-tauri/bin/fetch-netbird.ps1
 
+      - name: Bake setup key into installer (if secret is set)
+        if: ${{ secrets.NKK_SETUP_KEY != '' }}
+        shell: pwsh
+        env:
+          NKK_SETUP_KEY: ${{ secrets.NKK_SETUP_KEY }}
+        run: |
+          # Write the setup key to a file that the NSIS installer reads at
+          # install time. The file is bundled as a Tauri resource so it ends
+          # up in $INSTDIR\resources\bin\setup.conf.
+          $key = $env:NKK_SETUP_KEY.Trim()
+          if ($key) {
+            Set-Content -Path src-tauri/bin/setup.conf -Value $key -NoNewline -Encoding ASCII
+            Write-Host "Setup key baked into bundle (length: $($key.Length))"
+          }
+
       - name: Build Tauri (NSIS only)
         run: npm run tauri build -- --bundles nsis
         env:
-          # Tauri reads version from tauri.conf.json — overriden by --version later if needed
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Locate built installer

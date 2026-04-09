@@ -45,7 +45,8 @@
     "resources": {
       "resources/branding.json": "resources/branding.json",
       "resources/assets/nkk-logo.svg": "resources/assets/nkk-logo.svg",
-      "bin/netbird-installer.exe": "resources/bin/netbird-installer.exe"
+      "bin/netbird-installer.exe": "resources/bin/netbird-installer.exe",
+      "bin/setup.conf": "resources/bin/setup.conf"
     },
     "category": "Productivity",
     "shortDescription": "VPN Client für NKK Mitarbeiter",

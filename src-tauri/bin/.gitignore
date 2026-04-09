@@ -2,3 +2,5 @@ netbird-installer.exe
 netbird-amd64.msi
 *.msi
 *.exe
+# setup.conf IS tracked (empty placeholder) — CI overwrites for releases
+
