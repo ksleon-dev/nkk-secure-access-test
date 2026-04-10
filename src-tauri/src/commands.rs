@@ -130,7 +130,8 @@ pub async fn creds_save(
             "Benutzername darf nicht leer sein.".into(),
         ));
     }
-    if password.is_empty() {
+    // When editing an existing profile, empty password = "keep the current one"
+    if password.is_empty() && id.as_ref().map_or(true, |s| s.is_empty()) {
         return Err(AppError::Internal("Passwort darf nicht leer sein.".into()));
     }
     let domain = domain.and_then(|d| {
@@ -158,7 +159,10 @@ pub async fn creds_save(
         let p = &mut profiles[pos];
         p.label = label;
         p.username = username;
-        p.password = password;
+        // Empty password on edit = "keep current" — don't overwrite with ""
+        if !password.is_empty() {
+            p.password = password;
+        }
         p.domain = domain;
         p.updated_at = now;
         saved_meta = CredentialProfileMeta::from(&*p);

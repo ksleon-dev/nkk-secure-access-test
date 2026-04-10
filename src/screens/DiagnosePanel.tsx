@@ -7,7 +7,7 @@ import {
   Shield,
   X,
 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useToast } from "../components/Toast";
 import type { BrandingDto } from "../types/branding";
 import type { CredentialProfileMeta } from "../types/credentials";
@@ -20,6 +20,17 @@ interface Props {
 }
 
 export function DiagnosePanel({ branding, profile, onClose }: Props) {
+  // Escape key closes panel
+  const handleEsc = useCallback(
+    (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    },
+    [onClose]
+  );
+  useEffect(() => {
+    window.addEventListener("keydown", handleEsc);
+    return () => window.removeEventListener("keydown", handleEsc);
+  }, [handleEsc]);
   const [info, setInfo] = useState<DebugInfo | null>(null);
   const [logs, setLogs] = useState<string[]>([]);
   const [loading, setLoading] = useState(true);

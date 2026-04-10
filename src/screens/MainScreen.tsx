@@ -6,7 +6,7 @@ import {
   Loader2,
   Settings as SettingsIcon,
 } from "lucide-react";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { Avatar } from "../components/Avatar";
 import { Decor } from "../components/Decor";
 import { Logo } from "../components/Logo";
@@ -44,6 +44,7 @@ export function MainScreen({
   onOpenAbout,
 }: Props) {
   const [busy, setBusy] = useState(false);
+  const pendingToggle = useRef(false); // prevent double-click race condition
   const toast = useToast();
   const state: ConnectionState = status?.state ?? "Disconnected";
   const isConnected = state === "Connected";
@@ -52,7 +53,6 @@ export function MainScreen({
   const greetingName = displayName(profile);
   const greeting = timeOfDayGreeting();
   const accent = italicAccent(state, demoMode);
-  // bio footnote no longer rendered — replaced by big TaglineMark hero
   void bioFootnote;
 
   const launches = [...branding.quickLaunch].sort(
@@ -60,8 +60,11 @@ export function MainScreen({
   );
 
   async function toggle() {
+    if (pendingToggle.current) return; // block rapid double clicks
+    pendingToggle.current = true;
     if (demoMode) {
       isConnected ? onDemoDisconnect() : onDemoConnect();
+      pendingToggle.current = false;
       return;
     }
     setBusy(true);
@@ -74,9 +77,11 @@ export function MainScreen({
         toast.success(de.toast.connected);
       }
     } catch (e: unknown) {
-      toast.error(String(e));
+      const msg = e instanceof Error ? e.message : String(e);
+      toast.error(msg);
     } finally {
       setBusy(false);
+      pendingToggle.current = false;
     }
   }
 

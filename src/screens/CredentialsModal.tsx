@@ -10,7 +10,7 @@ import {
   User,
   X,
 } from "lucide-react";
-import { useEffect, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { useToast } from "../components/Toast";
 import {
   DEFAULT_DOMAIN,
@@ -25,6 +25,18 @@ interface Props {
 
 export function CredentialsModal({ initial, onSaved, onClose }: Props) {
   const editing = !!initial;
+
+  // Escape key closes modal
+  const handleEsc = useCallback(
+    (e: KeyboardEvent) => {
+      if (e.key === "Escape") onClose();
+    },
+    [onClose]
+  );
+  useEffect(() => {
+    window.addEventListener("keydown", handleEsc);
+    return () => window.removeEventListener("keydown", handleEsc);
+  }, [handleEsc]);
   const [label, setLabel] = useState(initial?.label ?? "");
   const [username, setUsername] = useState(initial?.username ?? "");
   const [password, setPassword] = useState("");
@@ -56,7 +68,7 @@ export function CredentialsModal({ initial, onSaved, onClose }: Props) {
       setError("Benutzername darf nicht leer sein.");
       return;
     }
-    if (!password) {
+    if (!password && !editing) {
       setError("Passwort darf nicht leer sein.");
       return;
     }

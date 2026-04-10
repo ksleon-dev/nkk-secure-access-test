@@ -65,6 +65,17 @@ button:disabled {
   cursor: not-allowed;
 }
 
+/* Keyboard focus ring — visible only when navigating with Tab, not on click */
+:focus-visible {
+  outline: 2px solid var(--brand-primary);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+/* Remove outline for non-keyboard focus (mouse click) */
+:focus:not(:focus-visible) {
+  outline: none;
+}
+
 .font-serif-display {
   font-family:
     "Cooper Black", "Bookman Old Style", Georgia, "Times New Roman", serif;
