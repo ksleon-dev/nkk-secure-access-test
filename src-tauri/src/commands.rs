@@ -555,11 +555,13 @@ pub async fn ping_host(host: &str, timeout_ms: u64) -> bool {
         host.into(),
     ];
 
-    let fut = TokioCommand::new("ping")
-        .args(&args)
+    let mut cmd = TokioCommand::new("ping");
+    cmd.args(&args)
         .stdout(std::process::Stdio::null())
-        .stderr(std::process::Stdio::null())
-        .status();
+        .stderr(std::process::Stdio::null());
+    #[cfg(target_os = "windows")]
+    cmd.creation_flags(0x08000000);
+    let fut = cmd.status();
 
     match timeout(Duration::from_millis(timeout_ms + 500), fut).await {
         Ok(Ok(status)) => status.success(),
@@ -588,13 +590,13 @@ pub struct DebugInfo {
 }
 
 async fn shell_output(cmd: &str, args: &[&str]) -> Option<String> {
-    let out = TokioCommand::new(cmd)
-        .args(args)
+    let mut c = TokioCommand::new(cmd);
+    c.args(args)
         .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::null())
-        .output()
-        .await
-        .ok()?;
+        .stderr(std::process::Stdio::null());
+    #[cfg(target_os = "windows")]
+    c.creation_flags(0x08000000);
+    let out = c.output().await.ok()?;
     if !out.status.success() {
         return None;
     }
@@ -613,7 +615,7 @@ async fn fetch_hostname() -> String {
 }
 
 async fn fetch_public_ip() -> Option<String> {
-    // Best effort via curl — cheap and universally available.
+    // Best effort via curl — cheap, universally available, hidden console.
     let fut = shell_output(
         "curl",
         &["-4", "-s", "--max-time", "3", "https://checkip.amazonaws.com"],
@@ -802,8 +804,10 @@ pub async fn open_rdp(
 
     #[cfg(target_os = "windows")]
     {
+        use std::os::windows::process::CommandExt;
         std::process::Command::new("mstsc.exe")
             .arg(format!("/v:{}", target))
+            .creation_flags(0x08000000) // CREATE_NO_WINDOW — prevents CMD flash, mstsc GUI still shows
             .spawn()
             .map_err(|e| AppError::Internal(format!("mstsc start: {}", e)))?;
         return Ok(());
@@ -841,7 +845,6 @@ pub async fn open_smb(target: String) -> AppResult<()> {
     if target.is_empty() {
         return Err(AppError::Internal("SMB Ziel ist leer.".into()));
     }
-    // Allow UNC syntax (\\host\share) plus normal hostnames
     let safe = target
         .chars()
         .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '-' | '\\' | '/' | '_' | '$'));
@@ -853,8 +856,10 @@ pub async fn open_smb(target: String) -> AppResult<()> {
     }
     #[cfg(target_os = "windows")]
     {
+        use std::os::windows::process::CommandExt;
         std::process::Command::new("explorer.exe")
             .arg(&target)
+            .creation_flags(0x08000000)
             .spawn()
             .map_err(|e| AppError::Internal(format!("explorer start: {}", e)))?;
         return Ok(());
@@ -897,16 +902,28 @@ pub async fn open_url(url: String) -> AppResult<()> {
         )));
     }
     #[cfg(target_os = "windows")]
-    let cmd = "explorer.exe";
+    {
+        use std::os::windows::process::CommandExt;
+        std::process::Command::new("explorer.exe")
+            .arg(&url)
+            .creation_flags(0x08000000)
+            .spawn()
+            .map_err(|e| AppError::Internal(format!("open url: {}", e)))?;
+    }
     #[cfg(target_os = "macos")]
-    let cmd = "open";
+    {
+        std::process::Command::new("open")
+            .arg(&url)
+            .spawn()
+            .map_err(|e| AppError::Internal(format!("open url: {}", e)))?;
+    }
     #[cfg(all(unix, not(target_os = "macos")))]
-    let cmd = "xdg-open";
-
-    std::process::Command::new(cmd)
-        .arg(&url)
-        .spawn()
-        .map_err(|e| AppError::Internal(format!("open url: {}", e)))?;
+    {
+        std::process::Command::new("xdg-open")
+            .arg(&url)
+            .spawn()
+            .map_err(|e| AppError::Internal(format!("open url: {}", e)))?;
+    }
     Ok(())
 }
 

@@ -127,12 +127,15 @@ impl NetbirdClient {
             .collect();
         self.log(format!("$ {} {}", self.binary, safe_args.join(" ")));
 
-        let output = Command::new(&self.binary)
-            .args(args)
+        let mut cmd = Command::new(&self.binary);
+        cmd.args(args)
             .stdout(Stdio::piped())
-            .stderr(Stdio::piped())
-            .output()
-            .await
+            .stderr(Stdio::piped());
+        // Prevent visible CMD window popup on Windows — netbird CLI is
+        // a console app and would flash a black box on each call otherwise.
+        #[cfg(target_os = "windows")]
+        cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
+        let output = cmd.output().await
             .map_err(|e| {
                 if e.kind() == std::io::ErrorKind::NotFound {
                     AppError::NetbirdMissing
