@@ -999,19 +999,17 @@ pub async fn quit_app(app: AppHandle) -> AppResult<()> {
 
 static MISSING_NOTIFIED: AtomicBool = AtomicBool::new(false);
 static LAST_STATE_ERROR: AtomicBool = AtomicBool::new(false);
-/// Guard that prevents overlapping poll cycles. If the previous status call
-/// is still in-flight when the next 30s tick fires, we skip instead of
-/// stacking processes. Critical for all-day (9+ hour) stability.
 static POLL_IN_FLIGHT: AtomicBool = AtomicBool::new(false);
+
+/// Tracks the previous connection state so we only fire notifications on
+/// ACTUAL state transitions — not on every 30s poll tick.
+use std::sync::Mutex as StdMutex;
+static LAST_KNOWN_STATE: StdMutex<Option<String>> = StdMutex::new(None);
 
 pub fn start_status_polling(app: AppHandle) {
     tauri::async_runtime::spawn(async move {
-        // Initial small delay so the UI mounts before first push
         sleep(Duration::from_millis(500)).await;
         loop {
-            // Skip this cycle if the previous one is still running (e.g.
-            // netbird CLI hanging). The 10s timeout in netbird.rs::run()
-            // guarantees the flag is eventually released.
             if POLL_IN_FLIGHT
                 .compare_exchange(false, true, Ordering::SeqCst, Ordering::Relaxed)
                 .is_ok()
@@ -1035,6 +1033,27 @@ pub fn start_status_polling(app: AppHandle) {
                         }
                     };
 
+                    // Fire a Windows Toast notification on state TRANSITION only.
+                    // This gives the user an unobtrusive "VPN verbunden" / "VPN
+                    // getrennt" notification like OpenVPN does — but only when the
+                    // state actually changes, not on every poll cycle.
+                    let new_state = format!("{:?}", payload.state);
+                    let mut last = LAST_KNOWN_STATE.lock().unwrap_or_else(|e| e.into_inner());
+                    let changed = last.as_ref() != Some(&new_state);
+                    if changed {
+                        let prev = last.clone();
+                        *last = Some(new_state.clone());
+                        drop(last); // release lock before async work
+
+                        if prev.is_some() {
+                            // Only notify after the FIRST poll (skip the initial transition
+                            // from None → whatever, which is just app startup).
+                            send_status_notification(&app, &payload);
+                        }
+                    } else {
+                        drop(last);
+                    }
+
                     update_tray_tooltip(&app, &payload);
                     let _ = app.emit("netbird-status-changed", &payload);
                 }
@@ -1043,6 +1062,39 @@ pub fn start_status_polling(app: AppHandle) {
             sleep(Duration::from_secs(30)).await;
         }
     });
+}
+
+/// Send a native OS toast notification for VPN state changes. Non-fatal —
+/// if notifications are disabled or unavailable, we just log and move on.
+fn send_status_notification(app: &AppHandle, status: &StatusDto) {
+    let (title, body) = match status.state {
+        ConnectionState::Connected => (
+            "NKK Secure Access",
+            if let Some(ip) = &status.local_ip {
+                format!("VPN verbunden — {}", ip)
+            } else {
+                "VPN verbunden mit dem NKK Netz.".to_string()
+            },
+        ),
+        ConnectionState::Disconnected => (
+            "NKK Secure Access",
+            "VPN Tunnel getrennt.".to_string(),
+        ),
+        ConnectionState::Error => (
+            "NKK Secure Access",
+            "VPN Verbindung gestört — Diagnose prüfen.".to_string(),
+        ),
+        ConnectionState::Connecting => return, // no notification for transient state
+    };
+
+    if let Err(e) = tauri_plugin_notification::NotificationExt::notification(app)
+        .builder()
+        .title(title)
+        .body(&body)
+        .show()
+    {
+        tracing::debug!("Toast Notification fehlgeschlagen: {}", e);
+    }
 }
 
 fn update_tray_tooltip(app: &AppHandle, status: &StatusDto) {
