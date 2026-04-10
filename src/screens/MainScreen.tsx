@@ -139,10 +139,17 @@ export function MainScreen({
               key={item.target}
               item={item}
               primary={i === 0}
-              disabled={!isConnected}
+              disabled={!isConnected && !demoMode}
               onClick={() => onRequestLaunch(item)}
             />
           ))}
+          {!isConnected && !demoMode && launches.length > 0 && (
+            <div className="text-[11px] text-center mt-0.5 italic text-[color:var(--brand-fg)]/70">
+              {status && !status.cli_available
+                ? "Kein VPN Client installiert — bitte Administrator kontaktieren."
+                : "Erst VPN verbinden um Server zu öffnen."}
+            </div>
+          )}
         </div>
       </main>
 

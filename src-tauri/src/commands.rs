@@ -501,9 +501,22 @@ pub async fn nb_status(state: State<'_, AppState>) -> AppResult<StatusDto> {
     }
 }
 
+/// Smart enrollment check — returns true if EITHER:
+/// 1. We have a setup key in our keyring (user enrolled via the app), OR
+/// 2. NetBird is already connected (enrolled via the NSIS installer /SETUPKEY=)
+/// This prevents showing the enrollment screen to users who were already
+/// provisioned by the IT admin's silent install.
 #[tauri::command]
 pub async fn nb_is_enrolled(state: State<'_, AppState>) -> AppResult<bool> {
-    Ok(cached_setup_key(&state).await?.is_some())
+    // Fast path: check our own keyring cache first (no subprocess)
+    if cached_setup_key(&state).await?.is_some() {
+        return Ok(true);
+    }
+    // Slow path: ask netbird if it's already enrolled via management
+    match timeout(Duration::from_secs(3), state.netbird.status()).await {
+        Ok(Ok(s)) if s.management_connected => Ok(true),
+        _ => Ok(false),
+    }
 }
 
 #[tauri::command]
