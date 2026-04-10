@@ -980,36 +980,47 @@ pub async fn quit_app(app: AppHandle) -> AppResult<()> {
 
 static MISSING_NOTIFIED: AtomicBool = AtomicBool::new(false);
 static LAST_STATE_ERROR: AtomicBool = AtomicBool::new(false);
+/// Guard that prevents overlapping poll cycles. If the previous status call
+/// is still in-flight when the next 30s tick fires, we skip instead of
+/// stacking processes. Critical for all-day (9+ hour) stability.
+static POLL_IN_FLIGHT: AtomicBool = AtomicBool::new(false);
 
 pub fn start_status_polling(app: AppHandle) {
     tauri::async_runtime::spawn(async move {
         // Initial small delay so the UI mounts before first push
         sleep(Duration::from_millis(500)).await;
         loop {
-            if let Some(state) = app.try_state::<AppState>() {
-                let payload = match state.netbird.status().await {
-                    Ok(s) => {
-                        MISSING_NOTIFIED.store(false, Ordering::Relaxed);
-                        LAST_STATE_ERROR.store(false, Ordering::Relaxed);
-                        s
-                    }
-                    Err(AppError::NetbirdMissing) => {
-                        MISSING_NOTIFIED.store(true, Ordering::Relaxed);
-                        StatusDto::disconnected(false)
-                    }
-                    Err(e) => {
-                        if !LAST_STATE_ERROR.swap(true, Ordering::Relaxed) {
-                            let _ = app.emit("netbird-error", e.to_string());
+            // Skip this cycle if the previous one is still running (e.g.
+            // netbird CLI hanging). The 10s timeout in netbird.rs::run()
+            // guarantees the flag is eventually released.
+            if POLL_IN_FLIGHT
+                .compare_exchange(false, true, Ordering::SeqCst, Ordering::Relaxed)
+                .is_ok()
+            {
+                if let Some(state) = app.try_state::<AppState>() {
+                    let payload = match state.netbird.status().await {
+                        Ok(s) => {
+                            MISSING_NOTIFIED.store(false, Ordering::Relaxed);
+                            LAST_STATE_ERROR.store(false, Ordering::Relaxed);
+                            s
                         }
-                        StatusDto::error()
-                    }
-                };
+                        Err(AppError::NetbirdMissing) => {
+                            MISSING_NOTIFIED.store(true, Ordering::Relaxed);
+                            StatusDto::disconnected(false)
+                        }
+                        Err(e) => {
+                            if !LAST_STATE_ERROR.swap(true, Ordering::Relaxed) {
+                                let _ = app.emit("netbird-error", e.to_string());
+                            }
+                            StatusDto::error()
+                        }
+                    };
 
-                update_tray_tooltip(&app, &payload);
-                let _ = app.emit("netbird-status-changed", &payload);
+                    update_tray_tooltip(&app, &payload);
+                    let _ = app.emit("netbird-status-changed", &payload);
+                }
+                POLL_IN_FLIGHT.store(false, Ordering::Relaxed);
             }
-            // Poll only every 30s so we don't spam the log buffer / netbird CLI.
-            // The diagnose panel triggers a fresh status call on demand.
             sleep(Duration::from_secs(30)).await;
         }
     });

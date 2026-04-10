@@ -5,6 +5,7 @@ use std::collections::VecDeque;
 use std::process::Stdio;
 use std::sync::Arc;
 use tokio::process::Command;
+use tokio::time::{timeout, Duration};
 
 const LOG_BUFFER_SIZE: usize = 500;
 
@@ -131,18 +132,28 @@ impl NetbirdClient {
         cmd.args(args)
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
-        // Prevent visible CMD window popup on Windows — netbird CLI is
-        // a console app and would flash a black box on each call otherwise.
         #[cfg(target_os = "windows")]
         cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
-        let output = cmd.output().await
-            .map_err(|e| {
-                if e.kind() == std::io::ErrorKind::NotFound {
-                    AppError::NetbirdMissing
+
+        // Hard 10 second timeout on every CLI call. If netbird hangs (daemon
+        // dead, network stall) we don't want zombie processes piling up over
+        // a 9-hour work day. The child process is killed on timeout.
+        let output = match timeout(Duration::from_secs(10), cmd.output()).await {
+            Ok(Ok(out)) => out,
+            Ok(Err(e)) => {
+                return if e.kind() == std::io::ErrorKind::NotFound {
+                    Err(AppError::NetbirdMissing)
                 } else {
-                    AppError::NetbirdCli(e.to_string())
-                }
-            })?;
+                    Err(AppError::NetbirdCli(e.to_string()))
+                };
+            }
+            Err(_elapsed) => {
+                self.log("TIMEOUT: netbird CLI hat nicht innerhalb 10s geantwortet");
+                return Err(AppError::NetbirdCli(
+                    "Netbird CLI Timeout (10s) — Daemon reagiert nicht.".into(),
+                ));
+            }
+        };
 
         let stdout = String::from_utf8_lossy(&output.stdout).to_string();
         let stderr = String::from_utf8_lossy(&output.stderr).to_string();
