@@ -729,21 +729,6 @@ pub async fn get_debug_info(
     })
 }
 
-/// Wait until netbird reports `Connected` state, polling every 750ms.
-/// Returns false on timeout or unrecoverable error.
-async fn wait_for_vpn_connected(client: &NetbirdClient, max: Duration) -> bool {
-    let started = tokio::time::Instant::now();
-    while started.elapsed() < max {
-        match client.status().await {
-            Ok(s) if matches!(s.state, ConnectionState::Connected) => return true,
-            Ok(_) => {}
-            Err(_) => {}
-        }
-        sleep(Duration::from_millis(750)).await;
-    }
-    false
-}
-
 /// Allow only host-like targets: letters, digits, dots, dashes, optional port.
 /// Blocks shell metacharacters even though we pass args separately.
 fn validate_host_target(target: &str) -> AppResult<String> {
