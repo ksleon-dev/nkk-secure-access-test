@@ -7,7 +7,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { CheckCircle2, AlertTriangle, X } from "lucide-react";
+import { CheckCircle2, AlertTriangle } from "lucide-react";
 import clsx from "clsx";
 
 type ToastKind = "success" | "error" | "info";
@@ -58,12 +58,12 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   );
 }
 
-function Toast({ item, onClose }: { item: ToastItem; onClose: () => void }) {
+function Toast({ item }: { item: ToastItem; onClose: () => void }) {
   const Icon = item.kind === "success" ? CheckCircle2 : AlertTriangle;
   return (
     <div
       className={clsx(
-        "pointer-events-auto flex items-center gap-2 rounded-xl px-3.5 py-2.5 text-[12px] font-medium",
+        "pointer-events-none flex items-center gap-2 rounded-xl px-4 py-2.5 text-[12px] font-medium",
         "shadow-[0_4px_20px_-4px_rgba(0,0,0,0.25)] backdrop-blur-md",
         "animate-[toast-in_300ms_cubic-bezier(0.2,0.8,0.2,1)_both]",
         item.kind === "success" && "bg-emerald-600 text-white",
@@ -72,14 +72,7 @@ function Toast({ item, onClose }: { item: ToastItem; onClose: () => void }) {
       )}
     >
       <Icon size={15} className="shrink-0 opacity-90" />
-      <span className="flex-1 leading-snug">{item.message}</span>
-      <button
-        onClick={onClose}
-        className="opacity-70 hover:opacity-100 transition ml-1"
-        aria-label="Schließen"
-      >
-        <X size={13} />
-      </button>
+      <span className="leading-snug">{item.message}</span>
     </div>
   );
 }
