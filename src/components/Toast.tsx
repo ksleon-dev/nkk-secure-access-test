@@ -49,7 +49,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   return (
     <ToastContext.Provider value={api}>
       {children}
-      <div className="fixed bottom-3 left-3 right-3 flex flex-col gap-2 pointer-events-none z-50">
+      <div className="fixed top-2 left-3 right-3 flex flex-col gap-1.5 pointer-events-none z-50">
         {toasts.map((t) => (
           <Toast key={t.id} item={t} onClose={() => setToasts((prev) => prev.filter((x) => x.id !== t.id))} />
         ))}
@@ -63,29 +63,22 @@ function Toast({ item, onClose }: { item: ToastItem; onClose: () => void }) {
   return (
     <div
       className={clsx(
-        "pointer-events-auto flex items-start gap-2 rounded-lg px-3 py-2 text-sm shadow-lg backdrop-blur",
-        "border surface",
-        item.kind === "success" && "border-green-500/40",
-        item.kind === "error" && "border-red-500/50",
-        item.kind === "info" && "border-blue-500/40"
+        "pointer-events-auto flex items-center gap-2 rounded-xl px-3.5 py-2.5 text-[12px] font-medium",
+        "shadow-[0_4px_20px_-4px_rgba(0,0,0,0.25)] backdrop-blur-md",
+        "animate-[toast-in_300ms_cubic-bezier(0.2,0.8,0.2,1)_both]",
+        item.kind === "success" && "bg-emerald-600 text-white",
+        item.kind === "error" && "bg-red-600 text-white",
+        item.kind === "info" && "bg-[color:var(--brand-fg)] text-[color:var(--brand-bg)]"
       )}
     >
-      <Icon
-        size={16}
-        className={clsx(
-          "mt-0.5 shrink-0",
-          item.kind === "success" && "text-green-500",
-          item.kind === "error" && "text-red-500",
-          item.kind === "info" && "text-blue-500"
-        )}
-      />
-      <span className="flex-1 break-words leading-snug">{item.message}</span>
+      <Icon size={15} className="shrink-0 opacity-90" />
+      <span className="flex-1 leading-snug">{item.message}</span>
       <button
         onClick={onClose}
-        className="opacity-60 hover:opacity-100 transition"
+        className="opacity-70 hover:opacity-100 transition ml-1"
         aria-label="Schließen"
       >
-        <X size={14} />
+        <X size={13} />
       </button>
     </div>
   );
