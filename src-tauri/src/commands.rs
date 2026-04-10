@@ -774,40 +774,57 @@ pub async fn open_rdp(
 ) -> AppResult<()> {
     let target = validate_host_target(&target)?;
 
-    // Smart launcher: if netbird CLI exists, ensure tunnel is up before launching.
-    // If netbird CLI is missing, assume the user is on the corporate network another
-    // way (e.g. site-to-site VPN, OpenVPN) and just launch directly.
-    let has_netbird = state.netbird.status().await;
-    if let Ok(s) = &has_netbird {
-        if !matches!(s.state, ConnectionState::Connected) {
-            tracing::info!("RDP launch — VPN not connected, attempting auto-connect");
-            let _ = app.emit("netbird-status-changed", s);
-            if let Ok(b) = ensure_branding(&app, &state).await {
-                let key = load_setup_key()?;
-                let _ = state
-                    .netbird
-                    .up(&b.netbird.management_url, key.as_deref())
-                    .await;
-                let connected = wait_for_vpn_connected(&state.netbird, Duration::from_secs(15)).await;
-                if !connected {
-                    tracing::warn!("VPN auto-connect timed out, attempting RDP launch anyway");
-                }
-                if let Ok(updated) = state.netbird.status().await {
-                    let _ = app.emit("netbird-status-changed", &updated);
-                }
+    // NON-BLOCKING VPN check — launch RDP immediately, reconnect in background.
+    // The old approach waited 10-25 seconds for VPN to connect before launching
+    // mstsc, which felt sluggish. Now we launch RDP first and let VPN catch up.
+    let nb_clone = state.netbird.clone();
+    let branding_result = ensure_branding(&app, &state).await.ok();
+    let key = cached_setup_key(&state).await.ok().flatten();
+
+    tauri::async_runtime::spawn(async move {
+        // Quick 2s status check — if VPN is down, fire-and-forget a reconnect
+        let needs_reconnect = match timeout(Duration::from_secs(2), nb_clone.status()).await {
+            Ok(Ok(s)) => !matches!(s.state, ConnectionState::Connected),
+            _ => true,
+        };
+        if needs_reconnect {
+            if let Some(b) = branding_result {
+                tracing::info!("RDP: VPN nicht verbunden, versuche Background-Reconnect");
+                let _ = nb_clone.up(&b.netbird.management_url, key.as_deref()).await;
             }
+        }
+    });
+
+    // Pre-stage credentials from stored profile (if any) via cmdkey on Windows.
+    // This must happen BEFORE mstsc launch so it picks them up.
+    #[cfg(target_os = "windows")]
+    {
+        let profiles = cached_profiles(&state).await.unwrap_or_default();
+        if let Some(p) = profiles.first() {
+            use std::os::windows::process::CommandExt;
+            let user = match &p.domain {
+                Some(d) if !d.is_empty() => format!("{}\\{}", d, p.username),
+                _ => p.username.clone(),
+            };
+            tracing::info!("RDP: Injiziere Credentials für {} via cmdkey", user);
+            let _ = std::process::Command::new("cmdkey")
+                .args([
+                    &format!("/generic:TERMSRV/{}", target),
+                    &format!("/user:{}", user),
+                    &format!("/pass:{}", p.password),
+                ])
+                .creation_flags(0x08000000) // CREATE_NO_WINDOW
+                .output();
         }
     }
 
-    // Credentials are intentionally NOT injected — the remote desktop client
-    // should prompt for login every time (no password reuse across sessions).
-
+    // Launch RDP IMMEDIATELY — no waiting for VPN
     #[cfg(target_os = "windows")]
     {
         use std::os::windows::process::CommandExt;
         std::process::Command::new("mstsc.exe")
             .arg(format!("/v:{}", target))
-            .creation_flags(0x08000000) // CREATE_NO_WINDOW — prevents CMD flash, mstsc GUI still shows
+            .creation_flags(0x08000000)
             .spawn()
             .map_err(|e| AppError::Internal(format!("mstsc start: {}", e)))?;
         return Ok(());
@@ -815,9 +832,26 @@ pub async fn open_rdp(
 
     #[cfg(target_os = "macos")]
     {
-        let rdp = format!(
-            "full address:s:{target}\nauthentication level:i:2\nscreen mode id:i:2\nsmart sizing:i:1\naudiomode:i:0\nredirectclipboard:i:1\nuse multimon:i:0\nprompt for credentials:i:1\n"
+        // Pre-fill username in .rdp if profile exists
+        let profiles = cached_profiles(&state).await.unwrap_or_default();
+        let mut rdp = format!(
+            "full address:s:{target}\nauthentication level:i:2\nscreen mode id:i:2\nsmart sizing:i:1\naudiomode:i:0\nredirectclipboard:i:1\nuse multimon:i:0\n"
         );
+        if let Some(p) = profiles.first() {
+            let user = match &p.domain {
+                Some(d) if !d.is_empty() => format!("{}\\{}", d, p.username),
+                _ => p.username.clone(),
+            };
+            rdp.push_str(&format!("username:s:{user}\n"));
+            if let Some(d) = &p.domain {
+                if !d.is_empty() {
+                    rdp.push_str(&format!("domain:s:{d}\n"));
+                }
+            }
+            rdp.push_str("prompt for credentials:i:0\n");
+        } else {
+            rdp.push_str("prompt for credentials:i:1\n");
+        }
         let safe_name = target.replace([':', '/', '\\'], "_");
         let path = std::env::temp_dir().join(format!("nkk-{}.rdp", safe_name));
         std::fs::write(&path, rdp)
