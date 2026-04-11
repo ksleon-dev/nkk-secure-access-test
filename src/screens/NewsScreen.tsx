@@ -1,4 +1,4 @@
-import { ArrowLeft, Heart, Megaphone, Sparkles, Wrench } from "lucide-react";
+import { ArrowLeft, Heart, Megaphone, Sparkles } from "lucide-react";
 import { de } from "../i18n/de";
 import type { BrandingDto } from "../types/branding";
 
@@ -84,7 +84,6 @@ export function NewsScreen({ branding, onBack }: Props) {
             Neuigkeiten von KronSolutions
           </p>
         </div>
-        <Wrench size={15} className="text-[color:var(--brand-fg)]/30" />
       </header>
 
       <div className="flex-1 overflow-y-auto px-4 pb-4">
