@@ -153,26 +153,32 @@ export function MainScreen({
       {/* Centered hero — content sits directly on the cream background */}
       <main className="relative z-10 flex-1 flex flex-col items-center justify-center px-6 gap-3 py-2 text-center">
         <div className="fade-in-1 flex flex-col items-center">
-          <div className="relative flex items-center justify-center" style={{ width: 104, height: 110 }}>
-            {/* Particles float upward while connecting */}
+          <div className="relative flex items-center justify-center" style={{ width: 120, height: 120 }}>
+            {/* Particles burst outward from logo in all directions */}
             {isBusy && (
               <>
                 {[
-                  { px: "-18px", pxEnd: "-24px", delay: "0s",    size: 4 },
-                  { px: "6px",   pxEnd: "14px",  delay: "0.2s",  size: 3 },
-                  { px: "-8px",  pxEnd: "-4px",  delay: "0.5s",  size: 5 },
-                  { px: "16px",  pxEnd: "22px",  delay: "0.7s",  size: 3 },
-                  { px: "-22px", pxEnd: "-16px", delay: "1.0s",  size: 4 },
-                  { px: "12px",  pxEnd: "8px",   delay: "0.3s",  size: 3 },
-                  { px: "0px",   pxEnd: "-10px", delay: "0.8s",  size: 5 },
+                  { angle: "0deg",   dist: "55px", speed: "1.3s", delay: "0s",   size: 4 },
+                  { angle: "45deg",  dist: "50px", speed: "1.5s", delay: "0.2s", size: 3 },
+                  { angle: "90deg",  dist: "52px", speed: "1.2s", delay: "0.5s", size: 5 },
+                  { angle: "135deg", dist: "48px", speed: "1.6s", delay: "0.3s", size: 3 },
+                  { angle: "180deg", dist: "54px", speed: "1.4s", delay: "0.7s", size: 4 },
+                  { angle: "225deg", dist: "46px", speed: "1.3s", delay: "0.1s", size: 3 },
+                  { angle: "270deg", dist: "50px", speed: "1.5s", delay: "0.6s", size: 5 },
+                  { angle: "315deg", dist: "52px", speed: "1.2s", delay: "0.4s", size: 4 },
+                  { angle: "30deg",  dist: "58px", speed: "1.7s", delay: "0.8s", size: 3 },
+                  { angle: "160deg", dist: "45px", speed: "1.4s", delay: "0.9s", size: 4 },
+                  { angle: "250deg", dist: "56px", speed: "1.6s", delay: "0.15s",size: 3 },
+                  { angle: "340deg", dist: "50px", speed: "1.3s", delay: "0.55s",size: 5 },
                 ].map((p, i) => (
                   <div
                     key={i}
                     className="logo-particle"
                     style={{
-                      "--px": p.px,
-                      "--px-end": p.pxEnd,
-                      animationDelay: p.delay,
+                      "--angle": p.angle,
+                      "--dist": p.dist,
+                      "--speed": p.speed,
+                      "--delay": p.delay,
                       width: p.size,
                       height: p.size,
                     } as React.CSSProperties}
@@ -180,23 +186,18 @@ export function MainScreen({
                 ))}
               </>
             )}
-            {/* Green particles burst on connect */}
+            {/* Green particles explode on connect */}
             {transition === "connected" && !isBusy && (
               <>
-                {[
-                  { px: "-20px", pxEnd: "-30px", delay: "0s" },
-                  { px: "0px",   pxEnd: "5px",   delay: "0.1s" },
-                  { px: "18px",  pxEnd: "28px",  delay: "0.05s" },
-                  { px: "-10px", pxEnd: "-18px", delay: "0.15s" },
-                  { px: "10px",  pxEnd: "16px",  delay: "0.08s" },
-                ].map((p, i) => (
+                {Array.from({ length: 10 }, (_, i) => (
                   <div
                     key={i}
                     className="logo-particle logo-particle-green"
                     style={{
-                      "--px": p.px,
-                      "--px-end": p.pxEnd,
-                      animationDelay: p.delay,
+                      "--angle": `${i * 36}deg`,
+                      "--dist": "60px",
+                      "--speed": "0.7s",
+                      "--delay": `${i * 0.03}s`,
                       width: 5,
                       height: 5,
                     } as React.CSSProperties}
