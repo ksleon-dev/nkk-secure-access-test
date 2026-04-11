@@ -1,5 +1,5 @@
 # ══════════════════════════════════════════════════════════════
-# NKK API Server — Deploy von NKK-MULTIVM auf nkk-secure
+# NKK API Server — Deploy von NKK-MULTIVM auf Serv-Secure
 # Ausfuehren: PowerShell als Admin auf dem Host via RDP
 # ══════════════════════════════════════════════════════════════
 
@@ -11,7 +11,7 @@ $RemoteDir = "/opt/kronsolutions/nkk-api"
 $LocalDir = "C:\Umbau\nkk-api"
 
 Write-Host ""
-Write-Host "═══ NKK API Server Deploy auf nkk-secure ($Server) ═══" -ForegroundColor Cyan
+Write-Host "═══ NKK API Server Deploy auf Serv-Secure ($Server) ═══" -ForegroundColor Cyan
 Write-Host ""
 
 # ── Pruefen ob Dateien lokal vorhanden ──
@@ -42,13 +42,13 @@ try {
     exit 1
 }
 
-# ── Verzeichnis auf nkk-secure anlegen ──
+# ── Verzeichnis auf Serv-Secure anlegen ──
 Write-Host "[2/4] Remote Verzeichnis anlegen..." -ForegroundColor Cyan
 ssh "$User@$Server" "mkdir -p $RemoteDir"
 Write-Host "  [OK] $RemoteDir erstellt" -ForegroundColor Green
 
 # ── Dateien hochkopieren ──
-Write-Host "[3/4] Dateien auf nkk-secure kopieren..." -ForegroundColor Cyan
+Write-Host "[3/4] Dateien auf Serv-Secure kopieren..." -ForegroundColor Cyan
 
 $files = @("server.py", "Dockerfile", "docker-compose.yml", "deploy-debian.sh")
 foreach ($f in $files) {
@@ -61,8 +61,8 @@ foreach ($f in $files) {
     }
 }
 
-# ── Deploy Script auf nkk-secure ausfuehren ──
-Write-Host "[4/4] Deployment auf nkk-secure starten..." -ForegroundColor Cyan
+# ── Deploy Script auf Serv-Secure ausfuehren ──
+Write-Host "[4/4] Deployment auf Serv-Secure starten..." -ForegroundColor Cyan
 Write-Host ""
 ssh -t "$User@$Server" "chmod +x $RemoteDir/deploy-debian.sh && bash $RemoteDir/deploy-debian.sh"
 
