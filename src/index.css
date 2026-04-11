@@ -245,54 +245,44 @@ button:disabled {
   animation: vpn-glow 2.5s ease-in-out infinite;
 }
 
-/* Logo signal rings — expand outward like a radar pulse */
-@keyframes logo-ring-out {
-  0% { transform: scale(0.8); opacity: 0.6; }
-  100% { transform: scale(1.8); opacity: 0; }
+/* Logo particles — small dots float upward like data being transmitted */
+@keyframes particle-up {
+  0% { transform: translateY(0) translateX(var(--px)) scale(1); opacity: 0.8; }
+  100% { transform: translateY(-70px) translateX(var(--px-end)) scale(0); opacity: 0; }
 }
-@keyframes logo-orbit {
-  0% { transform: rotate(0deg) translateX(58px) rotate(0deg); }
-  100% { transform: rotate(360deg) translateX(58px) rotate(-360deg); }
+@keyframes logo-float {
+  0%, 100% { transform: translateY(0); }
+  50% { transform: translateY(-4px); }
 }
 @keyframes logo-connected-pop {
   0% { transform: scale(1); }
-  40% { transform: scale(1.08); }
+  35% { transform: scale(1.1); }
   100% { transform: scale(1); }
 }
 
-.logo-ring {
+.logo-particle {
   position: absolute;
-  inset: -8px;
-  border-radius: 50%;
-  border: 2px solid var(--brand-primary);
-  pointer-events: none;
-}
-.logo-ring-1 { animation: logo-ring-out 2s ease-out infinite; }
-.logo-ring-2 { animation: logo-ring-out 2s ease-out 0.6s infinite; }
-.logo-ring-3 { animation: logo-ring-out 2s ease-out 1.2s infinite; }
-
-.logo-orbit-dot {
-  position: absolute;
-  width: 5px;
-  height: 5px;
+  width: 4px;
+  height: 4px;
   border-radius: 50%;
   background: var(--brand-primary);
-  top: 50%;
+  bottom: 50%;
   left: 50%;
-  margin: -2.5px;
   pointer-events: none;
+  animation: particle-up 1.4s ease-out infinite;
 }
-.logo-orbit-1 { animation: logo-orbit 2.5s linear infinite; }
-.logo-orbit-2 { animation: logo-orbit 2.5s linear 0.8s infinite; opacity: 0.6; }
-.logo-orbit-3 { animation: logo-orbit 2.5s linear 1.6s infinite; opacity: 0.3; }
 
-/* Connected: green rings settle + pop */
-.logo-ring-connected {
-  border-color: #10b981;
-  animation: logo-ring-out 1.5s ease-out forwards;
+.logo-float {
+  animation: logo-float 2s ease-in-out infinite;
 }
 .logo-connected-pop {
   animation: logo-connected-pop 500ms ease-out;
+}
+
+/* Connected: green particles burst then stop */
+.logo-particle-green {
+  background: #10b981;
+  animation: particle-up 0.8s ease-out forwards;
 }
 
 @keyframes toast-in {

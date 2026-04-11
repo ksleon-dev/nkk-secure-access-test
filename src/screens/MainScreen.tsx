@@ -153,23 +153,55 @@ export function MainScreen({
       {/* Centered hero — content sits directly on the cream background */}
       <main className="relative z-10 flex-1 flex flex-col items-center justify-center px-6 gap-3 py-2 text-center">
         <div className="fade-in-1 flex flex-col items-center">
-          <div className="relative flex items-center justify-center">
-            {/* Signal rings — only visible while connecting */}
+          <div className="relative flex items-center justify-center" style={{ width: 104, height: 110 }}>
+            {/* Particles float upward while connecting */}
             {isBusy && (
               <>
-                <div className="logo-ring logo-ring-1" />
-                <div className="logo-ring logo-ring-2" />
-                <div className="logo-ring logo-ring-3" />
-                <div className="logo-orbit-dot logo-orbit-1" />
-                <div className="logo-orbit-dot logo-orbit-2" />
-                <div className="logo-orbit-dot logo-orbit-3" />
+                {[
+                  { px: "-18px", pxEnd: "-24px", delay: "0s",    size: 4 },
+                  { px: "6px",   pxEnd: "14px",  delay: "0.2s",  size: 3 },
+                  { px: "-8px",  pxEnd: "-4px",  delay: "0.5s",  size: 5 },
+                  { px: "16px",  pxEnd: "22px",  delay: "0.7s",  size: 3 },
+                  { px: "-22px", pxEnd: "-16px", delay: "1.0s",  size: 4 },
+                  { px: "12px",  pxEnd: "8px",   delay: "0.3s",  size: 3 },
+                  { px: "0px",   pxEnd: "-10px", delay: "0.8s",  size: 5 },
+                ].map((p, i) => (
+                  <div
+                    key={i}
+                    className="logo-particle"
+                    style={{
+                      "--px": p.px,
+                      "--px-end": p.pxEnd,
+                      animationDelay: p.delay,
+                      width: p.size,
+                      height: p.size,
+                    } as React.CSSProperties}
+                  />
+                ))}
               </>
             )}
-            {/* Green rings on connect success */}
+            {/* Green particles burst on connect */}
             {transition === "connected" && !isBusy && (
               <>
-                <div className="logo-ring logo-ring-connected" style={{ animationDelay: "0ms" }} />
-                <div className="logo-ring logo-ring-connected" style={{ animationDelay: "200ms" }} />
+                {[
+                  { px: "-20px", pxEnd: "-30px", delay: "0s" },
+                  { px: "0px",   pxEnd: "5px",   delay: "0.1s" },
+                  { px: "18px",  pxEnd: "28px",  delay: "0.05s" },
+                  { px: "-10px", pxEnd: "-18px", delay: "0.15s" },
+                  { px: "10px",  pxEnd: "16px",  delay: "0.08s" },
+                ].map((p, i) => (
+                  <div
+                    key={i}
+                    className="logo-particle logo-particle-green"
+                    style={{
+                      "--px": p.px,
+                      "--px-end": p.pxEnd,
+                      animationDelay: p.delay,
+                      width: 5,
+                      height: 5,
+                    } as React.CSSProperties}
+                  />
+                ))}
               </>
             )}
             <Logo
@@ -177,6 +209,7 @@ export function MainScreen({
               size={104}
               className={clsx(
                 "relative z-10 transition-transform duration-300",
+                isBusy && "logo-float",
                 transition === "connected" && !isBusy && "logo-connected-pop"
               )}
             />
