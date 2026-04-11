@@ -6,7 +6,7 @@ import {
   Loader2,
   Settings as SettingsIcon,
 } from "lucide-react";
-import { useRef, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Avatar } from "../components/Avatar";
 import { Decor } from "../components/Decor";
 import { Logo } from "../components/Logo";
@@ -46,8 +46,21 @@ export function MainScreen({
 
   const greetingName = displayName(profile);
   const greeting = timeOfDayGreeting();
-  const accent = italicAccent(state, false);
+  const accent = italicAccent(state);
   void bioFootnote;
+
+  // Live clock — updates every minute
+  const [clock, setClock] = useState(() =>
+    new Date().toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" })
+  );
+  useEffect(() => {
+    const id = setInterval(() => {
+      setClock(
+        new Date().toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" })
+      );
+    }, 30_000);
+    return () => clearInterval(id);
+  }, []);
 
   const launches = [...branding.quickLaunch].sort(
     (a, b) => Number(!!b.default) - Number(!!a.default)
@@ -78,7 +91,10 @@ export function MainScreen({
     <div className="h-full flex flex-col relative">
       <Decor />
       {/* Top utility bar pinned to top */}
-      <header className="absolute top-2 right-2 z-20 flex items-center gap-1">
+      <header className="absolute top-2 left-3 right-2 z-20 flex items-center gap-1">
+        <span className="text-[13px] font-bold text-[color:var(--brand-fg)]/80 tabular-nums flex-1">
+          {clock}
+        </span>
         <Avatar
           profile={profile}
           size={28}
