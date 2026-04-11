@@ -442,7 +442,7 @@ function SpeedTestButton() {
             {running ? "Speedtest läuft …" : "Speedtest starten"}
           </div>
           <div className="text-[9px] text-[color:var(--brand-fg)]/50">
-            500 KB Download via Cloudflare CDN
+            10 MB Download via Cloudflare CDN
           </div>
         </div>
       </button>

@@ -821,14 +821,14 @@ pub async fn run_speed_test() -> AppResult<SpeedResult> {
     #[cfg(not(target_os = "windows"))]
     let null_dev = "/dev/null";
 
-    let url = "https://speed.cloudflare.com/__down?bytes=500000";
+    let url = "https://speed.cloudflare.com/__down?bytes=10000000";
 
     let mut cmd = TokioCommand::new("curl");
     cmd.args([
         "-s",
         "-o", null_dev,
         "-w", "%{speed_download}",
-        "--max-time", "8",
+        "--max-time", "15",
         url,
     ])
     .stdout(std::process::Stdio::piped())
@@ -837,7 +837,7 @@ pub async fn run_speed_test() -> AppResult<SpeedResult> {
     cmd.creation_flags(0x08000000);
 
     let start = tokio::time::Instant::now();
-    let output = match timeout(Duration::from_secs(10), cmd.output()).await {
+    let output = match timeout(Duration::from_secs(20), cmd.output()).await {
         Ok(Ok(o)) => o,
         Ok(Err(e)) => return Err(AppError::Internal(format!("curl nicht gefunden: {}", e))),
         Err(_) => return Err(AppError::Internal("Speedtest Timeout (10s)".into())),
@@ -849,8 +849,8 @@ pub async fn run_speed_test() -> AppResult<SpeedResult> {
     let mbps = (bytes_per_sec * 8.0 / 1_000_000.0 * 100.0).round() / 100.0;
 
     Ok(SpeedResult {
-        target: "Cloudflare CDN (500 KB)".to_string(),
-        bytes: 500_000,
+        target: "Cloudflare CDN (10 MB)".to_string(),
+        bytes: 10_000_000,
         duration_ms: elapsed,
         mbps,
     })
