@@ -158,35 +158,68 @@ export function MainScreen({
         </div>
       </main>
 
-      {/* Bottom bar: status + connect toggle */}
-      <div className="fade-in-5 relative z-10 px-4 py-2.5 border-t border-[color:var(--brand-border)] flex items-center gap-2 shrink-0 bg-[color:var(--brand-bg-soft)]">
-        <StatusDot state={state} demoMode={demoMode} />
-        <span className="flex-1 text-[11px] font-semibold truncate">
-          {statusLabel(state, demoMode)}
-        </span>
-        <button
-          onClick={toggle}
-          disabled={isBusy || (status ? !status.cli_available && !demoMode : false)}
-          className={clsx(
-            "rounded-full px-3.5 py-1 text-[10px] font-bold uppercase tracking-wider transition",
-            isConnected
-              ? "surface hover:border-red-500/50 text-red-600 hover:text-red-700"
-              : "btn-primary",
-            isBusy && "opacity-60 cursor-not-allowed"
-          )}
-        >
+      {/* VPN Status Bar — clearly distinct between connected / disconnected */}
+      <div
+        className={clsx(
+          "fade-in-5 relative z-10 px-4 shrink-0 transition-colors duration-300",
+          isConnected || demoMode
+            ? "bg-emerald-600 py-2"
+            : state === "Connecting"
+            ? "bg-amber-500 py-2"
+            : state === "Error"
+            ? "bg-red-600 py-2"
+            : "bg-[color:var(--brand-fg)] py-2.5"
+        )}
+      >
+        <div className="flex items-center gap-2">
+          {/* Status icon */}
           {isBusy ? (
-            <Loader2 size={11} className="animate-spin inline" />
-          ) : isConnected ? (
-            "Trennen"
+            <Loader2 size={14} className="animate-spin text-white shrink-0" />
           ) : (
-            "Verbinden"
+            <div
+              className={clsx(
+                "w-2.5 h-2.5 rounded-full shrink-0",
+                isConnected || demoMode
+                  ? "bg-white animate-pulse-soft"
+                  : "bg-white/50"
+              )}
+            />
           )}
-        </button>
+
+          {/* Status text */}
+          <span className="flex-1 text-[12px] font-bold text-white truncate">
+            {isConnected || demoMode
+              ? `Verbunden${status?.local_ip ? ` — ${status.local_ip}` : ""}`
+              : state === "Connecting"
+              ? "Verbinde …"
+              : state === "Error"
+              ? "Verbindung gestört"
+              : "VPN aus"}
+          </span>
+
+          {/* Toggle button */}
+          <button
+            onClick={toggle}
+            disabled={isBusy || (status ? !status.cli_available && !demoMode : false)}
+            className={clsx(
+              "rounded-full px-3.5 py-1 text-[10px] font-bold uppercase tracking-wider transition",
+              isConnected || demoMode
+                ? "bg-white/20 hover:bg-white/30 text-white border border-white/30"
+                : "bg-[color:var(--brand-primary)] hover:bg-[color:var(--brand-primary-hover)] text-white",
+              isBusy && "opacity-50 cursor-not-allowed"
+            )}
+          >
+            {isBusy
+              ? "…"
+              : isConnected || demoMode
+              ? "Trennen"
+              : "Verbinden"}
+          </button>
+        </div>
       </div>
 
       {/* Permanent KronSolutions footer */}
-      <div className="relative z-10 text-center text-[9px] py-1.5 shrink-0 font-bold uppercase tracking-[0.15em] text-[color:var(--brand-surface)]/85 bg-[color:var(--brand-primary)]/95">
+      <div className="relative z-10 text-center text-[9px] py-1 shrink-0 font-bold uppercase tracking-[0.15em] text-[color:var(--brand-surface)]/85 bg-[color:var(--brand-primary)]/95">
         {branding.vendor.footer}
       </div>
     </div>
