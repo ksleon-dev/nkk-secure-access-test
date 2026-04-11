@@ -12,7 +12,7 @@ import type { BrandingDto, QuickLaunchEntry } from "./types/branding";
 import type { CredentialProfileMeta } from "./types/credentials";
 import type { StatusDto } from "./types/netbird";
 
-type Screen = "enrollment" | "main" | "settings" | "news";
+type Screen = "enrollment" | "main" | "settings" | "news" | "diagnose";
 
 function applyTheme(b: BrandingDto) {
   const root = document.documentElement;
@@ -26,7 +26,7 @@ function AppInner() {
   const [branding, setBranding] = useState<BrandingDto | null>(null);
   const [screen, setScreen] = useState<Screen>("main");
   const [status, setStatus] = useState<StatusDto | null>(null);
-  const [diagnoseOpen, setDiagnoseOpen] = useState(false);
+  // diagnoseOpen state removed — diagnose is now a full screen
   const [bootstrapping, setBootstrapping] = useState(true);
   const [bootError, setBootError] = useState<string | null>(null);
   const [profiles, setProfiles] = useState<CredentialProfileMeta[]>([]);
@@ -176,7 +176,7 @@ function AppInner() {
           }
         });
         const u6 = await listen("tray-open-diagnose", () => {
-          setDiagnoseOpen(true);
+          setScreen("diagnose");
         });
         const u7 = await listen("tray-open-settings", () => {
           setScreen("settings");
@@ -235,7 +235,7 @@ function AppInner() {
               : openNewProfileModal
           }
           onOpenSettings={() => setScreen("settings")}
-          onOpenAbout={() => setDiagnoseOpen(true)}
+          onOpenAbout={() => setScreen("diagnose")}
           onOpenNews={() => setScreen("news")}
         />
       )}
@@ -256,11 +256,11 @@ function AppInner() {
           onResetEnrollment={() => setScreen("enrollment")}
         />
       )}
-      {diagnoseOpen && (
+      {screen === "diagnose" && (
         <DiagnosePanel
           branding={branding}
           profile={profiles[0] ?? null}
-          onClose={() => setDiagnoseOpen(false)}
+          onClose={() => setScreen("main")}
         />
       )}
       {credModalOpen && (

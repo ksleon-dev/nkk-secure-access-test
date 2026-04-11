@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import {
+  ArrowLeft,
   Check,
   ClipboardCopy,
   Loader2,
@@ -108,31 +109,36 @@ export function DiagnosePanel({ branding, profile, onClose }: Props) {
   }
 
   return (
-    <div className="absolute inset-0 z-40 bg-black/60 backdrop-blur-sm flex items-center justify-center p-3">
-      <div className="surface rounded-xl w-full max-w-sm shadow-2xl flex flex-col max-h-[95%]">
-        <header className="px-4 py-3 border-b border-[color:var(--brand-border)] flex items-center gap-2 shrink-0">
-          <Shield size={15} className="text-[color:var(--brand-primary)]" />
-          <h2 className="text-sm font-bold flex-1">Diagnose</h2>
-          <button
-            onClick={refresh}
-            className="btn-ghost p-1.5 rounded-md"
-            aria-label="Aktualisieren"
-            disabled={loading}
-            title="Aktualisieren"
-          >
-            <RefreshCw
-              size={13}
-              className={loading ? "animate-spin" : ""}
-            />
-          </button>
-          <button
-            onClick={onClose}
-            className="btn-ghost p-1.5 rounded-md"
-            aria-label="Schließen"
-          >
-            <X size={14} />
-          </button>
-        </header>
+    <div className="h-full flex flex-col">
+      <header className="px-4 pt-4 pb-2 flex items-center gap-2 shrink-0">
+        <button
+          onClick={onClose}
+          className="p-1.5 rounded-md text-black hover:bg-black/10 transition"
+          aria-label="Zurück"
+        >
+          <ArrowLeft size={18} strokeWidth={2.4} />
+        </button>
+        <Shield size={15} className="text-[color:var(--brand-primary)]" />
+        <div className="flex-1">
+          <h1 className="text-sm font-bold">Diagnose & Support</h1>
+          <p className="text-[10px] text-[color:var(--brand-fg)]/60">
+            Für KronSolutions Support
+          </p>
+        </div>
+        <button
+          onClick={refresh}
+          className="p-1.5 rounded-md text-black hover:bg-black/10 transition"
+          aria-label="Aktualisieren"
+          disabled={loading}
+          title="Aktualisieren"
+        >
+          <RefreshCw
+            size={14}
+            strokeWidth={2.4}
+            className={loading ? "animate-spin" : ""}
+          />
+        </button>
+      </header>
 
         <div className="flex-1 overflow-y-auto px-4 py-3">
           {loading && !info ? (
@@ -235,7 +241,7 @@ export function DiagnosePanel({ branding, profile, onClose }: Props) {
           )}
         </div>
 
-        <div className="px-4 py-3 border-t border-[color:var(--brand-border)] shrink-0">
+        <div className="px-4 py-3 shrink-0">
           <button
             onClick={copyDiagnose}
             disabled={!info}
@@ -254,14 +260,17 @@ export function DiagnosePanel({ branding, profile, onClose }: Props) {
                 toast.error("Konnte nicht kopieren.");
               }
             }}
-            className="block w-full text-center text-[9px] text-[color:var(--brand-fg)]/80 mt-1.5 hover:text-[color:var(--brand-primary)] transition cursor-pointer"
+            className="block w-full text-center text-[10px] text-[color:var(--brand-fg)]/70 mt-1.5 hover:text-[color:var(--brand-primary)] transition cursor-pointer font-semibold"
             title="Klicken zum Kopieren"
           >
             {branding.vendor.supportEmail}
           </button>
         </div>
+
+        <div className="text-center text-[9px] py-1 shrink-0 font-bold uppercase tracking-[0.15em] text-[color:var(--brand-surface)]/85 bg-[color:var(--brand-primary)]/95">
+          {branding.vendor.footer}
+        </div>
       </div>
-    </div>
   );
 }
 
