@@ -162,10 +162,7 @@ export function DiagnosePanel({ branding, profile, onClose }: Props) {
         </button>
         <Shield size={15} className="text-[color:var(--brand-primary)]" />
         <div className="flex-1">
-          <h1 className="text-sm font-bold">Diagnose & Support</h1>
-          <p className="text-[10px] text-[color:var(--brand-fg)]/60">
-            Für KronSolutions Support
-          </p>
+          <h1 className="text-sm font-bold">Diagnose</h1>
         </div>
         <button
           onClick={refresh}
