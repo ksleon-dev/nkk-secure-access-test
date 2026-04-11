@@ -136,7 +136,7 @@ export function SettingsScreen({
         <h1 className="text-sm font-bold flex-1">{de.settings.title}</h1>
       </header>
 
-      <div className="flex-1 overflow-y-auto px-4 pb-4">
+      <div className="flex-1 overflow-y-auto px-4 pb-4 animate-fade-up">
         {/* Credential profiles */}
         <Section
           title="Anmeldedaten"
