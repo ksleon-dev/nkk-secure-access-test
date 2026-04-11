@@ -191,7 +191,7 @@ export function DiagnosePanel({ branding, profile, onClose }: Props) {
               <span className="text-[11px] font-semibold text-[color:var(--brand-fg)]/50">Diagnose wird geladen …</span>
             </div>
           ) : info ? (
-            <div className="flex flex-col gap-3">
+            <div className="flex flex-col gap-3 animate-fade-up">
               {/* Diagnose Hinweis */}
               <div
                 className={`rounded-lg px-3 py-2 text-[11px] leading-snug font-semibold ${

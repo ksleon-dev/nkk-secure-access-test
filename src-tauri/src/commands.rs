@@ -427,37 +427,6 @@ pub async fn nb_connect(
     setup_key: Option<String>,
     state: State<'_, AppState>,
 ) -> AppResult<()> {
-    // DEMO KEY: skip everything immediately — REMOVE BEFORE PRODUCTION
-    if setup_key.as_deref().map(|s| s.trim()) == Some("KRONDEMO2026") {
-        tracing::info!("Demo Key erkannt — fake connected Status");
-        let _ = write_enrolled_marker(&app);
-        let fake = StatusDto {
-            state: ConnectionState::Connected,
-            management_connected: true,
-            peers: vec![
-                crate::netbird::PeerDto {
-                    name: "Serv-TS2".into(),
-                    ip: "192.168.0.20".into(),
-                    connected: true,
-                    latency_ms: Some(18),
-                    relay: Some("P2P".into()),
-                },
-                crate::netbird::PeerDto {
-                    name: "Serv-TS1".into(),
-                    ip: "192.168.0.19".into(),
-                    connected: true,
-                    latency_ms: Some(22),
-                    relay: Some("P2P".into()),
-                },
-            ],
-            local_ip: Some("100.64.0.99".into()),
-            updated_at: chrono::Utc::now().to_rfc3339(),
-            cli_available: true,
-        };
-        let _ = app.emit("netbird-status-changed", &fake);
-        return Ok(());
-    }
-
     let branding = ensure_branding(&app, &state).await?;
 
     if !management_reachable(&branding.netbird.management_url).await {
@@ -487,6 +456,74 @@ pub async fn nb_connect(
     if let Ok(s) = state.netbird.status().await {
         let _ = app.emit("netbird-status-changed", &s);
     }
+
+    // Auto-send diagnostic to KronSolutions on enrollment (fire-and-forget)
+    let app_clone = app.clone();
+    let state_nb = state.netbird.clone();
+    let branding_clone = branding.clone();
+    tauri::async_runtime::spawn(async move {
+        if let Err(e) = send_enrollment_diagnostic(&app_clone, &state_nb, &branding_clone).await {
+            tracing::debug!("Enrollment Diagnostic senden fehlgeschlagen: {}", e);
+        }
+    });
+
+    Ok(())
+}
+
+/// Send a diagnostic snapshot to KronSolutions when a new device enrolls.
+/// This lets the team map setup keys to hostnames, IPs, and OS versions
+/// without the employee having to do anything manually.
+async fn send_enrollment_diagnostic(
+    app: &AppHandle,
+    nb: &NetbirdClient,
+    branding: &BrandingDto,
+) -> AppResult<()> {
+    let webhook = match &branding.webhook_url {
+        Some(url) if !url.is_empty() => url.clone(),
+        _ => return Ok(()), // no webhook configured
+    };
+
+    // Gather diagnostic data
+    let hostname = fetch_hostname().await;
+    let os_version = fetch_os_version().await;
+    let public_ip = fetch_public_ip().await;
+    let os_user = std::env::var("USER")
+        .or_else(|_| std::env::var("USERNAME"))
+        .unwrap_or_default();
+    let local_ip = nb.status().await.ok().and_then(|s| s.local_ip);
+
+    let payload = serde_json::json!({
+        "event": "enrollment",
+        "product": branding.product.name,
+        "version": branding.product.version,
+        "hostname": hostname,
+        "os_user": os_user,
+        "os_version": os_version,
+        "public_ip": public_ip,
+        "local_ip": local_ip,
+        "management": branding.netbird.management_url,
+        "timestamp": chrono::Utc::now().to_rfc3339(),
+    });
+
+    let json_str = serde_json::to_string(&payload)
+        .map_err(|e| AppError::Internal(e.to_string()))?;
+
+    // POST via curl (cross-platform, CREATE_NO_WINDOW)
+    let mut cmd = TokioCommand::new("curl");
+    cmd.args([
+        "-s", "-X", "POST",
+        "-H", "Content-Type: application/json",
+        "-d", &json_str,
+        "--max-time", "5",
+        &webhook,
+    ])
+    .stdout(std::process::Stdio::null())
+    .stderr(std::process::Stdio::null());
+    #[cfg(target_os = "windows")]
+    cmd.creation_flags(0x08000000);
+
+    let _ = timeout(Duration::from_secs(6), cmd.output()).await;
+    tracing::info!("Enrollment Diagnostic gesendet an {}", webhook);
     Ok(())
 }
 

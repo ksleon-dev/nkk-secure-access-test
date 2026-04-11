@@ -1,4 +1,5 @@
-import { ArrowLeft, Heart, Megaphone, Newspaper, Sparkles } from "lucide-react";
+import { ArrowLeft, Heart, Loader2, Megaphone, Newspaper, Sparkles } from "lucide-react";
+import { useEffect, useState } from "react";
 import { de } from "../i18n/de";
 import type { BrandingDto } from "../types/branding";
 
@@ -16,9 +17,8 @@ interface NewsItem {
   version?: string;
 }
 
-// Hardcoded news items — in Phase 2 these could be fetched from a remote
-// JSON endpoint so KronSolutions can push messages without app updates.
-const NEWS: NewsItem[] = [
+// Fallback news — used when remote fetch fails or no URL configured.
+const FALLBACK_NEWS: NewsItem[] = [
   {
     id: "v020",
     date: "11. April 2026",
@@ -76,6 +76,21 @@ const typeConfig = {
 };
 
 export function NewsScreen({ branding, onBack }: Props) {
+  const [news, setNews] = useState<NewsItem[]>(FALLBACK_NEWS);
+  const [loading, setLoading] = useState(false);
+
+  useEffect(() => {
+    if (!branding.newsUrl) return;
+    setLoading(true);
+    fetch(branding.newsUrl)
+      .then((r) => r.json())
+      .then((data: NewsItem[]) => {
+        if (Array.isArray(data) && data.length > 0) setNews(data);
+      })
+      .catch(() => {}) // silent fallback to hardcoded
+      .finally(() => setLoading(false));
+  }, [branding.newsUrl]);
+
   return (
     <div className="h-full flex flex-col">
       <header className="px-4 pt-4 pb-2 flex items-center gap-2 shrink-0">
@@ -92,7 +107,13 @@ export function NewsScreen({ branding, onBack }: Props) {
 
       <div className="flex-1 overflow-y-auto px-4 pb-4">
         <div className="flex flex-col gap-3 mt-1">
-          {NEWS.map((item, i) => {
+          {loading && (
+            <div className="flex items-center justify-center py-6 gap-2">
+              <Loader2 size={16} className="animate-spin text-[color:var(--brand-primary)]" />
+              <span className="text-[11px] text-muted">Lade Neuigkeiten …</span>
+            </div>
+          )}
+          {news.map((item, i) => {
             const cfg = typeConfig[item.type];
             const Icon = cfg.icon;
             return (

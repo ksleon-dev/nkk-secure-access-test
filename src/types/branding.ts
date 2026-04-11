@@ -44,4 +44,6 @@ export interface BrandingDto {
   theme: ThemeInfo;
   netbird: NetbirdInfo;
   quickLaunch: QuickLaunchEntry[];
+  newsUrl?: string;
+  webhookUrl?: string;
 }

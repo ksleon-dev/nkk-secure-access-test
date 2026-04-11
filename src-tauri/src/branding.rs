@@ -67,6 +67,10 @@ pub struct BrandingDto {
     pub netbird: NetbirdInfo,
     #[serde(rename = "quickLaunch", default)]
     pub quick_launch: Vec<QuickLaunchEntry>,
+    #[serde(rename = "newsUrl", default)]
+    pub news_url: Option<String>,
+    #[serde(rename = "webhookUrl", default)]
+    pub webhook_url: Option<String>,
 }
 
 static BRANDING_CACHE: OnceLock<BrandingDto> = OnceLock::new();
