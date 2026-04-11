@@ -3,10 +3,13 @@ import {
   ArrowLeft,
   Check,
   ClipboardCopy,
+  Gauge,
   Loader2,
   RefreshCw,
+  RotateCcw,
   Shield,
   X,
+  Zap,
 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
 import { useToast } from "../components/Toast";
@@ -87,6 +90,15 @@ export function DiagnosePanel({ branding, profile, onClose }: Props) {
     );
     lines.push(`Peers: ${info.peers_connected} / ${info.peers_total}`);
     lines.push(`Management: ${branding.netbird.managementUrl}`);
+    if (info.speed) {
+      lines.push("");
+      lines.push("── Speedtest ─────────────────────────");
+      lines.push(`Ziel: ${info.speed.target}`);
+      lines.push(`Latenz: ${info.speed.duration_ms} ms`);
+      if (info.speed.mbps > 0) {
+        lines.push(`Durchsatz: ${info.speed.mbps} Mbit/s`);
+      }
+    }
     lines.push("");
     lines.push("── Diagnose ──────────────────────────");
     lines.push(info.detected_issue);
@@ -215,6 +227,40 @@ export function DiagnosePanel({ branding, profile, onClose }: Props) {
                 />
               </InfoBlock>
 
+              {/* Speed Test */}
+              {info.speed && (
+                <InfoBlock title="Verbindungsqualität">
+                  <div className="flex items-center gap-2 py-1">
+                    <Gauge size={16} className={
+                      info.speed.duration_ms < 50 ? "text-emerald-600" :
+                      info.speed.duration_ms < 150 ? "text-amber-600" :
+                      "text-red-600"
+                    } />
+                    <div className="flex-1">
+                      <div className="text-[12px] font-bold">
+                        {info.speed.duration_ms} ms
+                        <span className="font-normal text-[10px] text-[color:var(--brand-fg)]/60 ml-1">
+                          {info.speed.duration_ms < 30 ? "Exzellent" :
+                           info.speed.duration_ms < 80 ? "Gut" :
+                           info.speed.duration_ms < 150 ? "Mittel" :
+                           "Langsam"}
+                        </span>
+                      </div>
+                      {info.speed.mbps > 0 && (
+                        <div className="text-[10px] text-[color:var(--brand-fg)]/60">
+                          {info.speed.mbps} Mbit/s → {info.speed.target}
+                        </div>
+                      )}
+                    </div>
+                    <Zap size={12} className={
+                      info.speed.duration_ms < 50 ? "text-emerald-500" :
+                      info.speed.duration_ms < 150 ? "text-amber-500" :
+                      "text-red-500"
+                    } />
+                  </div>
+                </InfoBlock>
+              )}
+
               {/* App */}
               <InfoBlock title="App">
                 <Row label="Version" value={info.app_version} mono />
@@ -223,6 +269,31 @@ export function DiagnosePanel({ branding, profile, onClose }: Props) {
                   value={new Date(info.timestamp).toLocaleString("de-DE")}
                   mono
                 />
+              </InfoBlock>
+
+              {/* Smart Actions */}
+              <InfoBlock title="Aktionen">
+                <button
+                  onClick={async () => {
+                    if (!window.confirm("NetBird Dienst neu starten? Die VPN Verbindung wird kurz unterbrochen.")) return;
+                    try {
+                      await invoke("nb_disconnect");
+                      await new Promise(r => setTimeout(r, 1000));
+                      await invoke("nb_connect", {});
+                      toast.success("NetBird neu gestartet.");
+                      refresh();
+                    } catch (e: unknown) {
+                      toast.error(e instanceof Error ? e.message : String(e));
+                    }
+                  }}
+                  className="w-full flex items-center gap-2 px-2 py-2 rounded-md hover:bg-[color:var(--brand-primary)]/5 transition text-left"
+                >
+                  <RotateCcw size={13} className="text-[color:var(--brand-primary)] shrink-0" />
+                  <div className="flex-1">
+                    <div className="text-[11px] font-bold">NetBird neu starten</div>
+                    <div className="text-[9px] text-[color:var(--brand-fg)]/50">Trennt und verbindet VPN neu</div>
+                  </div>
+                </button>
               </InfoBlock>
 
               {/* Logs */}

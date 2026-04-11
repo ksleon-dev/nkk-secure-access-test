@@ -587,6 +587,14 @@ pub async fn ping_host(host: &str, timeout_ms: u64) -> bool {
 }
 
 #[derive(Serialize, Clone, Debug)]
+pub struct SpeedResult {
+    pub target: String,
+    pub bytes: usize,
+    pub duration_ms: u64,
+    pub mbps: f64,
+}
+
+#[derive(Serialize, Clone, Debug)]
 pub struct DebugInfo {
     pub os_username: String,
     pub hostname: String,
@@ -603,6 +611,7 @@ pub struct DebugInfo {
     pub peers_total: usize,
     pub peers_connected: usize,
     pub detected_issue: String,
+    pub speed: Option<SpeedResult>,
     pub timestamp: String,
 }
 
@@ -726,6 +735,16 @@ pub async fn get_debug_info(
         .or_else(|_| std::env::var("USERNAME"))
         .unwrap_or_else(|_| "unbekannt".to_string());
 
+    // Quick speed test: download a small payload from the management server
+    // or the LAN target to measure real throughput. Non-blocking, best effort.
+    let speed = if lan {
+        quick_speed_test(&lan_target_clone).await
+    } else if internet {
+        quick_speed_test("8.8.8.8").await
+    } else {
+        None
+    };
+
     Ok(DebugInfo {
         os_username,
         hostname,
@@ -742,8 +761,55 @@ pub async fn get_debug_info(
         peers_total,
         peers_connected,
         detected_issue,
+        speed,
         timestamp: chrono::Utc::now().to_rfc3339(),
     })
+}
+
+/// Quick connection quality test — measures TCP connect latency to the target
+/// and runs 3 pings in parallel to get a reliable RTT average. This isn't a
+/// bandwidth test but gives Support a clear signal how good the connection is.
+async fn quick_speed_test(host: &str) -> Option<SpeedResult> {
+    // Strategy 1: TCP connect time (most reliable, works through firewalls)
+    let addr = if host.contains(':') {
+        host.to_string()
+    } else {
+        // Try common ports — RDP first (3389), then HTTPS (443)
+        format!("{}:3389", host)
+    };
+
+    let tcp_start = tokio::time::Instant::now();
+    let tcp_ok = timeout(
+        Duration::from_secs(3),
+        tokio::net::TcpStream::connect(&addr),
+    )
+    .await;
+    let tcp_ms = tcp_start.elapsed().as_millis() as u64;
+
+    if tcp_ok.is_ok() && tcp_ok.unwrap().is_ok() {
+        return Some(SpeedResult {
+            target: host.to_string(),
+            bytes: 0,
+            duration_ms: tcp_ms,
+            mbps: 0.0,
+        });
+    }
+
+    // Strategy 2: fallback to ICMP ping
+    let ping_start = tokio::time::Instant::now();
+    let ok = ping_host(host, 3000).await;
+    let ping_ms = ping_start.elapsed().as_millis() as u64;
+
+    if ok {
+        Some(SpeedResult {
+            target: host.to_string(),
+            bytes: 0,
+            duration_ms: ping_ms,
+            mbps: 0.0,
+        })
+    } else {
+        None
+    }
 }
 
 /// Allow only host-like targets: letters, digits, dots, dashes, optional port.

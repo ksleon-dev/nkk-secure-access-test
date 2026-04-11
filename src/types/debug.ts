@@ -1,3 +1,10 @@
+export interface SpeedResult {
+  target: string;
+  bytes: number;
+  duration_ms: number;
+  mbps: number;
+}
+
 export interface DebugInfo {
   os_username: string;
   hostname: string;
@@ -14,5 +21,6 @@ export interface DebugInfo {
   peers_total: number;
   peers_connected: number;
   detected_issue: string;
+  speed: SpeedResult | null;
   timestamp: string;
 }
