@@ -2,7 +2,7 @@ import { invoke } from "@tauri-apps/api/core";
 import clsx from "clsx";
 import {
   ArrowRight,
-  Info,
+  LifeBuoy,
   Loader2,
   Newspaper,
   Settings as SettingsIcon,
@@ -127,7 +127,7 @@ export function MainScreen({
           aria-label="Diagnose & Support"
           title="Diagnose & Support"
         >
-          <Info size={16} strokeWidth={2.4} />
+          <LifeBuoy size={16} strokeWidth={2.4} />
         </button>
         <button
           onClick={onOpenSettings}
