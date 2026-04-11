@@ -61,7 +61,7 @@ function QuickLaunchRow({
       await invoke(cmd, { target: item.target });
       toast.success(de.quickLaunch[item.type].starting);
     } catch (e: unknown) {
-      toast.error(`${de.quickLaunch[item.type].failed} ${String(e)}`);
+      toast.error(`${de.quickLaunch[item.type].failed} ${e instanceof Error ? e.message : String(e)}`);
     } finally {
       setBusy(false);
     }
