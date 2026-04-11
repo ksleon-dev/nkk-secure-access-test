@@ -52,12 +52,15 @@ export function MainScreen({
   const accent = italicAccent(state);
   void bioFootnote;
 
-  // Track state transitions for connect animation
+  // Track state transitions for animations
   const prevState = useRef(state);
-  const justConnected = useMemo(() => {
+  const transition = useMemo(() => {
     const was = prevState.current;
     prevState.current = state;
-    return state === "Connected" && was !== "Connected";
+    if (state === "Connected" && was !== "Connected") return "connected";
+    if (state === "Disconnected" && was === "Connected") return "disconnected";
+    if (state === "Connecting") return "connecting";
+    return "none";
   }, [state]);
 
   // Live clock + date — updates every 30s
@@ -198,19 +201,25 @@ export function MainScreen({
             : state === "Error"
             ? "bg-red-600 py-2"
             : "bg-[color:var(--brand-primary)] py-2.5",
-          justConnected && "vpn-connected-enter"
+          transition === "connected" && "vpn-connected-enter",
+          transition === "disconnected" && "vpn-disconnect-enter"
         )}
       >
-        <div className="flex items-center gap-2">
+        {/* Connecting shimmer overlay */}
+        {state === "Connecting" && (
+          <div className="absolute inset-0 vpn-connecting-bar rounded-inherit" />
+        )}
+
+        <div className="relative flex items-center gap-2">
           {/* Status icon */}
           {isBusy ? (
-            <Loader2 size={14} className="animate-spin text-white shrink-0" />
+            <div className="w-3 h-3 rounded-full bg-white vpn-connecting-dot shrink-0" />
           ) : (
             <div
               className={clsx(
                 "w-2.5 h-2.5 rounded-full shrink-0",
                 isConnected ? "bg-white" : "bg-white/50",
-                justConnected && "vpn-dot-pulse"
+                transition === "connected" && "vpn-dot-pulse"
               )}
             />
           )}
