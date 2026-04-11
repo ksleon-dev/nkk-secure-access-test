@@ -35,6 +35,7 @@ function AppInner() {
   const [credModalOpen, setCredModalOpen] = useState(false);
   const [editingProfile, setEditingProfile] =
     useState<CredentialProfileMeta | null>(null);
+  const [demoConnected, setDemoConnected] = useState(false);
   const toast = useToast();
   const updater = useUpdater();
 
@@ -141,7 +142,12 @@ function AppInner() {
         }
 
         const u1 = await listen<StatusDto>("netbird-status-changed", (ev) => {
+          // If demo connected, only accept Connected status (ignore poll overrides)
+          if (demoConnected && ev.payload.state !== "Connected" && !ev.payload.cli_available) return;
           setStatus(ev.payload);
+          if (ev.payload.state === "Connected" && ev.payload.local_ip === "100.64.0.99") {
+            setDemoConnected(true);
+          }
         });
         const u2 = await listen<string>("netbird-error", (ev) => {
           const msg = String(ev.payload);
