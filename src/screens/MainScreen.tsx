@@ -341,11 +341,9 @@ export function MainScreen({
           const msgs = [
             "Zukunftssicher. Technologie mit Wirkung. 🚀",
             "Handgemacht in Bremen mit ❤️ und Kaffee",
-            "fun fact: diese App hat 6168 Zeilen Code",
+            "fun fact: diese App hat über 6000 Zeilen Code",
             "Du hast das Easter Egg gefunden! 🎉",
-            "Oliver sagt: Moin! 👋",
             "100% Bio Code — pestizidfrei 🌿",
-            "Gebaut mit Rust, React und Leidenschaft 🦀",
           ];
           toast.info(msgs[Math.floor(Math.random() * msgs.length)]);
         }}
