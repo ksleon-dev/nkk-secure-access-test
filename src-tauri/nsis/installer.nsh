@@ -36,7 +36,7 @@
 !define NKK_DATA_DIR "$PROGRAMDATA\KronSolutions\NKK-Secure-Access"
 !define NKK_NETBIRD_BIN "$PROGRAMFILES64\NetBird\netbird.exe"
 !define NKK_NETBIRD_UNINST "$PROGRAMFILES64\NetBird\Uninstall.exe"
-!define NKK_MGMT_URL "https://netbird.nkkhb.de:33073"
+!define NKK_MGMT_URL "https://vpn.secure.nkk-hb.de"
 
 Var NkkSetupKey
 Var NkkNetbirdInstaller

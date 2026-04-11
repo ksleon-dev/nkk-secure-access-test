@@ -1131,7 +1131,7 @@ pub async fn smart_debug(
     let mgmt_url = branding
         .as_ref()
         .map(|b| b.netbird.management_url.clone())
-        .unwrap_or_else(|| "https://netbird.nkkhb.de:33073".to_string());
+        .unwrap_or_else(|| "https://vpn.secure.nkk-hb.de".to_string());
     let mut steps: Vec<SmartDebugStep> = vec![];
 
     // Step 1: Internet
