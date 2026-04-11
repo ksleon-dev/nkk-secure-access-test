@@ -181,9 +181,14 @@ export function DiagnosePanel({ branding, profile, onClose }: Props) {
 
         <div className="flex-1 overflow-y-auto px-4 py-3">
           {loading && !info ? (
-            <div className="flex flex-col items-center justify-center py-12 gap-2">
-              <Loader2 size={24} className="animate-spin text-muted" />
-              <span className="text-xs text-muted">Prüfe Verbindung …</span>
+            <div className="flex flex-col items-center justify-center py-12 gap-3">
+              <div className="relative">
+                <Shield size={28} className="text-[color:var(--brand-primary)] brand-breathe" />
+              </div>
+              <div className="w-24 h-1 rounded-full bg-[color:var(--brand-border)] overflow-hidden">
+                <div className="h-full rounded-full bg-[color:var(--brand-primary)] brand-loading-bar" />
+              </div>
+              <span className="text-[11px] font-semibold text-[color:var(--brand-fg)]/50">Diagnose wird geladen …</span>
             </div>
           ) : info ? (
             <div className="flex flex-col gap-3">
@@ -261,9 +266,14 @@ export function DiagnosePanel({ branding, profile, onClose }: Props) {
                 </h3>
                 <div className="surface rounded-lg px-2.5 py-1.5">
                   {pingsLoading ? (
-                    <div className="flex items-center gap-2 py-3 justify-center">
-                      <Loader2 size={14} className="animate-spin text-muted" />
-                      <span className="text-[10px] text-muted">Ping läuft …</span>
+                    <div className="flex items-center gap-2.5 py-3 justify-center">
+                      <Gauge size={14} className="text-[color:var(--brand-primary)] brand-breathe" />
+                      <div className="flex flex-col gap-1">
+                        <span className="text-[10px] font-semibold text-[color:var(--brand-fg)]/70">Verbindungsqualität wird gemessen …</span>
+                        <div className="w-20 h-0.5 rounded-full bg-[color:var(--brand-border)] overflow-hidden">
+                          <div className="h-full rounded-full bg-[color:var(--brand-primary)] brand-loading-bar" />
+                        </div>
+                      </div>
                     </div>
                   ) : pings && pings.length > 0 ? (
                     pings.map((p, i) => (
