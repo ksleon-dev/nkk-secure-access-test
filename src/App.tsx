@@ -212,7 +212,7 @@ function AppInner() {
           <div className="h-full rounded-full bg-[color:var(--brand-primary)] brand-loading-bar" />
         </div>
         <span className="text-[11px] font-semibold text-[color:var(--brand-fg)]/50">
-          Verbindung wird hergestellt …
+          Bitte einen Moment Geduld …
         </span>
         {bootError && (
           <pre className="text-[10px] text-red-600 max-w-[80%] whitespace-pre-wrap text-center surface rounded-lg p-2">
