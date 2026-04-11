@@ -38,6 +38,7 @@ export function DiagnosePanel({ branding, profile, onClose }: Props) {
   const [info, setInfo] = useState<DebugInfo | null>(null);
   const [logs, setLogs] = useState<string[]>([]);
   const [pings, setPings] = useState<PingResult[] | null>(null);
+  const [manualSpeed, setManualSpeed] = useState<SpeedResult | null>(null);
   const [loading, setLoading] = useState(true);
   const [pingsLoading, setPingsLoading] = useState(false);
   const toast = useToast();
@@ -117,13 +118,15 @@ export function DiagnosePanel({ branding, profile, onClose }: Props) {
         }
       }
     }
-    if (info.speed) {
+    const speed = manualSpeed ?? info.speed;
+    if (speed) {
       lines.push("");
       lines.push("── Speedtest ─────────────────────────");
-      lines.push(`Ziel: ${info.speed.target}`);
-      lines.push(`Latenz: ${info.speed.duration_ms} ms`);
-      if (info.speed.mbps > 0) {
-        lines.push(`Durchsatz: ${info.speed.mbps} Mbit/s`);
+      lines.push(`Ziel: ${speed.target}`);
+      lines.push(`Dauer: ${speed.duration_ms} ms`);
+      if (speed.mbps > 0) {
+        lines.push(`Durchsatz: ${speed.mbps} Mbit/s`);
+        lines.push(`Bewertung: ${speed.mbps > 50 ? "Sehr schnell" : speed.mbps > 10 ? "Schnell" : speed.mbps > 2 ? "OK" : "Langsam"}`);
       }
     }
     lines.push("");
@@ -323,7 +326,7 @@ export function DiagnosePanel({ branding, profile, onClose }: Props) {
 
               {/* Smart Actions */}
               <InfoBlock title="Aktionen">
-                <SpeedTestButton />
+                <SpeedTestButton onResult={setManualSpeed} />
                 <ActionButton
                   icon={<RotateCcw size={13} />}
                   label="NetBird neu starten"
@@ -459,7 +462,7 @@ function Check3({
   );
 }
 
-function SpeedTestButton() {
+function SpeedTestButton({ onResult }: { onResult: (r: SpeedResult) => void }) {
   const [running, setRunning] = useState(false);
   const [result, setResult] = useState<SpeedResult | null>(null);
   const toast = useToast();
@@ -469,6 +472,7 @@ function SpeedTestButton() {
     try {
       const r = await invoke<SpeedResult>("run_speed_test");
       setResult(r);
+      onResult(r);
     } catch (e: unknown) {
       toast.error(e instanceof Error ? e.message : String(e));
     } finally {
