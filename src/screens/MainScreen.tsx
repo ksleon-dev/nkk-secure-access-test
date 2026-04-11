@@ -53,7 +53,8 @@ export function MainScreen({
   void bioFootnote;
 
   const [logoTaps, setLogoTaps] = useState(0);
-  const easterEgg = logoTaps >= 7;
+  const [easterEggEnding, setEasterEggEnding] = useState(false);
+  const easterEgg = logoTaps >= 7 && !easterEggEnding;
 
   // Track state transitions for animations
   const prevState = useRef(state);
@@ -162,10 +163,18 @@ export function MainScreen({
             className="relative flex items-center justify-center cursor-pointer"
             style={{ width: 120, height: 120 }}
             onClick={() => {
+              if (easterEgg) {
+                // Smooth wind-down: play one last slow rotation then stop
+                setEasterEggEnding(true);
+                setTimeout(() => {
+                  setLogoTaps(0);
+                  setEasterEggEnding(false);
+                }, 1500);
+                return;
+              }
               setLogoTaps((t) => {
                 const next = t + 1;
                 if (next === 7) toast.info("🥕 Bio Power aktiviert!");
-                if (next >= 10) return 0;
                 return next;
               });
             }}
@@ -226,7 +235,8 @@ export function MainScreen({
               branding={branding}
               size={104}
               className={clsx(
-                easterEgg && "animate-spin",
+                easterEgg && "logo-party",
+                easterEggEnding && "logo-party-off",
                 "relative z-10 transition-transform duration-300",
                 isBusy && "logo-float",
                 transition === "connected" && !isBusy && "logo-connected-pop"
