@@ -150,7 +150,7 @@ impl NetbirdClient {
             Err(_elapsed) => {
                 self.log("TIMEOUT: netbird CLI hat nicht innerhalb 10s geantwortet");
                 return Err(AppError::NetbirdCli(
-                    "Netbird CLI Timeout (10s) — Daemon reagiert nicht.".into(),
+                    "Netbird antwortet nicht (Timeout). Bitte App neu starten.".into(),
                 ));
             }
         };

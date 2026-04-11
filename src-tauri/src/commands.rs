@@ -735,7 +735,7 @@ pub async fn get_debug_info(
     } else if !netbird_cli_present {
         "Netbird Client nicht installiert. Bei KronSolutions melden.".to_string()
     } else if !vpn_connected {
-        "VPN nicht verbunden oder Hintergrunddienst reagiert nicht.".to_string()
+        "VPN nicht verbunden. Bitte auf Verbinden klicken.".to_string()
     } else if !lan {
         "VPN ist verbunden, Terminalserver antwortet aber nicht — evtl. Firewall.".to_string()
     } else {
