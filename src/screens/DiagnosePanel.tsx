@@ -179,9 +179,9 @@ export function DiagnosePanel({ branding, profile, onClose }: Props) {
         </button>
       </header>
 
-        <div className="flex-1 overflow-y-auto px-4 py-3">
+        <div className="flex-1 overflow-y-auto px-4 py-3 flex flex-col">
           {loading && !info ? (
-            <div className="flex flex-col items-center justify-center py-12 gap-3">
+            <div className="flex-1 flex flex-col items-center justify-center gap-3">
               <div className="relative">
                 <Shield size={28} className="text-[color:var(--brand-primary)] brand-breathe" />
               </div>
