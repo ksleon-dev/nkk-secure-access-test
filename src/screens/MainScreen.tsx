@@ -49,16 +49,16 @@ export function MainScreen({
   const accent = italicAccent(state);
   void bioFootnote;
 
-  // Live clock — updates every minute
-  const [clock, setClock] = useState(() =>
-    new Date().toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" })
-  );
+  // Live clock + date — updates every 30s
+  function formatDateTime() {
+    const now = new Date();
+    const time = now.toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" });
+    const date = now.toLocaleDateString("de-DE", { weekday: "short", day: "numeric", month: "short" });
+    return { time, date };
+  }
+  const [dateTime, setDateTime] = useState(formatDateTime);
   useEffect(() => {
-    const id = setInterval(() => {
-      setClock(
-        new Date().toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" })
-      );
-    }, 30_000);
+    const id = setInterval(() => setDateTime(formatDateTime()), 30_000);
     return () => clearInterval(id);
   }, []);
 
@@ -92,9 +92,14 @@ export function MainScreen({
       <Decor />
       {/* Top utility bar pinned to top */}
       <header className="absolute top-2 left-3 right-2 z-20 flex items-center gap-1">
-        <span className="text-[13px] font-bold text-[color:var(--brand-fg)]/80 tabular-nums flex-1">
-          {clock}
-        </span>
+        <div className="flex-1">
+          <span className="text-[13px] font-bold text-[color:var(--brand-fg)]/85 tabular-nums">
+            {dateTime.time}
+          </span>
+          <span className="text-[10px] ml-1.5 text-[color:var(--brand-fg)]/55">
+            {dateTime.date}
+          </span>
+        </div>
         <Avatar
           profile={profile}
           size={28}
