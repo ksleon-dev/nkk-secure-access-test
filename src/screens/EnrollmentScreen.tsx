@@ -71,7 +71,7 @@ export function EnrollmentScreen({ branding, onEnrolled }: Props) {
         ) : (
           <>
             <div className="fade-in-1 flex flex-col items-center">
-              <div className="relative">
+              <div className="relative" style={{ overflow: "visible" }}>
                 <Logo
                   branding={branding}
                   size={120}
@@ -81,8 +81,8 @@ export function EnrollmentScreen({ branding, onEnrolled }: Props) {
                   }
                 />
                 {phase === "error" && (
-                  <div className="absolute -bottom-1 -right-1 w-8 h-8 rounded-full bg-red-500 flex items-center justify-center shadow-lg animate-fade-up">
-                    <XCircle size={18} className="text-white" />
+                  <div className="absolute bottom-1 right-1 w-7 h-7 rounded-full bg-red-600 flex items-center justify-center shadow-md animate-fade-up z-20">
+                    <XCircle size={16} className="text-white" />
                   </div>
                 )}
               </div>
