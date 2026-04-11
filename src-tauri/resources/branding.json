@@ -27,7 +27,7 @@
   "quickLaunch": [
     {
       "label": "Terminalserver 2",
-      "description": "Standard — Warenwirtschaft",
+      "description": "Standard",
       "type": "rdp",
       "target": "192.168.0.20",
       "default": true,
@@ -35,7 +35,7 @@
     },
     {
       "label": "Terminalserver 1",
-      "description": "Kassensystem",
+      "description": "Outdated",
       "type": "rdp",
       "target": "192.168.0.19",
       "icon": "computer"
