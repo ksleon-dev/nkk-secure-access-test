@@ -107,7 +107,7 @@ export function MainScreen({
     <div className="h-full flex flex-col relative">
       <Decor />
       {/* Top utility bar pinned to top */}
-      <header className="absolute top-3 left-3 right-3 z-20 flex items-center gap-1">
+      <header className="relative z-20 px-3 pt-3 pb-2 flex items-center gap-1 bg-[color:var(--brand-bg-soft)] border-b border-[color:var(--brand-border)]">
         <div className="flex-1">
           <span className="text-[13px] font-bold text-[color:var(--brand-fg)]/85 tabular-nums">
             {dateTime.time}
