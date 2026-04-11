@@ -199,14 +199,29 @@ function AppInner() {
 
   if (bootstrapping || !branding) {
     return (
-      <div className="h-full flex flex-col items-center justify-center gap-3 text-sm text-muted">
-        <div className="w-10 h-10 rounded-full border-2 border-current border-t-transparent animate-spin opacity-40" />
-        <span>Lade …</span>
+      <div className="h-full flex flex-col items-center justify-center gap-4 px-8">
+        <img
+          src={new URL("./assets/nkk-logo.svg", import.meta.url).href}
+          alt="NKK Secure Access"
+          width={100}
+          height={100}
+          className="brand-breathe"
+          draggable={false}
+        />
+        <div className="w-32 h-1 rounded-full bg-[color:var(--brand-border)] overflow-hidden">
+          <div className="h-full rounded-full bg-[color:var(--brand-primary)] brand-loading-bar" />
+        </div>
+        <span className="text-[11px] font-semibold text-[color:var(--brand-fg)]/50">
+          Verbindung wird hergestellt …
+        </span>
         {bootError && (
-          <pre className="text-[10px] text-red-500 max-w-[80%] whitespace-pre-wrap text-center">
+          <pre className="text-[10px] text-red-600 max-w-[80%] whitespace-pre-wrap text-center surface rounded-lg p-2">
             {bootError}
           </pre>
         )}
+        <span className="absolute bottom-3 text-[9px] font-bold uppercase tracking-[0.15em] text-[color:var(--brand-fg)]/25">
+          Powered by KronSolutions
+        </span>
       </div>
     );
   }

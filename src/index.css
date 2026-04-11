@@ -165,6 +165,23 @@ button:disabled {
   }
 }
 
+@keyframes brand-breathe {
+  0%, 100% { transform: scale(1); opacity: 0.9; }
+  50% { transform: scale(1.04); opacity: 1; }
+}
+@keyframes brand-bar {
+  0% { transform: scaleX(0); }
+  50% { transform: scaleX(1); }
+  100% { transform: scaleX(0); }
+}
+.brand-breathe {
+  animation: brand-breathe 2s ease-in-out infinite;
+}
+.brand-loading-bar {
+  animation: brand-bar 1.8s ease-in-out infinite;
+  transform-origin: left;
+}
+
 @keyframes vpn-connect-pulse {
   0% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.5); }
   50% { box-shadow: 0 0 0 12px rgba(16, 185, 129, 0); }
