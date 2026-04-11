@@ -20,6 +20,14 @@ interface NewsItem {
 // JSON endpoint so KronSolutions can push messages without app updates.
 const NEWS: NewsItem[] = [
   {
+    id: "v020",
+    date: "11. April 2026",
+    type: "update",
+    version: "0.2.0",
+    title: "Schneller, stabiler, schöner",
+    body: "Terminalserver öffnet sich jetzt sofort (kein Warten mehr auf VPN). Auto Updater eingebaut — Updates kommen automatisch. Speedtest + Smart Debug in der Diagnose. Logo Animation beim Verbinden. Verbindung läuft jetzt den ganzen Arbeitstag stabil durch.",
+  },
+  {
     id: "welcome-1",
     date: "11. April 2026",
     type: "announcement",
@@ -31,15 +39,15 @@ const NEWS: NewsItem[] = [
     date: "11. April 2026",
     type: "feedback",
     title: "Euer Feedback ist Gold wert",
-    body: "Wir bauen diese App für euch. Wenn etwas nervt, fehlt oder besser sein könnte — sagt Bescheid. Jedes Feedback hilft uns, NKK Secure Access noch besser zu machen. Einfach im Diagnose Panel (i Icon) auf 'Diagnose kopieren' klicken und per Mail schicken.",
+    body: "Wir bauen diese App für euch. Wenn etwas nervt, fehlt oder besser sein könnte — sagt Bescheid. Jedes Feedback hilft uns, NKK Secure Access noch besser zu machen. Einfach im Diagnose Panel auf 'Diagnose kopieren' klicken und per Mail schicken.",
   },
   {
     id: "v010",
-    date: "11. April 2026",
+    date: "9. April 2026",
     type: "update",
     version: "0.1.0",
     title: "Erster Release",
-    body: "Terminalserver 1 + 2 Quick Launch, automatische NetBird Installation, VPN Status Anzeige, Diagnose Panel für Support, Anmeldedaten Speicher im System Tresor, Windows Toast Benachrichtigungen bei Statusänderung.",
+    body: "Terminalserver 1 + 2 Quick Launch, automatische NetBird Installation, VPN Status Anzeige, Diagnose Panel für Support, Anmeldedaten Speicher im System Tresor.",
   },
 ];
 
