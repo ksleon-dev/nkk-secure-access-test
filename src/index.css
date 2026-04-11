@@ -245,46 +245,54 @@ button:disabled {
   animation: vpn-glow 2.5s ease-in-out infinite;
 }
 
-@keyframes logo-connecting-glow {
-  0%, 100% {
-    filter: drop-shadow(0 0 6px rgba(181, 31, 41, 0.3));
-    transform: scale(1);
-  }
-  50% {
-    filter: drop-shadow(0 0 20px rgba(181, 31, 41, 0.7)) drop-shadow(0 0 40px rgba(181, 31, 41, 0.3));
-    transform: scale(1.03);
-  }
+/* Logo signal rings — expand outward like a radar pulse */
+@keyframes logo-ring-out {
+  0% { transform: scale(0.8); opacity: 0.6; }
+  100% { transform: scale(1.8); opacity: 0; }
 }
-@keyframes logo-connected-flash {
-  0% {
-    filter: drop-shadow(0 0 0 rgba(16, 185, 129, 0));
-    transform: scale(1);
-  }
-  30% {
-    filter: drop-shadow(0 0 30px rgba(16, 185, 129, 0.8)) drop-shadow(0 0 60px rgba(16, 185, 129, 0.4));
-    transform: scale(1.06);
-  }
-  100% {
-    filter: drop-shadow(0 0 8px rgba(16, 185, 129, 0.2));
-    transform: scale(1);
-  }
+@keyframes logo-orbit {
+  0% { transform: rotate(0deg) translateX(58px) rotate(0deg); }
+  100% { transform: rotate(360deg) translateX(58px) rotate(-360deg); }
 }
-@keyframes logo-connected-idle {
-  0%, 100% {
-    filter: drop-shadow(0 0 6px rgba(16, 185, 129, 0.15));
-  }
-  50% {
-    filter: drop-shadow(0 0 12px rgba(16, 185, 129, 0.3));
-  }
+@keyframes logo-connected-pop {
+  0% { transform: scale(1); }
+  40% { transform: scale(1.08); }
+  100% { transform: scale(1); }
 }
-.logo-connecting {
-  animation: logo-connecting-glow 1.5s ease-in-out infinite;
+
+.logo-ring {
+  position: absolute;
+  inset: -8px;
+  border-radius: 50%;
+  border: 2px solid var(--brand-primary);
+  pointer-events: none;
 }
-.logo-connected-enter {
-  animation: logo-connected-flash 800ms ease-out;
+.logo-ring-1 { animation: logo-ring-out 2s ease-out infinite; }
+.logo-ring-2 { animation: logo-ring-out 2s ease-out 0.6s infinite; }
+.logo-ring-3 { animation: logo-ring-out 2s ease-out 1.2s infinite; }
+
+.logo-orbit-dot {
+  position: absolute;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--brand-primary);
+  top: 50%;
+  left: 50%;
+  margin: -2.5px;
+  pointer-events: none;
 }
-.logo-connected-idle {
-  animation: logo-connected-idle 3s ease-in-out infinite;
+.logo-orbit-1 { animation: logo-orbit 2.5s linear infinite; }
+.logo-orbit-2 { animation: logo-orbit 2.5s linear 0.8s infinite; opacity: 0.6; }
+.logo-orbit-3 { animation: logo-orbit 2.5s linear 1.6s infinite; opacity: 0.3; }
+
+/* Connected: green rings settle + pop */
+.logo-ring-connected {
+  border-color: #10b981;
+  animation: logo-ring-out 1.5s ease-out forwards;
+}
+.logo-connected-pop {
+  animation: logo-connected-pop 500ms ease-out;
 }
 
 @keyframes toast-in {

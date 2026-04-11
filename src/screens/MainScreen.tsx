@@ -153,16 +153,34 @@ export function MainScreen({
       {/* Centered hero — content sits directly on the cream background */}
       <main className="relative z-10 flex-1 flex flex-col items-center justify-center px-6 gap-3 py-2 text-center">
         <div className="fade-in-1 flex flex-col items-center">
-          <Logo
-            branding={branding}
-            size={104}
-            className={clsx(
-              "transition-all duration-500",
-              isBusy && "logo-connecting",
-              transition === "connected" && !isBusy && "logo-connected-enter",
-              isConnected && !isBusy && transition !== "connected" && "logo-connected-idle"
+          <div className="relative flex items-center justify-center">
+            {/* Signal rings — only visible while connecting */}
+            {isBusy && (
+              <>
+                <div className="logo-ring logo-ring-1" />
+                <div className="logo-ring logo-ring-2" />
+                <div className="logo-ring logo-ring-3" />
+                <div className="logo-orbit-dot logo-orbit-1" />
+                <div className="logo-orbit-dot logo-orbit-2" />
+                <div className="logo-orbit-dot logo-orbit-3" />
+              </>
             )}
-          />
+            {/* Green rings on connect success */}
+            {transition === "connected" && !isBusy && (
+              <>
+                <div className="logo-ring logo-ring-connected" style={{ animationDelay: "0ms" }} />
+                <div className="logo-ring logo-ring-connected" style={{ animationDelay: "200ms" }} />
+              </>
+            )}
+            <Logo
+              branding={branding}
+              size={104}
+              className={clsx(
+                "relative z-10 transition-transform duration-300",
+                transition === "connected" && !isBusy && "logo-connected-pop"
+              )}
+            />
+          </div>
           <TaglineMark width={180} className="mt-1.5" />
         </div>
 
