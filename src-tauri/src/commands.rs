@@ -427,6 +427,25 @@ pub async fn nb_connect(
     setup_key: Option<String>,
     state: State<'_, AppState>,
 ) -> AppResult<()> {
+    // DEMO KEY — REMOVE BEFORE PRODUCTION
+    if setup_key.as_deref().map(|s| s.trim()) == Some("KRONDEMO2026") {
+        tracing::info!("Demo Key erkannt");
+        let _ = write_enrolled_marker(&app);
+        let fake = StatusDto {
+            state: ConnectionState::Connected,
+            management_connected: true,
+            peers: vec![
+                crate::netbird::PeerDto { name: "Serv-TS2".into(), ip: "192.168.0.20".into(), connected: true, latency_ms: Some(18), relay: Some("P2P".into()) },
+                crate::netbird::PeerDto { name: "Serv-TS1".into(), ip: "192.168.0.19".into(), connected: true, latency_ms: Some(22), relay: Some("P2P".into()) },
+            ],
+            local_ip: Some("100.64.0.99".into()),
+            updated_at: chrono::Utc::now().to_rfc3339(),
+            cli_available: true,
+        };
+        let _ = app.emit("netbird-status-changed", &fake);
+        return Ok(());
+    }
+
     let branding = ensure_branding(&app, &state).await?;
 
     if !management_reachable(&branding.netbird.management_url).await {
