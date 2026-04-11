@@ -3,243 +3,501 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>NKK Secure Access — Anleitung</title>
+<title>NKK Secure Access — Installationsanleitung</title>
 <style>
-  @page { margin: 0; size: A4; }
+  @page { margin: 20mm; size: A4; }
   * { margin: 0; padding: 0; box-sizing: border-box; }
+
   body {
     font-family: -apple-system, 'Segoe UI', Helvetica, Arial, sans-serif;
-    background: #F5EBD7;
-    color: #0a0603;
-    line-height: 1.6;
+    background: #f0ebe0;
+    color: #1a1208;
+    line-height: 1.7;
+    font-size: 16px;
     -webkit-print-color-adjust: exact;
     print-color-adjust: exact;
   }
 
-  .page { max-width: 680px; margin: 0 auto; padding: 40px 32px; }
+  .page {
+    max-width: 900px;
+    margin: 0 auto;
+    padding: 0;
+  }
 
-  /* Header */
-  .header {
+  /* ── Hero Header ── */
+  .hero {
+    background: linear-gradient(135deg, #B51F29 0%, #8C141F 100%);
+    color: white;
+    padding: 48px 48px 40px;
+    position: relative;
+    overflow: hidden;
+  }
+  .hero::after {
+    content: '';
+    position: absolute;
+    right: -40px;
+    top: -40px;
+    width: 200px;
+    height: 200px;
+    border-radius: 50%;
+    background: rgba(255,255,255,0.06);
+  }
+  .hero-top {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 24px;
+  }
+  .hero-logo {
+    font-size: 13px;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 3px;
+    opacity: 0.7;
+  }
+  .hero-version {
+    background: rgba(255,255,255,0.15);
+    padding: 4px 16px;
+    border-radius: 99px;
+    font-size: 12px;
+    font-weight: 700;
+  }
+  .hero h1 {
+    font-size: 42px;
+    font-weight: 900;
+    letter-spacing: -1px;
+    line-height: 1.1;
+    margin-bottom: 8px;
+  }
+  .hero .subtitle {
+    font-size: 20px;
+    opacity: 0.85;
+    font-weight: 400;
+  }
+  .hero .tagline {
+    font-style: italic;
+    font-family: Georgia, serif;
+    font-size: 16px;
+    opacity: 0.6;
+    margin-top: 16px;
+  }
+
+  /* ── Content Sections ── */
+  .content {
+    background: #F5EBD7;
+    padding: 40px 48px;
+  }
+
+  .section {
+    margin-bottom: 40px;
+  }
+  .section-header {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 20px;
+    padding-bottom: 12px;
+    border-bottom: 3px solid #B51F29;
+  }
+  .section-header .icon {
+    width: 40px;
+    height: 40px;
+    border-radius: 10px;
     background: #B51F29;
     color: white;
-    padding: 32px;
-    border-radius: 16px;
-    text-align: center;
-    margin-bottom: 32px;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    font-size: 20px;
+    font-weight: 900;
+    flex-shrink: 0;
   }
-  .header h1 {
-    font-size: 28px;
+  .section-header h2 {
+    font-size: 24px;
     font-weight: 900;
     letter-spacing: -0.5px;
   }
-  .header p {
-    font-size: 14px;
-    opacity: 0.85;
-    margin-top: 4px;
-  }
-  .header .badge {
-    display: inline-block;
-    background: rgba(255,255,255,0.2);
-    padding: 4px 14px;
-    border-radius: 99px;
-    font-size: 11px;
-    font-weight: 700;
-    letter-spacing: 1px;
-    text-transform: uppercase;
-    margin-top: 12px;
-  }
 
-  /* Steps */
-  .steps { margin: 24px 0; }
+  /* ── Steps ── */
   .step {
     display: flex;
-    gap: 16px;
-    margin-bottom: 20px;
+    gap: 20px;
+    margin-bottom: 28px;
     align-items: flex-start;
   }
   .step-num {
-    width: 36px;
-    height: 36px;
+    width: 44px;
+    height: 44px;
     border-radius: 50%;
     background: #B51F29;
     color: white;
     font-weight: 900;
-    font-size: 16px;
+    font-size: 20px;
     display: flex;
     align-items: center;
     justify-content: center;
     flex-shrink: 0;
+    box-shadow: 0 4px 12px rgba(181,31,41,0.3);
   }
-  .step-content h3 {
+  .step-body {
+    flex: 1;
+    padding-top: 4px;
+  }
+  .step-body h3 {
+    font-size: 18px;
+    font-weight: 800;
+    margin-bottom: 4px;
+  }
+  .step-body p {
     font-size: 15px;
-    font-weight: 800;
-    margin-bottom: 2px;
-  }
-  .step-content p {
-    font-size: 13px;
     color: #2a1d10;
+    line-height: 1.6;
   }
-
-  /* Hint box */
-  .hint {
-    background: #fbf6e9;
-    border: 1px solid rgba(60,40,15,0.18);
-    border-radius: 12px;
-    padding: 16px 20px;
-    margin: 24px 0;
-    font-size: 13px;
-  }
-  .hint h3 {
-    font-size: 13px;
-    font-weight: 800;
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
-    margin-bottom: 8px;
-    color: #B51F29;
-  }
-  .hint ul {
-    list-style: none;
-    padding: 0;
-  }
-  .hint li {
-    padding: 4px 0;
-    padding-left: 20px;
-    position: relative;
-  }
-  .hint li::before {
-    content: '✓';
-    position: absolute;
-    left: 0;
+  .step-body strong {
     color: #B51F29;
     font-weight: 700;
   }
 
-  /* SmartScreen callout */
-  .callout {
+  /* ── Screenshot Placeholder ── */
+  .screenshot {
     background: white;
-    border-left: 4px solid #B51F29;
-    border-radius: 8px;
-    padding: 16px 20px;
-    margin: 20px 0;
-    font-size: 13px;
+    border: 2px solid rgba(60,40,15,0.12);
+    border-radius: 12px;
+    padding: 20px;
+    margin: 16px 0 8px;
+    text-align: center;
+    position: relative;
+    min-height: 180px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
   }
-  .callout strong { color: #B51F29; }
+  .screenshot .placeholder-icon {
+    font-size: 36px;
+    opacity: 0.3;
+  }
+  .screenshot .placeholder-text {
+    font-size: 13px;
+    color: rgba(10,6,3,0.4);
+    font-weight: 600;
+  }
+  .screenshot .caption {
+    font-size: 12px;
+    color: rgba(10,6,3,0.5);
+    font-style: italic;
+    margin-top: 4px;
+  }
+  .screenshot img {
+    max-width: 100%;
+    border-radius: 8px;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.1);
+  }
 
-  /* Support section */
-  .support {
-    background: #B51F29;
-    color: white;
+  /* ── Callout Boxes ── */
+  .callout {
     border-radius: 12px;
     padding: 20px 24px;
-    margin-top: 32px;
+    margin: 24px 0;
+    font-size: 15px;
+    line-height: 1.6;
+  }
+  .callout-warn {
+    background: white;
+    border-left: 5px solid #B51F29;
+  }
+  .callout-tip {
+    background: #fbf6e9;
+    border: 1px solid rgba(60,40,15,0.15);
+    border-left: 5px solid #BAAE90;
+  }
+  .callout-success {
+    background: #ecfdf5;
+    border-left: 5px solid #10b981;
+  }
+  .callout h4 {
+    font-size: 15px;
+    font-weight: 800;
+    margin-bottom: 6px;
+  }
+  .callout-warn h4 { color: #B51F29; }
+  .callout-tip h4 { color: #8a7a5a; }
+  .callout-success h4 { color: #059669; }
+
+  /* ── Tips Grid ── */
+  .tips-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 16px;
+    margin: 20px 0;
+  }
+  .tip-card {
+    background: #fbf6e9;
+    border: 1px solid rgba(60,40,15,0.12);
+    border-radius: 12px;
+    padding: 20px;
+  }
+  .tip-card .tip-icon {
+    font-size: 24px;
+    margin-bottom: 8px;
+  }
+  .tip-card h4 {
+    font-size: 14px;
+    font-weight: 800;
+    margin-bottom: 4px;
+  }
+  .tip-card p {
+    font-size: 13px;
+    color: #2a1d10;
+    line-height: 1.5;
+  }
+
+  /* ── Troubleshooting ── */
+  .trouble-item {
+    background: white;
+    border-radius: 12px;
+    padding: 20px 24px;
+    margin-bottom: 12px;
+    border: 1px solid rgba(60,40,15,0.1);
+  }
+  .trouble-item h4 {
+    font-size: 15px;
+    font-weight: 800;
+    color: #B51F29;
+    margin-bottom: 4px;
+  }
+  .trouble-item p {
+    font-size: 14px;
+    line-height: 1.6;
+  }
+  .trouble-item .fix {
+    margin-top: 8px;
+    padding-top: 8px;
+    border-top: 1px solid rgba(60,40,15,0.08);
+    font-weight: 600;
+    color: #059669;
+  }
+
+  /* ── Support Footer ── */
+  .support {
+    background: linear-gradient(135deg, #B51F29 0%, #8C141F 100%);
+    color: white;
+    padding: 36px 48px;
     text-align: center;
   }
   .support h3 {
-    font-size: 16px;
-    font-weight: 800;
+    font-size: 22px;
+    font-weight: 900;
     margin-bottom: 8px;
   }
-  .support p { font-size: 13px; opacity: 0.9; }
-  .support .email {
+  .support p {
+    font-size: 15px;
+    opacity: 0.85;
+    margin-bottom: 16px;
+  }
+  .support .email-btn {
     display: inline-block;
     background: rgba(255,255,255,0.2);
-    padding: 6px 20px;
+    padding: 10px 32px;
     border-radius: 99px;
-    font-size: 14px;
-    font-weight: 700;
-    margin-top: 10px;
-    letter-spacing: 0.3px;
+    font-size: 16px;
+    font-weight: 800;
+    letter-spacing: 0.5px;
   }
 
-  /* Footer */
-  .footer {
+  .final-footer {
     text-align: center;
-    margin-top: 32px;
-    font-size: 10px;
+    padding: 20px;
+    font-size: 11px;
     text-transform: uppercase;
-    letter-spacing: 2px;
-    font-weight: 700;
-    color: rgba(10,6,3,0.35);
+    letter-spacing: 3px;
+    font-weight: 800;
+    color: rgba(10,6,3,0.25);
+    background: #F5EBD7;
   }
 
-  /* Print */
+  /* Print tweaks */
   @media print {
     body { background: white; }
-    .page { padding: 20px; }
+    .content { background: white; }
+    .hero { break-after: avoid; }
+    .step { break-inside: avoid; }
+    .trouble-item { break-inside: avoid; }
+    .screenshot { min-height: 100px; }
   }
 </style>
 </head>
 <body>
+
 <div class="page">
 
-  <div class="header">
+  <!-- ══ HERO ══ -->
+  <div class="hero">
+    <div class="hero-top">
+      <div class="hero-logo">KronSolutions GmbH</div>
+      <div class="hero-version">Version 0.2.0</div>
+    </div>
     <h1>NKK Secure Access</h1>
-    <p>Dein sicherer Zugang zum NKK Firmennetz</p>
-    <div class="badge">Installationsanleitung</div>
+    <div class="subtitle">Installationsanleitung</div>
+    <div class="tagline">Dein sicherer Zugang zum NKK Firmennetz</div>
   </div>
 
-  <div class="steps">
-    <div class="step">
-      <div class="step-num">1</div>
-      <div class="step-content">
-        <h3>ZIP entpacken</h3>
-        <p>Öffne die Datei <strong>NKK-Secure-Access.zip</strong> aus der Mail. Das Passwort ist <strong>nkk</strong> (kleingeschrieben).</p>
+  <div class="content">
+
+    <!-- ══ INSTALLATION ══ -->
+    <div class="section">
+      <div class="section-header">
+        <div class="icon">1</div>
+        <h2>Installation</h2>
+      </div>
+
+      <div class="step">
+        <div class="step-num">1</div>
+        <div class="step-body">
+          <h3>ZIP entpacken</h3>
+          <p>Öffne die Datei <strong>NKK-Secure-Access.zip</strong> aus der Mail.<br>
+          Das Passwort lautet: <strong>nkk</strong> (kleingeschrieben).</p>
+          <div class="screenshot">
+            <div class="placeholder-icon">📁</div>
+            <div class="placeholder-text">ZIP Inhalt: Setup.exe + Anleitung.html</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="step-num">2</div>
+        <div class="step-body">
+          <h3>Installer starten</h3>
+          <p>Doppelklick auf <strong>NKK Secure Access Setup.exe</strong>.<br>
+          Der Installer richtet alles automatisch ein — einfach auf <strong>Weiter</strong> klicken.</p>
+          <div class="callout callout-warn">
+            <h4>Windows zeigt eine blaue Warnung?</h4>
+            <p>Das ist normal bei neuer Software. Klicke auf <strong>„Weitere Informationen"</strong> (kleiner blauer Text), dann auf <strong>„Trotzdem ausführen"</strong>. Das kommt nur beim ersten Mal.</p>
+          </div>
+          <div class="screenshot">
+            <div class="placeholder-icon">🖥️</div>
+            <div class="placeholder-text">NSIS Installer Wizard</div>
+            <div class="caption">Der Installer installiert automatisch alle nötigen Komponenten</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="step-num">3</div>
+        <div class="step-body">
+          <h3>App öffnen</h3>
+          <p>Im Startmenü unter <strong>KronSolutions → NKK Secure Access</strong> die App starten.<br>
+          Das rote NKK Symbol erscheint auch unten rechts in der Taskleiste.</p>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="step-num">4</div>
+        <div class="step-body">
+          <h3>Aktivierungsschlüssel eingeben</h3>
+          <p>Den Schlüssel aus der <strong>zweiten Mail</strong> in das Eingabefeld kopieren und auf <strong>Aktivieren</strong> klicken.</p>
+          <div class="screenshot">
+            <div class="placeholder-icon">🔑</div>
+            <div class="placeholder-text">Enrollment Screen — Setup Key eingeben</div>
+            <div class="caption">Der Schlüssel verbindet deinen Rechner sicher mit dem NKK Netz</div>
+          </div>
+        </div>
+      </div>
+
+      <div class="step">
+        <div class="step-num">5</div>
+        <div class="step-body">
+          <h3>Fertig! Arbeiten.</h3>
+          <p>Klicke auf <strong>Terminalserver 2</strong> — dein gewohnter Arbeitsplatz öffnet sich.</p>
+          <div class="callout callout-success">
+            <h4>Geschafft!</h4>
+            <p>Ab jetzt reicht ein Klick auf den Terminalserver Button um wie gewohnt zu arbeiten.</p>
+          </div>
+          <div class="screenshot">
+            <div class="placeholder-icon">✅</div>
+            <div class="placeholder-text">Hauptbildschirm — verbunden und bereit</div>
+            <div class="caption">Grüne Leiste unten = Verbindung steht</div>
+          </div>
+        </div>
       </div>
     </div>
 
-    <div class="step">
-      <div class="step-num">2</div>
-      <div class="step-content">
-        <h3>Installer starten</h3>
-        <p>Doppelklick auf <strong>NKK Secure Access Setup.exe</strong> und den Installer durchklicken.</p>
+    <!-- ══ TIPPS ══ -->
+    <div class="section">
+      <div class="section-header">
+        <div class="icon">💡</div>
+        <h2>Tipps & Hinweise</h2>
+      </div>
+
+      <div class="tips-grid">
+        <div class="tip-card">
+          <div class="tip-icon">⚙️</div>
+          <h4>Autostart</h4>
+          <p>Die App startet nicht automatisch. Falls gewünscht: Einstellungen (Zahnrad oben rechts) → „Beim Anmelden starten" aktivieren.</p>
+        </div>
+        <div class="tip-card">
+          <div class="tip-icon">🔄</div>
+          <h4>Updates</h4>
+          <p>Die App aktualisiert sich automatisch. Ihr müsst nichts manuell machen — es erscheint einfach eine kurze Meldung.</p>
+        </div>
+        <div class="tip-card">
+          <div class="tip-icon">🔴</div>
+          <h4>Tray Icon</h4>
+          <p>Das rote NKK Symbol lebt unten rechts in der Taskleiste. Rechtsklick für Schnellzugriff auf den Terminalserver.</p>
+        </div>
+        <div class="tip-card">
+          <div class="tip-icon">📰</div>
+          <h4>Neuigkeiten</h4>
+          <p>Über das Zeitungs-Icon oben rechts seht ihr aktuelle Infos und Änderungen am Programm.</p>
+        </div>
       </div>
     </div>
 
-    <div class="step">
-      <div class="step-num">3</div>
-      <div class="step-content">
-        <h3>App öffnen</h3>
-        <p>Im Startmenü unter <strong>KronSolutions → NKK Secure Access</strong> die App starten.</p>
+    <!-- ══ TROUBLESHOOTING ══ -->
+    <div class="section">
+      <div class="section-header">
+        <div class="icon">🔧</div>
+        <h2>Häufige Fragen</h2>
+      </div>
+
+      <div class="trouble-item">
+        <h4>Die Verbindung bricht ab</h4>
+        <p>Die Statusleiste unten wechselt von Grün auf Rot.</p>
+        <div class="fix">→ Auf „Verbinden" klicken. Falls das nicht hilft: Einstellungen → Diagnose → „Smart Debug" klicken — das repariert die meisten Probleme automatisch.</div>
+      </div>
+
+      <div class="trouble-item">
+        <h4>Der Terminalserver reagiert nicht</h4>
+        <p>Klick auf „Terminalserver 2" passiert nichts oder es kommt ein Fehler.</p>
+        <div class="fix">→ Prüfe ob die Statusleiste grün ist (= verbunden). Falls nicht, erst verbinden. Falls ja: Diagnose → Smart Debug klicken.</div>
+      </div>
+
+      <div class="trouble-item">
+        <h4>Ich habe meinen Schlüssel vergessen</h4>
+        <p>Der Aktivierungsschlüssel wird nur einmal benötigt.</p>
+        <div class="fix">→ Falls ihr euch erneut aktivieren müsst, meldet euch bei support@ticket.kronsolutions.de — wir schicken einen neuen.</div>
+      </div>
+
+      <div class="trouble-item">
+        <h4>Die App startet nicht</h4>
+        <p>Beim Öffnen passiert gar nichts.</p>
+        <div class="fix">→ Rechner neu starten und nochmal versuchen. Falls es weiterhin nicht geht: Installer erneut ausführen.</div>
       </div>
     </div>
 
-    <div class="step">
-      <div class="step-num">4</div>
-      <div class="step-content">
-        <h3>Aktivierungsschlüssel eingeben</h3>
-        <p>Den Schlüssel aus der zweiten Mail eingeben und auf <strong>Aktivieren</strong> klicken.</p>
-      </div>
-    </div>
-
-    <div class="step">
-      <div class="step-num">5</div>
-      <div class="step-content">
-        <h3>Arbeiten</h3>
-        <p>Auf <strong>Terminalserver 2</strong> klicken — der Arbeitsplatz öffnet sich wie gewohnt.</p>
-      </div>
-    </div>
   </div>
 
-  <div class="hint">
-    <h3>Gut zu wissen</h3>
-    <ul>
-      <li>Die App startet nicht automatisch. Falls gewünscht: Einstellungen (Zahnrad oben rechts) → „Beim Anmelden starten"</li>
-      <li>Updates kommen automatisch — du musst nichts manuell machen</li>
-      <li>Das rote NKK Symbol erscheint unten rechts in der Taskleiste</li>
-    </ul>
-  </div>
-
-  <div class="callout">
-    <strong>Windows Warnung?</strong> Falls eine blaue Meldung erscheint: auf <strong>„Weitere Informationen"</strong> klicken, dann auf <strong>„Trotzdem ausführen"</strong>. Kommt nur beim ersten Mal.
-  </div>
-
+  <!-- ══ SUPPORT FOOTER ══ -->
   <div class="support">
-    <h3>Bei Problemen</h3>
+    <h3>Wir helfen sofort</h3>
     <p>In der App: Headphones Icon oben rechts → „Diagnose für Support kopieren" → per Mail schicken an:</p>
-    <div class="email">support@ticket.kronsolutions.de</div>
+    <div class="email-btn">support@ticket.kronsolutions.de</div>
   </div>
 
-  <div class="footer">Powered by KronSolutions GmbH</div>
+  <div class="final-footer">
+    Powered by KronSolutions GmbH · Zukunftssicher. Technologie mit Wirkung.
+  </div>
 
 </div>
 </body>
