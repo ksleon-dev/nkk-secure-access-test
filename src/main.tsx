@@ -1,4 +1,3 @@
-import React from "react";
 import ReactDOM from "react-dom/client";
 import App from "./App";
 import "./index.css";
@@ -13,7 +12,6 @@ if (typeof window !== "undefined") {
     }
     e.preventDefault();
   });
-  // Block drag-and-drop of images / svgs (they're chrome, not content)
   window.addEventListener("dragstart", (e) => {
     const target = e.target as HTMLElement | null;
     if (target && (target.tagName === "IMG" || target.tagName === "SVG")) {
@@ -22,8 +20,10 @@ if (typeof window !== "undefined") {
   });
 }
 
+// No React.StrictMode — it double-fires useEffect in dev mode which causes
+// two macOS Keychain prompts on startup (both read the same keyring entry
+// before the first result is cached). StrictMode serves no purpose in a
+// production Tauri app.
 ReactDOM.createRoot(document.getElementById("root") as HTMLElement).render(
-  <React.StrictMode>
-    <App />
-  </React.StrictMode>
+  <App />
 );
