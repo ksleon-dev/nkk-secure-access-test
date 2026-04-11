@@ -226,47 +226,6 @@ export function MainScreen({
   );
 }
 
-function statusLabel(state: ConnectionState, demoMode: boolean): string {
-  if (demoMode) return "Demo Modus";
-  switch (state) {
-    case "Connected":
-      return "Verbunden mit NKK Netz";
-    case "Connecting":
-      return "Verbinde …";
-    case "Error":
-      return "Verbindung gestört";
-    default:
-      return "Tunnel ist aus";
-  }
-}
-
-function StatusDot({
-  state,
-  demoMode,
-}: {
-  state: ConnectionState;
-  demoMode: boolean;
-}) {
-  if (demoMode || state === "Connected") {
-    return (
-      <span className="w-2 h-2 rounded-full bg-emerald-500 ring-2 ring-emerald-500/30" />
-    );
-  }
-  if (state === "Connecting") {
-    return (
-      <span className="w-2 h-2 rounded-full bg-amber-400 ring-2 ring-amber-400/30 animate-pulse" />
-    );
-  }
-  if (state === "Error") {
-    return (
-      <span className="w-2 h-2 rounded-full bg-red-500 ring-2 ring-red-500/30" />
-    );
-  }
-  return (
-    <span className="w-2 h-2 rounded-full bg-gray-400 ring-2 ring-gray-400/20" />
-  );
-}
-
 function LaunchCard({
   item,
   primary,
