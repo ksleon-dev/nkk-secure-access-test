@@ -25,7 +25,7 @@ const NEWS: NewsItem[] = [
     type: "update",
     version: "0.2.0",
     title: "Schneller, stabiler, schöner",
-    body: "Terminalserver öffnet sich jetzt sofort (kein Warten mehr auf VPN). Auto Updater eingebaut — Updates kommen automatisch. Speedtest + Smart Debug in der Diagnose. Logo Animation beim Verbinden. Verbindung läuft jetzt den ganzen Arbeitstag stabil durch.",
+    body: "Terminalserver öffnet sich jetzt sofort. Auto Updater eingebaut — Updates kommen automatisch. Speedtest + Smart Debug in der Diagnose. Logo Animation beim Verbinden. Verbindung läuft den ganzen Arbeitstag stabil durch.",
   },
   {
     id: "welcome-1",
