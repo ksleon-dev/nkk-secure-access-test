@@ -242,6 +242,7 @@ export function DiagnosePanel({ branding, profile, onClose }: Props) {
                   label="Public IP"
                   value={info.public_ip ?? "—"}
                   mono
+                  highlight
                 />
                 <Row
                   label="WireGuard IP"
@@ -412,10 +413,12 @@ function Row({
   label,
   value,
   mono,
+  highlight,
 }: {
   label: string;
   value: string;
   mono?: boolean;
+  highlight?: boolean;
 }) {
   return (
     <div className="flex items-baseline justify-between gap-2 text-[10.5px] py-0.5 border-b border-[color:var(--brand-border)] last:border-b-0">
@@ -423,7 +426,7 @@ function Row({
       <span
         className={`font-semibold truncate text-right ${
           mono ? "font-mono text-[9.5px]" : ""
-        }`}
+        } ${highlight ? "text-[color:var(--brand-primary)] font-bold" : ""}`}
       >
         {value}
       </span>
