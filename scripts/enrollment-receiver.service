@@ -1,0 +1,14 @@
+[Unit]
+Description=NKK Enrollment Webhook Receiver
+After=network.target
+
+[Service]
+Type=simple
+User=root
+WorkingDirectory=/opt/kronsolutions
+ExecStart=/usr/bin/python3 /opt/kronsolutions/enrollment-receiver.py
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target
