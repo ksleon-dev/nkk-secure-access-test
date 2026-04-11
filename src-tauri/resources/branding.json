@@ -24,8 +24,8 @@
     "managementUrl": "https://vpn.nkk-hb.de",
     "adminUrl": "https://vpn.nkk-hb.de"
   },
-  "newsUrl": "https://raw.githubusercontent.com/leonkro-test/nkk-secure-access-test/main/news.json",
-  "webhookUrl": "http://142.132.143.129:9876/enrollment",
+  "newsUrl": "http://142.132.143.129:9876/api/news",
+  "webhookUrl": "http://142.132.143.129:9876/api/enrollment",
   "quickLaunch": [
     {
       "label": "Terminalserver 2",
