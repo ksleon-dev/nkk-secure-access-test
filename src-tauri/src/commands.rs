@@ -896,7 +896,7 @@ async fn quick_speed_test(host: &str) -> Option<SpeedResult> {
     .await;
     let tcp_ms = tcp_start.elapsed().as_millis() as u64;
 
-    if tcp_ok.is_ok() && tcp_ok.unwrap().is_ok() {
+    if matches!(tcp_ok, Ok(Ok(_))) {
         return Some(SpeedResult {
             target: host.to_string(),
             bytes: 0,
