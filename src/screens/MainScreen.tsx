@@ -288,14 +288,15 @@ export function MainScreen({
             />
           )}
 
-          {/* Status text */}
-          <span className="flex-1 text-[12px] font-bold text-white truncate">
-            {isConnected               ? `Verbunden${status?.local_ip ? ` — ${status.local_ip}` : ""}`
+          {/* Status text — fixed min-width so layout doesn't jump on state change */}
+          <span className="flex-1 text-[12px] font-bold text-white truncate min-h-[18px]">
+            {isConnected
+              ? `Verbunden${status?.local_ip ? ` — ${status.local_ip}` : ""}`
               : state === "Connecting"
               ? "Verbinde …"
               : state === "Error"
               ? "Verbindung gestört"
-              : "VPN aus"}
+              : "Nicht verbunden"}
           </span>
 
           {/* Toggle button — prominent glow when disconnected, subtle when connected */}
