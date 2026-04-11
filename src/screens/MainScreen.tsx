@@ -158,9 +158,9 @@ export function MainScreen({
             size={104}
             className={clsx(
               "transition-all duration-500",
-              state === "Connecting" && "logo-connecting",
-              transition === "connected" && "logo-connected-enter",
-              isConnected && transition !== "connected" && "logo-connected-idle"
+              isBusy && "logo-connecting",
+              transition === "connected" && !isBusy && "logo-connected-enter",
+              isConnected && !isBusy && transition !== "connected" && "logo-connected-idle"
             )}
           />
           <TaglineMark width={180} className="mt-1.5" />
