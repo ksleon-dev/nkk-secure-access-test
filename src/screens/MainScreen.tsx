@@ -335,7 +335,21 @@ export function MainScreen({
       </div>
 
       {/* Permanent KronSolutions footer */}
-      <div className="relative z-10 text-center text-[9px] py-1 shrink-0 font-bold uppercase tracking-[0.15em] text-[color:var(--brand-surface)]/85 bg-[color:var(--brand-primary)]/95">
+      <div
+        className="relative z-10 text-center text-[9px] py-1 shrink-0 font-bold uppercase tracking-[0.15em] text-[color:var(--brand-surface)]/85 bg-[color:var(--brand-primary)]/95 cursor-pointer active:scale-95 transition"
+        onClick={() => {
+          const msgs = [
+            "Zukunftssicher. Technologie mit Wirkung. 🚀",
+            "Handgemacht in Bremen mit ❤️ und Kaffee",
+            "fun fact: diese App hat 6168 Zeilen Code",
+            "Du hast das Easter Egg gefunden! 🎉",
+            "Oliver sagt: Moin! 👋",
+            "100% Bio Code — pestizidfrei 🌿",
+            "Gebaut mit Rust, React und Leidenschaft 🦀",
+          ];
+          toast.info(msgs[Math.floor(Math.random() * msgs.length)]);
+        }}
+      >
         {branding.vendor.footer}
       </div>
     </div>
