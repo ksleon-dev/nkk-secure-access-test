@@ -2,6 +2,7 @@ import {
   createContext,
   useCallback,
   useContext,
+  useMemo,
   useRef,
   useState,
   type ReactNode,
@@ -46,12 +47,12 @@ export function ToastProvider({ children }: { children: ReactNode }) {
     setTimeout(() => dismiss(id), 4500);
   }, [dismiss]);
 
-  const api: ToastApi = {
+  const api: ToastApi = useMemo(() => ({
     push,
-    success: (m) => push("success", m),
-    error: (m) => push("error", m),
-    info: (m) => push("info", m),
-  };
+    success: (m: string) => push("success", m),
+    error: (m: string) => push("error", m),
+    info: (m: string) => push("info", m),
+  }), [push]);
 
   return (
     <ToastContext.Provider value={api}>
