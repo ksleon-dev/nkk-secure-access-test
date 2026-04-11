@@ -282,7 +282,7 @@ export function MainScreen({
             <div
               className={clsx(
                 "w-2.5 h-2.5 rounded-full shrink-0",
-                isConnected ? "bg-white" : "bg-white/50",
+                isConnected ? "bg-white dot-connected" : "bg-white/50",
                 transition === "connected" && "vpn-dot-pulse"
               )}
             />

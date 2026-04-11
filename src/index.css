@@ -245,6 +245,14 @@ button:disabled {
   animation: vpn-glow 2.5s ease-in-out infinite;
 }
 
+@keyframes dot-green-glow {
+  0%, 100% { box-shadow: 0 0 4px 1px rgba(16, 185, 129, 0.4); }
+  50% { box-shadow: 0 0 10px 4px rgba(16, 185, 129, 0.7); }
+}
+.dot-connected {
+  animation: dot-green-glow 2s ease-in-out infinite;
+}
+
 /* Logo particles — burst outward from logo edges in all directions */
 @keyframes particle-burst {
   0% {
