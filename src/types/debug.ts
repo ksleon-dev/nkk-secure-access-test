@@ -24,3 +24,15 @@ export interface DebugInfo {
   speed: SpeedResult | null;
   timestamp: string;
 }
+
+export interface SmartDebugStep {
+  name: string;
+  ok: boolean;
+  detail: string;
+  action_taken: string | null;
+}
+
+export interface SmartDebugResult {
+  steps: SmartDebugStep[];
+  summary: string;
+}

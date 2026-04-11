@@ -812,6 +812,189 @@ async fn quick_speed_test(host: &str) -> Option<SpeedResult> {
     }
 }
 
+/// Standalone speed test command — downloads 500 KB from Cloudflare's speed
+/// test CDN and measures real download throughput. Cross-platform, uses curl.
+#[tauri::command]
+pub async fn run_speed_test() -> AppResult<SpeedResult> {
+    #[cfg(target_os = "windows")]
+    let null_dev = "NUL";
+    #[cfg(not(target_os = "windows"))]
+    let null_dev = "/dev/null";
+
+    let url = "https://speed.cloudflare.com/__down?bytes=500000";
+
+    let mut cmd = TokioCommand::new("curl");
+    cmd.args([
+        "-s",
+        "-o", null_dev,
+        "-w", "%{speed_download}",
+        "--max-time", "8",
+        url,
+    ])
+    .stdout(std::process::Stdio::piped())
+    .stderr(std::process::Stdio::null());
+    #[cfg(target_os = "windows")]
+    cmd.creation_flags(0x08000000);
+
+    let start = tokio::time::Instant::now();
+    let output = match timeout(Duration::from_secs(10), cmd.output()).await {
+        Ok(Ok(o)) => o,
+        Ok(Err(e)) => return Err(AppError::Internal(format!("curl nicht gefunden: {}", e))),
+        Err(_) => return Err(AppError::Internal("Speedtest Timeout (10s)".into())),
+    };
+    let elapsed = start.elapsed().as_millis() as u64;
+
+    let speed_str = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    let bytes_per_sec: f64 = speed_str.parse().unwrap_or(0.0);
+    let mbps = (bytes_per_sec * 8.0 / 1_000_000.0 * 100.0).round() / 100.0;
+
+    Ok(SpeedResult {
+        target: "Cloudflare CDN (500 KB)".to_string(),
+        bytes: 500_000,
+        duration_ms: elapsed,
+        mbps,
+    })
+}
+
+#[derive(Serialize, Clone, Debug)]
+pub struct SmartDebugResult {
+    pub steps: Vec<SmartDebugStep>,
+    pub summary: String,
+}
+
+#[derive(Serialize, Clone, Debug)]
+pub struct SmartDebugStep {
+    pub name: String,
+    pub ok: bool,
+    pub detail: String,
+    pub action_taken: Option<String>,
+}
+
+/// Smart self-healing debug — runs checks in sequence and tries to fix
+/// common problems automatically. Returns what it found and what it did.
+#[tauri::command]
+pub async fn smart_debug(state: State<'_, AppState>) -> AppResult<SmartDebugResult> {
+    let mut steps: Vec<SmartDebugStep> = vec![];
+
+    // Step 1: Internet
+    let internet = ping_host("8.8.8.8", 2000).await;
+    steps.push(SmartDebugStep {
+        name: "Internet".into(),
+        ok: internet,
+        detail: if internet { "Ping 8.8.8.8 OK".into() } else { "Kein Internet".into() },
+        action_taken: None,
+    });
+
+    if !internet {
+        return Ok(SmartDebugResult {
+            summary: "Kein Internet — bitte WLAN/Netzwerk prüfen. Alle weiteren Tests übersprungen.".into(),
+            steps,
+        });
+    }
+
+    // Step 2: NetBird CLI
+    let status_result = state.netbird.status().await;
+    let cli_present = !matches!(status_result, Err(AppError::NetbirdMissing));
+    steps.push(SmartDebugStep {
+        name: "NetBird Client".into(),
+        ok: cli_present,
+        detail: if cli_present { "CLI gefunden".into() } else { "CLI fehlt".into() },
+        action_taken: None,
+    });
+
+    if !cli_present {
+        // Try to restart the service on Windows (might be installed but PATH missing)
+        #[cfg(target_os = "windows")]
+        {
+            let mut sc = TokioCommand::new("sc.exe");
+            sc.args(["start", "netbird"]);
+            sc.creation_flags(0x08000000);
+            if let Ok(Ok(_)) = timeout(Duration::from_secs(5), sc.output()).await {
+                sleep(Duration::from_secs(2)).await;
+                let retry = state.netbird.status().await;
+                if retry.is_ok() {
+                    steps.last_mut().unwrap().ok = true;
+                    steps.last_mut().unwrap().action_taken = Some("Service gestartet via sc.exe".into());
+                }
+            }
+        }
+
+        if !steps.last().unwrap().ok {
+            return Ok(SmartDebugResult {
+                summary: "NetBird Client fehlt oder Service läuft nicht. Bitte neu installieren.".into(),
+                steps,
+            });
+        }
+    }
+
+    // Step 3: VPN Connection
+    let connected = match &status_result {
+        Ok(s) => matches!(s.state, ConnectionState::Connected),
+        _ => false,
+    };
+    let mut vpn_step = SmartDebugStep {
+        name: "VPN Tunnel".into(),
+        ok: connected,
+        detail: if connected { "Verbunden".into() } else { "Getrennt".into() },
+        action_taken: None,
+    };
+
+    if !connected && cli_present {
+        // Try auto-reconnect
+        let key = cached_setup_key(&state).await.ok().flatten();
+        if key.is_some() {
+            vpn_step.action_taken = Some("Versuche Auto-Reconnect ...".into());
+            // Quick attempt — don't block too long
+            let up_result = timeout(
+                Duration::from_secs(8),
+                state.netbird.up("https://netbird.nkkhb.de:33073", key.as_deref()),
+            )
+            .await;
+            if matches!(up_result, Ok(Ok(_))) {
+                sleep(Duration::from_secs(2)).await;
+                if let Ok(s) = state.netbird.status().await {
+                    if matches!(s.state, ConnectionState::Connected) {
+                        vpn_step.ok = true;
+                        vpn_step.detail = "Verbunden (auto-reconnect)".into();
+                        vpn_step.action_taken = Some("Auto-Reconnect erfolgreich!".into());
+                    }
+                }
+            }
+        }
+    }
+    steps.push(vpn_step);
+
+    // Step 4: LAN reachability
+    let lan_ok = ping_host("192.168.0.20", 2000).await;
+    steps.push(SmartDebugStep {
+        name: "Firmennetz (TS2)".into(),
+        ok: lan_ok,
+        detail: if lan_ok { "192.168.0.20 erreichbar".into() } else { "Nicht erreichbar".into() },
+        action_taken: None,
+    });
+
+    // Step 5: Speed
+    let speed = quick_speed_test("192.168.0.20").await;
+    if let Some(s) = &speed {
+        steps.push(SmartDebugStep {
+            name: "Latenz".into(),
+            ok: s.duration_ms < 150,
+            detail: format!("{} ms zum Terminalserver", s.duration_ms),
+            action_taken: None,
+        });
+    }
+
+    let all_ok = steps.iter().all(|s| s.ok);
+    let summary = if all_ok {
+        "Alle Checks bestanden — Verbindung ist einsatzbereit.".into()
+    } else {
+        let failed: Vec<&str> = steps.iter().filter(|s| !s.ok).map(|s| s.name.as_str()).collect();
+        format!("Probleme bei: {}. Details oben.", failed.join(", "))
+    };
+
+    Ok(SmartDebugResult { steps, summary })
+}
+
 /// Allow only host-like targets: letters, digits, dots, dashes, optional port.
 /// Blocks shell metacharacters even though we pass args separately.
 fn validate_host_target(target: &str) -> AppResult<String> {

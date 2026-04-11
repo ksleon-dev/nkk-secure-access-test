@@ -71,6 +71,8 @@ pub fn run() {
             commands::creds_test,
             commands::creds_default_username,
             commands::get_debug_info,
+            commands::run_speed_test,
+            commands::smart_debug,
         ])
         .on_window_event(|window, event| {
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {

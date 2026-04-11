@@ -15,7 +15,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useToast } from "../components/Toast";
 import type { BrandingDto } from "../types/branding";
 import type { CredentialProfileMeta } from "../types/credentials";
-import type { DebugInfo } from "../types/debug";
+import type { DebugInfo, SmartDebugResult, SpeedResult } from "../types/debug";
 
 interface Props {
   branding: BrandingDto;
@@ -273,27 +273,21 @@ export function DiagnosePanel({ branding, profile, onClose }: Props) {
 
               {/* Smart Actions */}
               <InfoBlock title="Aktionen">
-                <button
+                <SpeedTestButton />
+                <ActionButton
+                  icon={<RotateCcw size={13} />}
+                  label="NetBird neu starten"
+                  hint="Trennt und verbindet VPN neu"
+                  confirm="NetBird Dienst neu starten? Die VPN Verbindung wird kurz unterbrochen."
                   onClick={async () => {
-                    if (!window.confirm("NetBird Dienst neu starten? Die VPN Verbindung wird kurz unterbrochen.")) return;
-                    try {
-                      await invoke("nb_disconnect");
-                      await new Promise(r => setTimeout(r, 1000));
-                      await invoke("nb_connect", {});
-                      toast.success("NetBird neu gestartet.");
-                      refresh();
-                    } catch (e: unknown) {
-                      toast.error(e instanceof Error ? e.message : String(e));
-                    }
+                    await invoke("nb_disconnect");
+                    await new Promise(r => setTimeout(r, 1000));
+                    await invoke("nb_connect", {});
+                    toast.success("NetBird neu gestartet.");
+                    refresh();
                   }}
-                  className="w-full flex items-center gap-2 px-2 py-2 rounded-md hover:bg-[color:var(--brand-primary)]/5 transition text-left"
-                >
-                  <RotateCcw size={13} className="text-[color:var(--brand-primary)] shrink-0" />
-                  <div className="flex-1">
-                    <div className="text-[11px] font-bold">NetBird neu starten</div>
-                    <div className="text-[9px] text-[color:var(--brand-fg)]/50">Trennt und verbindet VPN neu</div>
-                  </div>
-                </button>
+                />
+                <SmartDebugButton onDone={refresh} />
               </InfoBlock>
 
               {/* Logs */}
@@ -411,6 +405,174 @@ function Check3({
         <div className="font-semibold truncate">{label}</div>
         <div className="text-muted text-[9px] truncate">{detail}</div>
       </div>
+    </div>
+  );
+}
+
+function SpeedTestButton() {
+  const [running, setRunning] = useState(false);
+  const [result, setResult] = useState<SpeedResult | null>(null);
+  const toast = useToast();
+  async function run() {
+    setRunning(true);
+    setResult(null);
+    try {
+      const r = await invoke<SpeedResult>("run_speed_test");
+      setResult(r);
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : String(e));
+    } finally {
+      setRunning(false);
+    }
+  }
+  return (
+    <div>
+      <button
+        onClick={run}
+        disabled={running}
+        className="w-full flex items-center gap-2 px-2 py-2 rounded-md hover:bg-[color:var(--brand-primary)]/5 transition text-left"
+      >
+        {running ? (
+          <Loader2 size={13} className="text-[color:var(--brand-primary)] shrink-0 animate-spin" />
+        ) : (
+          <Gauge size={13} className="text-[color:var(--brand-primary)] shrink-0" />
+        )}
+        <div className="flex-1">
+          <div className="text-[11px] font-bold">
+            {running ? "Speedtest läuft …" : "Speedtest starten"}
+          </div>
+          <div className="text-[9px] text-[color:var(--brand-fg)]/50">
+            500 KB Download via Cloudflare CDN
+          </div>
+        </div>
+      </button>
+      {result && (
+        <div className="px-2 pb-1 flex items-center gap-2">
+          <Zap size={11} className={
+            result.mbps > 10 ? "text-emerald-500" :
+            result.mbps > 2 ? "text-amber-500" : "text-red-500"
+          } />
+          <span className="text-[11px] font-bold">
+            {result.mbps > 0
+              ? `${result.mbps} Mbit/s`
+              : `${result.duration_ms} ms`}
+          </span>
+          <span className="text-[9px] text-[color:var(--brand-fg)]/50">
+            {result.mbps > 10 ? "Schnell" :
+             result.mbps > 2 ? "OK" :
+             result.mbps > 0 ? "Langsam" :
+             result.duration_ms < 80 ? "Gute Latenz" : "Hohe Latenz"}
+          </span>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function ActionButton({
+  icon,
+  label,
+  hint,
+  confirm: confirmMsg,
+  onClick,
+}: {
+  icon: React.ReactNode;
+  label: string;
+  hint: string;
+  confirm?: string;
+  onClick: () => Promise<void>;
+}) {
+  const [busy, setBusy] = useState(false);
+  const toast = useToast();
+  async function handle() {
+    if (confirmMsg && !window.confirm(confirmMsg)) return;
+    setBusy(true);
+    try {
+      await onClick();
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : String(e));
+    } finally {
+      setBusy(false);
+    }
+  }
+  return (
+    <button
+      onClick={handle}
+      disabled={busy}
+      className="w-full flex items-center gap-2 px-2 py-2 rounded-md hover:bg-[color:var(--brand-primary)]/5 transition text-left"
+    >
+      <div className="text-[color:var(--brand-primary)] shrink-0">
+        {busy ? <Loader2 size={13} className="animate-spin" /> : icon}
+      </div>
+      <div className="flex-1">
+        <div className="text-[11px] font-bold">{busy ? `${label} …` : label}</div>
+        <div className="text-[9px] text-[color:var(--brand-fg)]/50">{hint}</div>
+      </div>
+    </button>
+  );
+}
+
+function SmartDebugButton({ onDone }: { onDone: () => void }) {
+  const [running, setRunning] = useState(false);
+  const [result, setResult] = useState<SmartDebugResult | null>(null);
+  const toast = useToast();
+  async function run() {
+    setRunning(true);
+    setResult(null);
+    try {
+      const r = await invoke<SmartDebugResult>("smart_debug");
+      setResult(r);
+      toast.success("Smart Debug abgeschlossen.");
+      onDone();
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : String(e));
+    } finally {
+      setRunning(false);
+    }
+  }
+  return (
+    <div>
+      <button
+        onClick={run}
+        disabled={running}
+        className="w-full flex items-center gap-2 px-2 py-2 rounded-md hover:bg-emerald-500/5 transition text-left"
+      >
+        {running ? (
+          <Loader2 size={13} className="text-emerald-600 shrink-0 animate-spin" />
+        ) : (
+          <Shield size={13} className="text-emerald-600 shrink-0" />
+        )}
+        <div className="flex-1">
+          <div className="text-[11px] font-bold">
+            {running ? "Prüfe & repariere …" : "Smart Debug"}
+          </div>
+          <div className="text-[9px] text-[color:var(--brand-fg)]/50">
+            Prüft alles und versucht Probleme automatisch zu beheben
+          </div>
+        </div>
+      </button>
+      {result && (
+        <div className="px-2 pb-1">
+          <div className={`text-[10px] font-semibold mb-1 ${
+            result.steps.every(s => s.ok) ? "text-emerald-700" : "text-amber-700"
+          }`}>
+            {result.summary}
+          </div>
+          {result.steps.map((s, i) => (
+            <div key={i} className="flex items-center gap-1.5 text-[9px] py-0.5">
+              {s.ok
+                ? <Check size={8} strokeWidth={4} className="text-emerald-500 shrink-0" />
+                : <X size={8} strokeWidth={4} className="text-red-500 shrink-0" />
+              }
+              <span className="font-semibold">{s.name}</span>
+              <span className="text-[color:var(--brand-fg)]/50">{s.detail}</span>
+              {s.action_taken && (
+                <span className="text-emerald-600 font-bold">→ {s.action_taken}</span>
+              )}
+            </div>
+          ))}
+        </div>
+      )}
     </div>
   );
 }
