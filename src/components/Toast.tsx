@@ -84,7 +84,7 @@ function Toast({ item, onClose }: { item: ToastItem; onClose: () => void }) {
     >
       <Icon size={15} className="shrink-0 opacity-90" />
       <span className="flex-1 leading-snug">{item.message}</span>
-      <span className="text-white/50 text-[10px] shrink-0">✕</span>
+      <span className="text-white/60 text-[16px] font-light shrink-0 ml-1">✕</span>
     </div>
   );
 }
