@@ -335,7 +335,7 @@ function Section({
 }) {
   return (
     <section className="mt-4 first:mt-0">
-      <div className="flex items-end justify-between mb-1.5">
+      <div className="flex items-center justify-between mb-1.5">
         <h2 className="text-[11px] font-bold uppercase tracking-wider text-[color:var(--brand-fg)]">
           {title}
         </h2>
