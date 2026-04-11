@@ -269,14 +269,14 @@ button:disabled {
 
 .logo-particle {
   position: absolute;
-  border-radius: 50%;
-  background: var(--brand-primary);
   top: 50%;
   left: 50%;
-  margin: -2px;
   pointer-events: none;
+  font-size: var(--size, 12px);
+  line-height: 1;
   animation: particle-burst var(--speed) ease-out infinite;
   animation-delay: var(--delay);
+  user-select: none;
 }
 
 .logo-float {
@@ -287,8 +287,8 @@ button:disabled {
 }
 
 .logo-particle-green {
-  background: #10b981;
   animation: particle-burst 0.7s ease-out forwards;
+  font-size: 14px;
 }
 
 @keyframes toast-in {

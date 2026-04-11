@@ -154,24 +154,24 @@ export function MainScreen({
       <main className="relative z-10 flex-1 flex flex-col items-center justify-center px-6 gap-3 py-2 text-center">
         <div className="fade-in-1 flex flex-col items-center">
           <div className="relative flex items-center justify-center" style={{ width: 120, height: 120 }}>
-            {/* Particles burst outward from logo in all directions */}
+            {/* Bio particles burst from logo — fruits, veggies, BIO text */}
             {isBusy && (
               <>
                 {[
-                  { angle: "0deg",   dist: "55px", speed: "1.3s", delay: "0s",   size: 4 },
-                  { angle: "45deg",  dist: "50px", speed: "1.5s", delay: "0.2s", size: 3 },
-                  { angle: "90deg",  dist: "52px", speed: "1.2s", delay: "0.5s", size: 5 },
-                  { angle: "135deg", dist: "48px", speed: "1.6s", delay: "0.3s", size: 3 },
-                  { angle: "180deg", dist: "54px", speed: "1.4s", delay: "0.7s", size: 4 },
-                  { angle: "225deg", dist: "46px", speed: "1.3s", delay: "0.1s", size: 3 },
-                  { angle: "270deg", dist: "50px", speed: "1.5s", delay: "0.6s", size: 5 },
-                  { angle: "315deg", dist: "52px", speed: "1.2s", delay: "0.4s", size: 4 },
-                  { angle: "30deg",  dist: "58px", speed: "1.7s", delay: "0.8s", size: 3 },
-                  { angle: "160deg", dist: "45px", speed: "1.4s", delay: "0.9s", size: 4 },
-                  { angle: "250deg", dist: "56px", speed: "1.6s", delay: "0.15s",size: 3 },
-                  { angle: "340deg", dist: "50px", speed: "1.3s", delay: "0.55s",size: 5 },
+                  { emoji: "🍎", angle: "0deg",   dist: "60px", speed: "1.4s", delay: "0s",   sz: "14px" },
+                  { emoji: "🥕", angle: "45deg",  dist: "55px", speed: "1.6s", delay: "0.2s", sz: "12px" },
+                  { emoji: "BIO", angle: "90deg",  dist: "58px", speed: "1.3s", delay: "0.5s", sz: "9px" },
+                  { emoji: "🍅", angle: "135deg", dist: "52px", speed: "1.5s", delay: "0.3s", sz: "13px" },
+                  { emoji: "🌿", angle: "180deg", dist: "56px", speed: "1.4s", delay: "0.7s", sz: "12px" },
+                  { emoji: "🥬", angle: "225deg", dist: "50px", speed: "1.6s", delay: "0.1s", sz: "11px" },
+                  { emoji: "BIO", angle: "270deg", dist: "54px", speed: "1.5s", delay: "0.6s", sz: "8px" },
+                  { emoji: "🍋", angle: "315deg", dist: "58px", speed: "1.3s", delay: "0.4s", sz: "12px" },
+                  { emoji: "🫑", angle: "30deg",  dist: "62px", speed: "1.7s", delay: "0.8s", sz: "11px" },
+                  { emoji: "🥒", angle: "200deg", dist: "50px", speed: "1.4s", delay: "0.9s", sz: "13px" },
+                  { emoji: "🍊", angle: "250deg", dist: "56px", speed: "1.6s", delay: "0.15s",sz: "12px" },
+                  { emoji: "🌱", angle: "340deg", dist: "54px", speed: "1.3s", delay: "0.55s",sz: "10px" },
                 ].map((p, i) => (
-                  <div
+                  <span
                     key={i}
                     className="logo-particle"
                     style={{
@@ -179,29 +179,35 @@ export function MainScreen({
                       "--dist": p.dist,
                       "--speed": p.speed,
                       "--delay": p.delay,
-                      width: p.size,
-                      height: p.size,
+                      "--size": p.sz,
+                      fontWeight: p.emoji === "BIO" ? 900 : undefined,
+                      color: p.emoji === "BIO" ? "var(--brand-primary)" : undefined,
                     } as React.CSSProperties}
-                  />
+                  >
+                    {p.emoji}
+                  </span>
                 ))}
               </>
             )}
-            {/* Green particles explode on connect */}
+            {/* Green bio burst on connect success */}
             {transition === "connected" && !isBusy && (
               <>
-                {Array.from({ length: 10 }, (_, i) => (
-                  <div
+                {["🍎","🥕","🍅","🌿","🥬","✅","🍋","🫑","🌱","BIO"].map((emoji, i) => (
+                  <span
                     key={i}
                     className="logo-particle logo-particle-green"
                     style={{
                       "--angle": `${i * 36}deg`,
-                      "--dist": "60px",
+                      "--dist": "65px",
                       "--speed": "0.7s",
                       "--delay": `${i * 0.03}s`,
-                      width: 5,
-                      height: 5,
+                      "--size": "14px",
+                      fontWeight: emoji === "BIO" ? 900 : undefined,
+                      color: emoji === "BIO" ? "#10b981" : undefined,
                     } as React.CSSProperties}
-                  />
+                  >
+                    {emoji}
+                  </span>
                 ))}
               </>
             )}
