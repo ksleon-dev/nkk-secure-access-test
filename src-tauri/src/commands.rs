@@ -999,7 +999,15 @@ pub struct SmartDebugStep {
 /// Smart self-healing debug — runs checks in sequence and tries to fix
 /// common problems automatically. Returns what it found and what it did.
 #[tauri::command]
-pub async fn smart_debug(state: State<'_, AppState>) -> AppResult<SmartDebugResult> {
+pub async fn smart_debug(
+    app: AppHandle,
+    state: State<'_, AppState>,
+) -> AppResult<SmartDebugResult> {
+    let branding = ensure_branding(&app, &state).await.ok();
+    let mgmt_url = branding
+        .as_ref()
+        .map(|b| b.netbird.management_url.clone())
+        .unwrap_or_else(|| "https://netbird.nkkhb.de:33073".to_string());
     let mut steps: Vec<SmartDebugStep> = vec![];
 
     // Step 1: Internet
@@ -1029,7 +1037,6 @@ pub async fn smart_debug(state: State<'_, AppState>) -> AppResult<SmartDebugResu
     });
 
     if !cli_present {
-        // Try to restart the service on Windows (might be installed but PATH missing)
         #[cfg(target_os = "windows")]
         {
             let mut sc = TokioCommand::new("sc.exe");
@@ -1037,15 +1044,17 @@ pub async fn smart_debug(state: State<'_, AppState>) -> AppResult<SmartDebugResu
             sc.creation_flags(0x08000000);
             if let Ok(Ok(_)) = timeout(Duration::from_secs(5), sc.output()).await {
                 sleep(Duration::from_secs(2)).await;
-                let retry = state.netbird.status().await;
-                if retry.is_ok() {
-                    steps.last_mut().unwrap().ok = true;
-                    steps.last_mut().unwrap().action_taken = Some("Service gestartet via sc.exe".into());
+                if state.netbird.status().await.is_ok() {
+                    if let Some(last) = steps.last_mut() {
+                        last.ok = true;
+                        last.action_taken = Some("Service gestartet via sc.exe".into());
+                    }
                 }
             }
         }
 
-        if !steps.last().unwrap().ok {
+        let still_missing = steps.last().map_or(true, |s| !s.ok);
+        if still_missing {
             return Ok(SmartDebugResult {
                 summary: "NetBird Client fehlt oder Service läuft nicht. Bitte neu installieren.".into(),
                 steps,
@@ -1070,10 +1079,9 @@ pub async fn smart_debug(state: State<'_, AppState>) -> AppResult<SmartDebugResu
         let key = cached_setup_key(&state).await.ok().flatten();
         if key.is_some() {
             vpn_step.action_taken = Some("Versuche Auto-Reconnect ...".into());
-            // Quick attempt — don't block too long
             let up_result = timeout(
                 Duration::from_secs(8),
-                state.netbird.up("https://netbird.nkkhb.de:33073", key.as_deref()),
+                state.netbird.up(&mgmt_url, key.as_deref()),
             )
             .await;
             if matches!(up_result, Ok(Ok(_))) {
@@ -1184,7 +1192,7 @@ pub async fn open_rdp(
                 _ => p.username.clone(),
             };
             tracing::info!("RDP: Injiziere Credentials für {} via cmdkey", user);
-            let _ = std::process::Command::new("cmdkey")
+            let cmdkey_result = std::process::Command::new("cmdkey")
                 .args([
                     &format!("/generic:TERMSRV/{}", target),
                     &format!("/user:{}", user),
@@ -1192,6 +1200,11 @@ pub async fn open_rdp(
                 ])
                 .creation_flags(0x08000000) // CREATE_NO_WINDOW
                 .output();
+            match &cmdkey_result {
+                Ok(o) if o.status.success() => tracing::info!("RDP: cmdkey erfolgreich"),
+                Ok(o) => tracing::warn!("RDP: cmdkey Exit Code {}", o.status),
+                Err(e) => tracing::warn!("RDP: cmdkey Fehler: {}", e),
+            }
         }
     }
 
