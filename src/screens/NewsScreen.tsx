@@ -43,7 +43,7 @@ const NEWS: NewsItem[] = [
   },
   {
     id: "v010",
-    date: "5. April 2026",
+    date: "7. April 2026",
     type: "update",
     version: "0.1.0",
     title: "Erster Release",
