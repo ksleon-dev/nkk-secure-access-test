@@ -22,9 +22,10 @@ export interface DebugInfo {
   peers_connected: number;
   detected_issue: string;
   speed: SpeedResult | null;
-  pings: PingResult[];
   timestamp: string;
 }
+
+// Pings loaded separately (lazy) via run_ping_test — not part of DebugInfo
 
 export interface PingResult {
   target: string;

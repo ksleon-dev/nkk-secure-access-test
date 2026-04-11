@@ -121,9 +121,9 @@ function AppInner() {
         setBranding(b);
         applyTheme(b);
 
-        // Check enrollment FIRST — this hits the keychain once for the
-        // setup key. We defer creds_list to AFTER screen is shown so there's
-        // only ONE keychain prompt on macOS startup, not two.
+        // Only ONE keychain hit on startup: the setup key for enrollment.
+        // Credential profiles are loaded LAZILY when the user opens Settings
+        // or clicks an RDP button — avoids the second macOS Keychain prompt.
         const enrolled = await invoke<boolean>("nb_is_enrolled").catch(
           () => false
         );
@@ -136,10 +136,6 @@ function AppInner() {
         } catch {
           /* ignore */
         }
-
-        // Load credential profiles AFTER the screen is visible — separate
-        // keychain entry, separate prompt on unsigned macOS builds.
-        await refreshProfiles();
 
         const u1 = await listen<StatusDto>("netbird-status-changed", (ev) => {
           setStatus(ev.payload);

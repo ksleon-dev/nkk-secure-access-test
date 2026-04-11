@@ -623,7 +623,6 @@ pub struct DebugInfo {
     pub peers_connected: usize,
     pub detected_issue: String,
     pub speed: Option<SpeedResult>,
-    pub pings: Vec<PingResult>,
     pub timestamp: String,
 }
 
@@ -755,16 +754,6 @@ pub async fn get_debug_info(
         None
     };
 
-    // 4-ping average to LAN target + Hetzner reference (parallel)
-    let lan_clone2 = lan_target.clone();
-    let (ping_lan, ping_hetzner) = tokio::join!(
-        avg_ping(&lan_clone2, "Terminalserver", 4),
-        avg_ping("142.132.143.129", "Hetzner Referenz", 4),
-    );
-    let mut pings = vec![];
-    if let Some(p) = ping_lan { pings.push(p); }
-    if let Some(p) = ping_hetzner { pings.push(p); }
-
     Ok(DebugInfo {
         os_username,
         hostname,
@@ -782,7 +771,6 @@ pub async fn get_debug_info(
         peers_connected,
         detected_issue,
         speed,
-        pings,
         timestamp: chrono::Utc::now().to_rfc3339(),
     })
 }
@@ -932,6 +920,22 @@ async fn quick_speed_test(host: &str) -> Option<SpeedResult> {
     } else {
         None
     }
+}
+
+/// Separate ping quality test — called lazily AFTER the diagnose page loads.
+/// Runs 4-ping averages to LAN + reference target in parallel.
+/// Uses 1.1.1.1 (Cloudflare) as reference since it always responds to ICMP,
+/// unlike many Hetzner IPs which block ping.
+#[tauri::command]
+pub async fn run_ping_test() -> AppResult<Vec<PingResult>> {
+    let (ping_lan, ping_ref) = tokio::join!(
+        avg_ping("192.168.0.20", "Terminalserver", 4),
+        avg_ping("1.1.1.1", "Internet Referenz", 4),
+    );
+    let mut results = vec![];
+    if let Some(p) = ping_lan { results.push(p); }
+    if let Some(p) = ping_ref { results.push(p); }
+    Ok(results)
 }
 
 /// Standalone speed test command — downloads 500 KB from Cloudflare's speed

@@ -71,6 +71,7 @@ pub fn run() {
             commands::creds_test,
             commands::creds_default_username,
             commands::get_debug_info,
+            commands::run_ping_test,
             commands::run_speed_test,
             commands::smart_debug,
         ])

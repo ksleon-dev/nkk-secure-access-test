@@ -15,7 +15,7 @@ import { useCallback, useEffect, useState } from "react";
 import { useToast } from "../components/Toast";
 import type { BrandingDto } from "../types/branding";
 import type { CredentialProfileMeta } from "../types/credentials";
-import type { DebugInfo, SmartDebugResult, SpeedResult } from "../types/debug";
+import type { DebugInfo, PingResult, SmartDebugResult, SpeedResult } from "../types/debug";
 
 interface Props {
   branding: BrandingDto;
@@ -37,7 +37,9 @@ export function DiagnosePanel({ branding, profile, onClose }: Props) {
   }, [handleEsc]);
   const [info, setInfo] = useState<DebugInfo | null>(null);
   const [logs, setLogs] = useState<string[]>([]);
+  const [pings, setPings] = useState<PingResult[] | null>(null);
   const [loading, setLoading] = useState(true);
+  const [pingsLoading, setPingsLoading] = useState(false);
   const toast = useToast();
 
   async function refresh() {
@@ -50,9 +52,23 @@ export function DiagnosePanel({ branding, profile, onClose }: Props) {
       setInfo(d);
       setLogs(l);
     } catch (e: unknown) {
-      toast.error(String(e));
+      toast.error(e instanceof Error ? e.message : String(e));
     } finally {
       setLoading(false);
+    }
+    // Pings load SEPARATELY — page shows instantly, pings fill in after
+    loadPings();
+  }
+
+  async function loadPings() {
+    setPingsLoading(true);
+    try {
+      const p = await invoke<PingResult[]>("run_ping_test");
+      setPings(p);
+    } catch {
+      setPings([]);
+    } finally {
+      setPingsLoading(false);
     }
   }
 
@@ -90,10 +106,10 @@ export function DiagnosePanel({ branding, profile, onClose }: Props) {
     );
     lines.push(`Peers: ${info.peers_connected} / ${info.peers_total}`);
     lines.push(`Management: ${branding.netbird.managementUrl}`);
-    if (info.pings.length > 0) {
+    if (pings && pings.length > 0) {
       lines.push("");
       lines.push("── Ping (4× Durchschnitt) ────────────");
-      for (const p of info.pings) {
+      for (const p of pings) {
         if (p.ok) {
           lines.push(`${p.label} (${p.target}): avg ${p.avg_ms.toFixed(1)} ms (min ${p.min_ms.toFixed(0)} / max ${p.max_ms.toFixed(0)})`);
         } else {
@@ -238,38 +254,52 @@ export function DiagnosePanel({ branding, profile, onClose }: Props) {
                 />
               </InfoBlock>
 
-              {/* Ping Results — 4-ping average, real values */}
-              {info.pings.length > 0 && (
-                <InfoBlock title="Verbindungsqualität (4× Ping Durchschnitt)">
-                  {info.pings.map((p, i) => (
-                    <div key={i} className="flex items-center gap-2 py-1.5 border-b border-[color:var(--brand-border)] last:border-b-0">
-                      <Gauge size={14} className={
-                        !p.ok ? "text-red-500" :
-                        p.avg_ms < 30 ? "text-emerald-600" :
-                        p.avg_ms < 80 ? "text-emerald-500" :
-                        p.avg_ms < 150 ? "text-amber-500" :
-                        "text-red-500"
-                      } />
-                      <div className="flex-1 min-w-0">
-                        <div className="text-[11px] font-bold truncate">{p.label}</div>
-                        <div className="text-[9px] font-mono text-[color:var(--brand-fg)]/50">{p.target}</div>
-                      </div>
-                      {p.ok ? (
-                        <div className="text-right shrink-0">
-                          <div className="text-[13px] font-bold tabular-nums">
-                            {p.avg_ms.toFixed(1)} ms
-                          </div>
-                          <div className="text-[8px] font-mono text-[color:var(--brand-fg)]/40">
-                            {p.min_ms.toFixed(0)}–{p.max_ms.toFixed(0)} ms
-                          </div>
-                        </div>
-                      ) : (
-                        <span className="text-[10px] font-bold text-red-500">Timeout</span>
-                      )}
+              {/* Ping Results — loaded separately with own spinner */}
+              <section>
+                <h3 className="text-[9px] font-bold uppercase tracking-wider text-muted mb-1">
+                  Verbindungsqualität (4× Ping)
+                </h3>
+                <div className="surface rounded-lg px-2.5 py-1.5">
+                  {pingsLoading ? (
+                    <div className="flex items-center gap-2 py-3 justify-center">
+                      <Loader2 size={14} className="animate-spin text-muted" />
+                      <span className="text-[10px] text-muted">Ping läuft …</span>
                     </div>
-                  ))}
-                </InfoBlock>
-              )}
+                  ) : pings && pings.length > 0 ? (
+                    pings.map((p, i) => (
+                      <div key={i} className="flex items-center gap-2 py-1.5 border-b border-[color:var(--brand-border)] last:border-b-0">
+                        <Gauge size={14} className={
+                          !p.ok ? "text-red-500" :
+                          p.avg_ms < 30 ? "text-emerald-600" :
+                          p.avg_ms < 80 ? "text-emerald-500" :
+                          p.avg_ms < 150 ? "text-amber-500" :
+                          "text-red-500"
+                        } />
+                        <div className="flex-1 min-w-0">
+                          <div className="text-[11px] font-bold truncate">{p.label}</div>
+                          <div className="text-[9px] font-mono text-[color:var(--brand-fg)]/50">{p.target}</div>
+                        </div>
+                        {p.ok ? (
+                          <div className="text-right shrink-0">
+                            <div className="text-[13px] font-bold tabular-nums">
+                              {p.avg_ms.toFixed(1)} ms
+                            </div>
+                            <div className="text-[8px] font-mono text-[color:var(--brand-fg)]/40">
+                              {p.min_ms.toFixed(0)}–{p.max_ms.toFixed(0)} ms
+                            </div>
+                          </div>
+                        ) : (
+                          <span className="text-[10px] font-bold text-red-500">Timeout</span>
+                        )}
+                      </div>
+                    ))
+                  ) : (
+                    <div className="py-2 text-[10px] text-muted text-center">
+                      Nicht verfügbar
+                    </div>
+                  )}
+                </div>
+              </section>
 
               {/* App */}
               <InfoBlock title="App">
