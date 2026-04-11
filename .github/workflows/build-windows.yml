@@ -75,10 +75,12 @@ jobs:
             Write-Host "No NKK_SETUP_KEY secret set — leaving setup.conf empty."
           }
 
-      - name: Build Tauri (NSIS only)
+      - name: Build Tauri (NSIS with update signing)
         run: npm run tauri build -- --bundles nsis
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ""
 
       - name: Locate built installer
         id: find_installer
@@ -98,15 +100,42 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: nkk-secure-access-windows
-          path: ${{ steps.find_installer.outputs.path }}
+          path: |
+            ${{ steps.find_installer.outputs.path }}
+            src-tauri/target/release/bundle/nsis/*.sig
           if-no-files-found: error
           retention-days: 30
+
+      - name: Generate updater manifest (latest.json)
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: pwsh
+        run: |
+          $version = "${{ github.ref_name }}".TrimStart("v")
+          $exe = Get-ChildItem -Path src-tauri/target/release/bundle/nsis -Filter "*.exe" | Select-Object -First 1
+          $sig = Get-ChildItem -Path src-tauri/target/release/bundle/nsis -Filter "*.sig" | Select-Object -First 1
+          $sigContent = if ($sig) { Get-Content $sig.FullName -Raw } else { "" }
+          $downloadUrl = "https://github.com/leonkro-test/nkk-secure-access-test/releases/download/${{ github.ref_name }}/$($exe.Name)"
+          $manifest = @{
+            version = $version
+            notes = "NKK Secure Access $version"
+            pub_date = (Get-Date -Format "yyyy-MM-ddTHH:mm:ssZ")
+            platforms = @{
+              "windows-x86_64" = @{
+                signature = $sigContent.Trim()
+                url = $downloadUrl
+              }
+            }
+          } | ConvertTo-Json -Depth 4
+          Set-Content -Path "latest.json" -Value $manifest
+          Write-Host "Generated latest.json for v$version"
 
       - name: Create GitHub Release on tag
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
-          files: ${{ steps.find_installer.outputs.path }}
+          files: |
+            ${{ steps.find_installer.outputs.path }}
+            latest.json
           generate_release_notes: true
           draft: false
           prerelease: false
@@ -114,18 +143,8 @@ jobs:
           body: |
             ## NKK Secure Access ${{ github.ref_name }}
 
-            Windows Installer mit eingebettetem NetBird Client.
+            **Auto Update:** Bestehende Installationen aktualisieren sich automatisch.
 
-            **Download:** `${{ steps.find_installer.outputs.name }}`
-
-            ### Installation
-            1. EXE doppelklicken
-            2. Setup läuft durch (NetBird wird automatisch mitinstalliert)
-            3. Aus dem Startmenü unter `KronSolutions → NKK Secure Access` starten
-
-            ### Silent Install (für GPO Rollout)
-            ```
-            NKK-Setup.exe /S /SETUPKEY=<key>
-            ```
+            **Neuinstallation:** `${{ steps.find_installer.outputs.name }}` herunterladen und doppelklicken.
 
             Support: support@ticket.kronsolutions.de

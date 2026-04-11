@@ -234,21 +234,23 @@ export function MainScreen({
               : "VPN aus"}
           </span>
 
-          {/* Toggle button */}
+          {/* Toggle button — big + pulsing when disconnected, subtle when connected */}
           <button
             onClick={toggle}
-            disabled={isBusy || (status ? !status.cli_available  : false)}
+            disabled={isBusy || (status ? !status.cli_available : false)}
             className={clsx(
-              "rounded-full px-3.5 py-1 text-[10px] font-bold uppercase tracking-wider transition",
-              isConnected                 ? "bg-white/20 hover:bg-white/30 text-white border border-white/30"
-                : "bg-[color:var(--brand-primary)] hover:bg-[color:var(--brand-primary-hover)] text-white",
-              isBusy && "opacity-50 cursor-not-allowed"
+              "rounded-full font-bold uppercase tracking-wider transition-all",
+              isConnected
+                ? "px-3 py-1 text-[10px] bg-white/20 hover:bg-white/30 text-white border border-white/30"
+                : "px-5 py-1.5 text-[12px] bg-white text-[color:var(--brand-primary)] hover:bg-white/90 shadow-lg animate-pulse-soft",
+              isBusy && "opacity-50 cursor-not-allowed !animate-none"
             )}
           >
             {isBusy
               ? "…"
-              : isConnected               ? "Trennen"
-              : "Verbinden"}
+              : isConnected
+              ? "Trennen"
+              : "▶ Verbinden"}
           </button>
         </div>
       </div>

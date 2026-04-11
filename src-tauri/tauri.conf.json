@@ -62,9 +62,17 @@
         "displayLanguageSelector": false,
         "installerIcon": "icons/icon.ico",
         "headerImage": "nsis/header.bmp",
-        "sidebarImage": "nsis/sidebar.bmp"
+        "sidebarImage": "nsis/sidebar.bmp",
+        "compression": "lzma"
       }
     }
   },
-  "plugins": {}
+  "plugins": {
+    "updater": {
+      "endpoints": [
+        "https://github.com/leonkro-test/nkk-secure-access-test/releases/latest/download/latest.json"
+      ],
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEM3NjcxMDgzMzFCRjhGQUQKUldTdGo3OHhneEJueC9KdmFYM0VhK3pSeWkyWXY3WDdVeUU0K1RNblBLZ0M1YzZLMFRUcFVzYmsK"
+    }
+  }
 }

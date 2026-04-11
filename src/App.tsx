@@ -2,6 +2,8 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { useCallback, useEffect, useState } from "react";
 import { ToastProvider, useToast } from "./components/Toast";
+import { UpdateBanner } from "./components/UpdateBanner";
+import { useUpdater } from "./hooks/useUpdater";
 import { CredentialsModal } from "./screens/CredentialsModal";
 import { DiagnosePanel } from "./screens/DiagnosePanel";
 import { EnrollmentScreen } from "./screens/EnrollmentScreen";
@@ -34,6 +36,7 @@ function AppInner() {
   const [editingProfile, setEditingProfile] =
     useState<CredentialProfileMeta | null>(null);
   const toast = useToast();
+  const updater = useUpdater();
 
   const refreshProfiles = useCallback(async () => {
     try {
@@ -228,6 +231,11 @@ function AppInner() {
 
   return (
     <div className="h-full flex flex-col relative">
+      <UpdateBanner
+        state={updater}
+        onInstall={updater.install}
+        onRestart={updater.restart}
+      />
       {screen === "enrollment" && (
         <EnrollmentScreen
           branding={branding}
