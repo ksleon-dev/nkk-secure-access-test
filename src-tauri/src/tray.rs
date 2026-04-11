@@ -21,20 +21,17 @@ pub fn setup<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()> {
     let header = MenuItem::with_id(app, "header", &header_label, false, None::<&str>)?;
     let sep1 = PredefinedMenuItem::separator(app)?;
 
-    // Build launch items from branding (only RDP entries)
+    // Only show the DEFAULT quick launch item in tray (TS2).
+    // TS1 is rarely used and available from the main window.
     let launch_items: Vec<MenuItem<R>> = branding
         .as_ref()
         .map(|b| {
             b.quick_launch
                 .iter()
                 .enumerate()
-                .filter(|(_, e)| e.kind == "rdp")
+                .filter(|(_, e)| e.kind == "rdp" && e.default)
                 .filter_map(|(i, e)| {
-                    let label = if e.default {
-                        format!("→  {}   ★", e.label)
-                    } else {
-                        format!("→  {}", e.label)
-                    };
+                    let label = format!("→  {} öffnen", e.label);
                     MenuItem::with_id(app, format!("launch_{}", i), &label, true, None::<&str>)
                         .ok()
                 })
