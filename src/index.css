@@ -237,6 +237,14 @@ button:disabled {
   animation: vpn-disconnect-fade 400ms ease-out;
 }
 
+@keyframes vpn-glow {
+  0%, 100% { box-shadow: 0 0 8px 2px rgba(181, 31, 41, 0.25); }
+  50% { box-shadow: 0 0 18px 6px rgba(181, 31, 41, 0.45); }
+}
+.vpn-glow-ring {
+  animation: vpn-glow 2.5s ease-in-out infinite;
+}
+
 @keyframes toast-in {
   from {
     opacity: 0;

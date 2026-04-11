@@ -234,24 +234,31 @@ export function MainScreen({
               : "VPN aus"}
           </span>
 
-          {/* Toggle button — big + pulsing when disconnected, subtle when connected */}
-          <button
-            onClick={toggle}
-            disabled={isBusy || (status ? !status.cli_available : false)}
-            className={clsx(
-              "rounded-full font-bold uppercase tracking-wider transition-all",
-              isConnected
-                ? "px-3 py-1 text-[10px] bg-white/20 hover:bg-white/30 text-white border border-white/30"
-                : "px-5 py-1.5 text-[12px] bg-white text-[color:var(--brand-primary)] hover:bg-white/90 shadow-lg animate-pulse-soft",
-              isBusy && "opacity-50 cursor-not-allowed !animate-none"
-            )}
-          >
-            {isBusy
-              ? "…"
-              : isConnected
-              ? "Trennen"
-              : "▶ Verbinden"}
-          </button>
+          {/* Toggle button — prominent glow when disconnected, subtle when connected */}
+          {isConnected ? (
+            <button
+              onClick={toggle}
+              disabled={isBusy}
+              className="rounded-full px-3 py-1 text-[10px] font-bold uppercase tracking-wider bg-white/20 hover:bg-white/30 text-white border border-white/30 transition"
+            >
+              {isBusy ? "…" : "Trennen"}
+            </button>
+          ) : (
+            <button
+              onClick={toggle}
+              disabled={isBusy || (status ? !status.cli_available : false)}
+              className={clsx(
+                "relative rounded-full px-5 py-1.5 text-[12px] font-bold uppercase tracking-wider transition-all",
+                "bg-white text-[color:var(--brand-primary)] shadow-lg hover:shadow-xl active:scale-95",
+                isBusy && "opacity-50 cursor-not-allowed"
+              )}
+            >
+              {!isBusy && (
+                <span className="absolute inset-0 rounded-full bg-white/60 vpn-glow-ring" />
+              )}
+              <span className="relative">{isBusy ? "…" : "▶ Verbinden"}</span>
+            </button>
+          )}
         </div>
       </div>
 
