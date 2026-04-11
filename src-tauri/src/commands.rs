@@ -1134,59 +1134,108 @@ pub async fn smart_debug(
         .unwrap_or_else(|| "https://vpn.secure.nkk-hb.de".to_string());
     let mut steps: Vec<SmartDebugStep> = vec![];
 
-    // Step 1: Internet
+    let debug_lan = branding
+        .as_ref()
+        .and_then(|b| b.quick_launch.iter().find(|q| q.kind == "rdp"))
+        .map(|q| q.target.clone())
+        .unwrap_or_else(|| "192.168.0.20".to_string());
+
+    // ── Step 1: Internet ──
     let internet = ping_host("8.8.8.8", 2000).await;
     steps.push(SmartDebugStep {
         name: "Internet".into(),
         ok: internet,
-        detail: if internet { "Ping 8.8.8.8 OK".into() } else { "Kein Internet".into() },
+        detail: if internet {
+            "Ping 8.8.8.8 OK".into()
+        } else {
+            "Kein Internet — WLAN verbunden? Kabel drin?".into()
+        },
         action_taken: None,
     });
-
     if !internet {
         return Ok(SmartDebugResult {
-            summary: "Kein Internet — bitte WLAN/Netzwerk prüfen. Alle weiteren Tests übersprungen.".into(),
+            summary: "Kein Internet. Bitte WLAN oder Netzwerkkabel prüfen.".into(),
             steps,
         });
     }
 
-    // Step 2: NetBird CLI
-    let status_result = state.netbird.status().await;
-    let cli_present = !matches!(status_result, Err(AppError::NetbirdMissing));
+    // ── Step 2: DNS — kann die Management Domain aufgelöst werden? ──
+    let mgmt_host = mgmt_url
+        .trim_start_matches("https://")
+        .trim_start_matches("http://")
+        .split(':')
+        .next()
+        .unwrap_or("vpn.secure.nkk-hb.de");
+    let dns_ok = ping_host(mgmt_host, 2000).await;
     steps.push(SmartDebugStep {
-        name: "NetBird Client".into(),
-        ok: cli_present,
-        detail: if cli_present { "CLI gefunden".into() } else { "CLI fehlt".into() },
+        name: "DNS".into(),
+        ok: dns_ok,
+        detail: if dns_ok {
+            format!("{} auflösbar", mgmt_host)
+        } else {
+            format!("{} nicht erreichbar — DNS Problem?", mgmt_host)
+        },
         action_taken: None,
     });
 
+    // ── Step 3: Management Server erreichbar? ──
+    let mgmt_reachable = management_reachable(&mgmt_url).await;
+    steps.push(SmartDebugStep {
+        name: "Management Server".into(),
+        ok: mgmt_reachable,
+        detail: if mgmt_reachable {
+            "Server antwortet".into()
+        } else {
+            "Server nicht erreichbar — evtl. Wartung?".into()
+        },
+        action_taken: None,
+    });
+
+    // ── Step 4: NetBird CLI + Service ──
+    let status_result = state.netbird.status().await;
+    let cli_present = !matches!(status_result, Err(AppError::NetbirdMissing));
+    let mut cli_step = SmartDebugStep {
+        name: "NetBird Client".into(),
+        ok: cli_present,
+        detail: if cli_present {
+            "Installiert und bereit".into()
+        } else {
+            "Nicht installiert".into()
+        },
+        action_taken: None,
+    };
+
     if !cli_present {
+        // Try: start service (maybe installed but not running)
         #[cfg(target_os = "windows")]
         {
+            cli_step.action_taken = Some("Versuche Service zu starten …".into());
             let mut sc = TokioCommand::new("sc.exe");
             sc.args(["start", "netbird"]);
             sc.creation_flags(0x08000000);
             if let Ok(Ok(_)) = timeout(Duration::from_secs(5), sc.output()).await {
                 sleep(Duration::from_secs(2)).await;
                 if state.netbird.status().await.is_ok() {
-                    if let Some(last) = steps.last_mut() {
-                        last.ok = true;
-                        last.action_taken = Some("Service gestartet via sc.exe".into());
-                    }
+                    cli_step.ok = true;
+                    cli_step.detail = "Service war gestoppt".into();
+                    cli_step.action_taken = Some("Service erfolgreich gestartet!".into());
                 }
             }
         }
-
-        let still_missing = steps.last().map_or(true, |s| !s.ok);
-        if still_missing {
-            return Ok(SmartDebugResult {
-                summary: "NetBird Client fehlt oder Service läuft nicht. Bitte neu installieren.".into(),
-                steps,
-            });
+        if !cli_step.ok {
+            cli_step.action_taken = Some("Bitte NKK Secure Access Installer erneut ausführen.".into());
         }
     }
+    steps.push(cli_step);
 
-    // Step 3: VPN Connection
+    if !cli_present && !steps.last().map_or(false, |s| s.ok) {
+        return Ok(SmartDebugResult {
+            summary: "NetBird Client fehlt. Bitte den Installer erneut ausführen.".into(),
+            steps,
+        });
+    }
+
+    // ── Step 5: VPN Tunnel ──
     let connected = match &status_result {
         Ok(s) => matches!(s.state, ConnectionState::Connected),
         _ => false,
@@ -1199,10 +1248,26 @@ pub async fn smart_debug(
     };
 
     if !connected && cli_present {
-        // Try auto-reconnect
+        // Try 1: restart service
+        #[cfg(target_os = "windows")]
+        {
+            vpn_step.action_taken = Some("Starte Service neu …".into());
+            let mut sc_stop = TokioCommand::new("sc.exe");
+            sc_stop.args(["stop", "netbird"]);
+            sc_stop.creation_flags(0x08000000);
+            let _ = timeout(Duration::from_secs(3), sc_stop.output()).await;
+            sleep(Duration::from_millis(500)).await;
+            let mut sc_start = TokioCommand::new("sc.exe");
+            sc_start.args(["start", "netbird"]);
+            sc_start.creation_flags(0x08000000);
+            let _ = timeout(Duration::from_secs(3), sc_start.output()).await;
+            sleep(Duration::from_secs(2)).await;
+        }
+
+        // Try 2: netbird up with setup key
         let key = cached_setup_key(&state).await.ok().flatten();
         if key.is_some() {
-            vpn_step.action_taken = Some("Versuche Auto-Reconnect ...".into());
+            vpn_step.action_taken = Some("Versuche Reconnect …".into());
             let up_result = timeout(
                 Duration::from_secs(8),
                 state.netbird.up(&mgmt_url, key.as_deref()),
@@ -1213,46 +1278,96 @@ pub async fn smart_debug(
                 if let Ok(s) = state.netbird.status().await {
                     if matches!(s.state, ConnectionState::Connected) {
                         vpn_step.ok = true;
-                        vpn_step.detail = "Verbunden (auto-reconnect)".into();
-                        vpn_step.action_taken = Some("Auto-Reconnect erfolgreich!".into());
+                        vpn_step.detail = "Verbunden (auto-repariert)".into();
+                        vpn_step.action_taken = Some("Reconnect erfolgreich!".into());
+                        // Push status to UI
+                        let _ = app.emit("netbird-status-changed", &s);
                     }
                 }
             }
         }
+        if !vpn_step.ok {
+            vpn_step.action_taken = Some(
+                "Automatische Reparatur fehlgeschlagen. Bitte App schließen, 10 Sekunden warten, neu starten.".into()
+            );
+        }
     }
     steps.push(vpn_step);
 
-    // Step 4: LAN reachability
-    let debug_lan = branding
-        .as_ref()
-        .and_then(|b| b.quick_launch.iter().find(|q| q.kind == "rdp"))
-        .map(|q| q.target.clone())
-        .unwrap_or_else(|| "192.168.0.20".to_string());
+    // ── Step 6: LAN Erreichbarkeit ──
     let lan_ok = ping_host(&debug_lan, 2000).await;
-    steps.push(SmartDebugStep {
+    let mut lan_step = SmartDebugStep {
         name: "Firmennetz".into(),
         ok: lan_ok,
-        detail: if lan_ok { format!("{} erreichbar", debug_lan) } else { "Nicht erreichbar".into() },
+        detail: if lan_ok {
+            format!("{} erreichbar", debug_lan)
+        } else {
+            format!("{} nicht erreichbar", debug_lan)
+        },
         action_taken: None,
-    });
+    };
+    if !lan_ok && connected {
+        lan_step.action_taken = Some("VPN steht aber Server antwortet nicht — evtl. Firewall oder Server aus.".into());
+    } else if !lan_ok && !connected {
+        lan_step.action_taken = Some("VPN ist nicht verbunden — zuerst VPN verbinden.".into());
+    }
+    steps.push(lan_step);
 
-    // Step 5: Speed
-    let speed = quick_speed_test(&debug_lan).await;
-    if let Some(s) = &speed {
+    // ── Step 7: RDP Port Check ──
+    if lan_ok {
+        let rdp_addr = format!("{}:3389", debug_lan);
+        let rdp_ok = match timeout(
+            Duration::from_secs(3),
+            tokio::net::TcpStream::connect(&rdp_addr),
+        ).await {
+            Ok(Ok(_)) => true,
+            _ => false,
+        };
         steps.push(SmartDebugStep {
-            name: "Latenz".into(),
-            ok: s.duration_ms < 150,
-            detail: format!("{} ms zum Terminalserver", s.duration_ms),
-            action_taken: None,
+            name: "Remote Desktop".into(),
+            ok: rdp_ok,
+            detail: if rdp_ok {
+                "Port 3389 offen — RDP bereit".into()
+            } else {
+                "Port 3389 geschlossen — Terminalserver evtl. aus oder Firewall blockiert".into()
+            },
+            action_taken: if !rdp_ok {
+                Some("Bitte beim Administrator melden — Terminalserver prüfen.".into())
+            } else {
+                None
+            },
         });
     }
 
+    // ── Step 8: Latenz ──
+    let speed = quick_speed_test(&debug_lan).await;
+    if let Some(s) = &speed {
+        let quality = if s.duration_ms < 30 { "Exzellent" }
+            else if s.duration_ms < 80 { "Gut" }
+            else if s.duration_ms < 150 { "Akzeptabel" }
+            else { "Langsam — Arbeit könnte laggen" };
+        steps.push(SmartDebugStep {
+            name: "Latenz".into(),
+            ok: s.duration_ms < 150,
+            detail: format!("{} ms — {}", s.duration_ms, quality),
+            action_taken: if s.duration_ms >= 150 {
+                Some("Langsame Verbindung. Näher an den Router gehen oder LAN Kabel nutzen.".into())
+            } else {
+                None
+            },
+        });
+    }
+
+    // ── Summary ──
     let all_ok = steps.iter().all(|s| s.ok);
-    let summary = if all_ok {
+    let fixed = steps.iter().any(|s| s.action_taken.as_ref().map_or(false, |a| a.contains("erfolgreich")));
+    let summary = if all_ok && fixed {
+        "Probleme wurden automatisch behoben — alles funktioniert jetzt.".into()
+    } else if all_ok {
         "Alle Checks bestanden — Verbindung ist einsatzbereit.".into()
     } else {
         let failed: Vec<&str> = steps.iter().filter(|s| !s.ok).map(|s| s.name.as_str()).collect();
-        format!("Probleme bei: {}. Details oben.", failed.join(", "))
+        format!("Probleme bei: {}. Empfehlungen stehen bei jedem Schritt.", failed.join(", "))
     };
 
     Ok(SmartDebugResult { steps, summary })
