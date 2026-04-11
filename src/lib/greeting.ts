@@ -24,9 +24,8 @@ export function timeOfDayGreeting(date = new Date()): string {
  */
 export function italicAccent(
   state: "Connected" | "Connecting" | "Disconnected" | "Error",
-  demoMode: boolean
+  _unused?: boolean
 ): string {
-  if (demoMode) return "demo modus.";
   switch (state) {
     case "Connected":
       return "frisch da.";

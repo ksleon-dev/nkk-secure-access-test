@@ -21,12 +21,9 @@ import type { ConnectionState, StatusDto } from "../types/netbird";
 interface Props {
   branding: BrandingDto;
   status: StatusDto | null;
-  demoMode: boolean;
   profile: CredentialProfileMeta | null;
   onRequestLaunch: (item: QuickLaunchEntry) => Promise<void> | void;
   onOpenCredentials: () => void;
-  onDemoConnect: () => void;
-  onDemoDisconnect: () => void;
   onOpenSettings: () => void;
   onOpenAbout: () => void;
 }
@@ -34,12 +31,9 @@ interface Props {
 export function MainScreen({
   branding,
   status,
-  demoMode,
   profile,
   onRequestLaunch,
   onOpenCredentials,
-  onDemoConnect,
-  onDemoDisconnect,
   onOpenSettings,
   onOpenAbout,
 }: Props) {
@@ -52,7 +46,7 @@ export function MainScreen({
 
   const greetingName = displayName(profile);
   const greeting = timeOfDayGreeting();
-  const accent = italicAccent(state, demoMode);
+  const accent = italicAccent(state, false);
   void bioFootnote;
 
   const launches = [...branding.quickLaunch].sort(
@@ -60,13 +54,8 @@ export function MainScreen({
   );
 
   async function toggle() {
-    if (pendingToggle.current) return; // block rapid double clicks
+    if (pendingToggle.current) return;
     pendingToggle.current = true;
-    if (demoMode) {
-      isConnected ? onDemoDisconnect() : onDemoConnect();
-      pendingToggle.current = false;
-      return;
-    }
     setBusy(true);
     try {
       if (isConnected) {
@@ -144,11 +133,11 @@ export function MainScreen({
               key={item.target}
               item={item}
               primary={i === 0}
-              disabled={!isConnected && !demoMode}
+              disabled={!isConnected }
               onClick={() => onRequestLaunch(item)}
             />
           ))}
-          {!isConnected && !demoMode && launches.length > 0 && (
+          {!isConnected  && launches.length > 0 && (
             <div className="text-[11px] text-center mt-0.5 italic text-[color:var(--brand-fg)]/70">
               {status && !status.cli_available
                 ? "Kein VPN Client installiert — bitte Administrator kontaktieren."
@@ -162,13 +151,13 @@ export function MainScreen({
       <div
         className={clsx(
           "fade-in-5 relative z-10 px-4 shrink-0 transition-colors duration-300",
-          isConnected || demoMode
+          isConnected
             ? "bg-emerald-600 py-2"
             : state === "Connecting"
             ? "bg-amber-500 py-2"
             : state === "Error"
             ? "bg-red-600 py-2"
-            : "bg-[color:var(--brand-fg)] py-2.5"
+            : "bg-[color:var(--brand-primary)] py-2.5"
         )}
       >
         <div className="flex items-center gap-2">
@@ -179,8 +168,7 @@ export function MainScreen({
             <div
               className={clsx(
                 "w-2.5 h-2.5 rounded-full shrink-0",
-                isConnected || demoMode
-                  ? "bg-white animate-pulse-soft"
+                isConnected                   ? "bg-white animate-pulse-soft"
                   : "bg-white/50"
               )}
             />
@@ -188,8 +176,7 @@ export function MainScreen({
 
           {/* Status text */}
           <span className="flex-1 text-[12px] font-bold text-white truncate">
-            {isConnected || demoMode
-              ? `Verbunden${status?.local_ip ? ` — ${status.local_ip}` : ""}`
+            {isConnected               ? `Verbunden${status?.local_ip ? ` — ${status.local_ip}` : ""}`
               : state === "Connecting"
               ? "Verbinde …"
               : state === "Error"
@@ -200,19 +187,17 @@ export function MainScreen({
           {/* Toggle button */}
           <button
             onClick={toggle}
-            disabled={isBusy || (status ? !status.cli_available && !demoMode : false)}
+            disabled={isBusy || (status ? !status.cli_available  : false)}
             className={clsx(
               "rounded-full px-3.5 py-1 text-[10px] font-bold uppercase tracking-wider transition",
-              isConnected || demoMode
-                ? "bg-white/20 hover:bg-white/30 text-white border border-white/30"
+              isConnected                 ? "bg-white/20 hover:bg-white/30 text-white border border-white/30"
                 : "bg-[color:var(--brand-primary)] hover:bg-[color:var(--brand-primary-hover)] text-white",
               isBusy && "opacity-50 cursor-not-allowed"
             )}
           >
             {isBusy
               ? "…"
-              : isConnected || demoMode
-              ? "Trennen"
+              : isConnected               ? "Trennen"
               : "Verbinden"}
           </button>
         </div>

@@ -2,7 +2,6 @@ import { invoke } from "@tauri-apps/api/core";
 import {
   ArrowLeft,
   CheckCircle2,
-  FlaskConical,
   Loader2,
   LogOut,
   Pencil,
@@ -26,26 +25,22 @@ import type {
 
 interface Props {
   branding: BrandingDto;
-  demoMode: boolean;
   profiles: CredentialProfileMeta[];
   onAddProfile: () => void;
   onEditProfile: (profile: CredentialProfileMeta) => void;
   onDeleteProfile: (id: string) => void;
   onBack: () => void;
   onResetEnrollment: () => void;
-  onLeaveDemo: () => void;
 }
 
 export function SettingsScreen({
   branding,
-  demoMode,
   profiles,
   onAddProfile,
   onEditProfile,
   onDeleteProfile,
   onBack,
   onResetEnrollment,
-  onLeaveDemo,
 }: Props) {
   const [autostart, setAutostart] = useState(false);
   const [logs, setLogs] = useState<string[]>([]);
@@ -140,24 +135,6 @@ export function SettingsScreen({
       </header>
 
       <div className="flex-1 overflow-y-auto px-4 pb-4">
-        {demoMode && (
-          <div className="mt-1 mb-3 surface rounded-lg px-2.5 py-2 flex items-center gap-2 border-amber-500/40">
-            <FlaskConical size={13} className="text-amber-500 shrink-0" />
-            <div className="flex-1 min-w-0">
-              <div className="text-[11px] font-semibold">Demo Modus aktiv</div>
-              <div className="text-[10px] text-muted leading-tight">
-                Mock Daten — keine echte Verbindung
-              </div>
-            </div>
-            <button
-              onClick={onLeaveDemo}
-              className="text-[10px] font-semibold text-[color:var(--brand-primary)] hover:underline"
-            >
-              Beenden
-            </button>
-          </div>
-        )}
-
         {/* Credential profiles */}
         <Section
           title="Anmeldedaten"

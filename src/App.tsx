@@ -2,12 +2,6 @@ import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { useCallback, useEffect, useState } from "react";
 import { ToastProvider, useToast } from "./components/Toast";
-import {
-  disableDemoMode,
-  enableDemoMode,
-  isDemoMode,
-  makeDemoStatus,
-} from "./demo";
 import { CredentialsModal } from "./screens/CredentialsModal";
 import { DiagnosePanel } from "./screens/DiagnosePanel";
 import { EnrollmentScreen } from "./screens/EnrollmentScreen";
@@ -34,7 +28,6 @@ function AppInner() {
   const [diagnoseOpen, setDiagnoseOpen] = useState(false);
   const [bootstrapping, setBootstrapping] = useState(true);
   const [bootError, setBootError] = useState<string | null>(null);
-  const [demo, setDemo] = useState(false);
   const [profiles, setProfiles] = useState<CredentialProfileMeta[]>([]);
   const [credModalOpen, setCredModalOpen] = useState(false);
   const [editingProfile, setEditingProfile] =
@@ -64,7 +57,8 @@ function AppInner() {
         await invoke(cmd, { target: item.target });
         toast.success(`${item.label} wird gestartet …`);
       } catch (e: unknown) {
-        toast.error(String(e));
+        const msg = e instanceof Error ? e.message : String(e);
+        toast.error(msg);
       }
     },
     [toast]
@@ -72,7 +66,6 @@ function AppInner() {
 
   const requestLaunch = useCallback(
     async (item: QuickLaunchEntry) => {
-      // RDP client asks for credentials on every launch — no pre-flight modal.
       await performLaunch(item);
     },
     [performLaunch]
@@ -109,7 +102,8 @@ function AppInner() {
         await refreshProfiles();
         toast.info("Profil gelöscht.");
       } catch (e: unknown) {
-        toast.error(String(e));
+        const msg = e instanceof Error ? e.message : String(e);
+        toast.error(msg);
       }
     },
     [refreshProfiles, toast]
@@ -126,72 +120,58 @@ function AppInner() {
         setBranding(b);
         applyTheme(b);
 
-        await refreshProfiles();
+        // Check enrollment FIRST — this hits the keychain once for the
+        // setup key. We defer creds_list to AFTER screen is shown so there's
+        // only ONE keychain prompt on macOS startup, not two.
+        const enrolled = await invoke<boolean>("nb_is_enrolled").catch(
+          () => false
+        );
+        if (!mounted) return;
+        setScreen(enrolled ? "main" : "enrollment");
 
-        const demoActive = isDemoMode();
-        setDemo(demoActive);
-
-        if (demoActive) {
-          setStatus(makeDemoStatus(true));
-          setScreen("main");
-        } else {
-          const enrolled = await invoke<boolean>("nb_is_enrolled").catch(
-            () => false
-          );
-          if (!mounted) return;
-          setScreen(enrolled ? "main" : "enrollment");
-
-          try {
-            const initial = await invoke<StatusDto>("nb_status");
-            if (mounted) setStatus(initial);
-          } catch {
-            /* ignore */
-          }
+        try {
+          const initial = await invoke<StatusDto>("nb_status");
+          if (mounted) setStatus(initial);
+        } catch {
+          /* ignore */
         }
 
+        // Load credential profiles AFTER the screen is visible — separate
+        // keychain entry, separate prompt on unsigned macOS builds.
+        await refreshProfiles();
+
         const u1 = await listen<StatusDto>("netbird-status-changed", (ev) => {
-          if (isDemoMode()) return;
           setStatus(ev.payload);
         });
         const u2 = await listen<string>("netbird-error", (ev) => {
-          if (isDemoMode()) return;
           const msg = String(ev.payload);
           if (msg) toast.error(msg);
         });
         const u3 = await listen("tray-connect", async () => {
-          if (isDemoMode()) {
-            setStatus(makeDemoStatus(true));
-            return;
-          }
           try {
             await invoke("nb_connect", {});
           } catch (e: unknown) {
-            toast.error(String(e));
+            const msg = e instanceof Error ? e.message : String(e);
+            toast.error(msg);
           }
         });
         const u4 = await listen("tray-disconnect", async () => {
-          if (isDemoMode()) {
-            setStatus(makeDemoStatus(false));
-            return;
-          }
           try {
             await invoke("nb_disconnect");
           } catch (e: unknown) {
-            toast.error(String(e));
+            const msg = e instanceof Error ? e.message : String(e);
+            toast.error(msg);
           }
         });
         const u5 = await listen<number>("tray-launch-index", async (ev) => {
           try {
             const b = await invoke<BrandingDto>("get_branding");
-            const launches = b.quickLaunch.filter((q) => q.type === "rdp");
             const idx = ev.payload;
-            // The Rust side passes the original quick_launch index, not a
-            // filtered index — so look up by the same index in the unfiltered
-            // list to be safe.
-            const item = b.quickLaunch[idx] ?? launches[idx];
+            const item = b.quickLaunch[idx];
             if (item) await requestLaunch(item);
           } catch (e: unknown) {
-            toast.error(String(e));
+            const msg = e instanceof Error ? e.message : String(e);
+            toast.error(msg);
           }
         });
         const u6 = await listen("tray-open-diagnose", () => {
@@ -220,21 +200,6 @@ function AppInner() {
     };
   }, [refreshProfiles, requestLaunch, toast]);
 
-  function activateDemo() {
-    enableDemoMode();
-    setDemo(true);
-    setStatus(makeDemoStatus(true));
-    setScreen("main");
-    toast.info("Demo Modus aktiv — keine echte Verbindung.");
-  }
-
-  function deactivateDemo() {
-    disableDemoMode();
-    setDemo(false);
-    setStatus(null);
-    setScreen("enrollment");
-  }
-
   if (bootstrapping || !branding) {
     return (
       <div className="h-full flex flex-col items-center justify-center gap-3 text-sm text-muted">
@@ -255,14 +220,12 @@ function AppInner() {
         <EnrollmentScreen
           branding={branding}
           onEnrolled={() => setScreen("main")}
-          onDemoMode={activateDemo}
         />
       )}
       {screen === "main" && (
         <MainScreen
           branding={branding}
           status={status}
-          demoMode={demo}
           profile={profiles[0] ?? null}
           onRequestLaunch={requestLaunch}
           onOpenCredentials={
@@ -270,8 +233,6 @@ function AppInner() {
               ? () => openEditProfileModal(profiles[0])
               : openNewProfileModal
           }
-          onDemoConnect={() => setStatus(makeDemoStatus(true))}
-          onDemoDisconnect={() => setStatus(makeDemoStatus(false))}
           onOpenSettings={() => setScreen("settings")}
           onOpenAbout={() => setDiagnoseOpen(true)}
         />
@@ -279,14 +240,12 @@ function AppInner() {
       {screen === "settings" && (
         <SettingsScreen
           branding={branding}
-          demoMode={demo}
           profiles={profiles}
           onAddProfile={openNewProfileModal}
           onEditProfile={openEditProfileModal}
           onDeleteProfile={handleProfileDeleted}
           onBack={() => setScreen("main")}
           onResetEnrollment={() => setScreen("enrollment")}
-          onLeaveDemo={deactivateDemo}
         />
       )}
       {diagnoseOpen && (

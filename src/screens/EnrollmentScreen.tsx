@@ -1,7 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import {
   ArrowRight,
-  FlaskConical,
   KeyRound,
   Loader2,
   ShieldCheck,
@@ -16,31 +15,16 @@ import type { BrandingDto } from "../types/branding";
 interface Props {
   branding: BrandingDto;
   onEnrolled: () => void;
-  onDemoMode: () => void;
 }
-
-const DEMO_KEY = "AAAAAAAA-BBBB-CCCC-DDDD-EEEEEEEEEEEE";
-const DEMO_TAP_THRESHOLD = 5;
 
 export function EnrollmentScreen({
   branding,
   onEnrolled,
-  onDemoMode,
 }: Props) {
   const [key, setKey] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-  const [logoTaps, setLogoTaps] = useState(0);
   const toast = useToast();
-
-  // Secret demo mode — tap the logo 5 times to reveal. Hidden from normal users.
-  function handleLogoTap() {
-    const next = logoTaps + 1;
-    setLogoTaps(next);
-    if (next === DEMO_TAP_THRESHOLD) {
-      toast.info("Demo Modus freigeschaltet.");
-    }
-  }
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -66,14 +50,7 @@ export function EnrollmentScreen({
       {/* Centered hero card */}
       <main className="flex-1 flex flex-col items-center justify-center px-6 gap-4 text-center">
         <div className="fade-in-1 flex flex-col items-center">
-          <button
-            type="button"
-            onClick={handleLogoTap}
-            className="focus:outline-none active:scale-95 transition-transform"
-            aria-hidden="true"
-          >
-            <Logo branding={branding} size={120} />
-          </button>
+          <Logo branding={branding} size={120} />
           <TaglineMark width={240} className="mt-1" />
         </div>
 
@@ -134,28 +111,11 @@ export function EnrollmentScreen({
             )}
           </button>
 
-          <button
-            type="button"
-            onClick={() => setKey(DEMO_KEY)}
-            className="text-[11px] text-muted hover:text-[color:var(--brand-primary)] transition underline-offset-2 hover:underline mt-1"
-          >
-            Beispiel Key einsetzen
-          </button>
         </form>
       </main>
 
       {/* Bottom helpers */}
       <div className="fade-in-4 px-6 pb-3 flex flex-col gap-2 shrink-0">
-        {logoTaps >= DEMO_TAP_THRESHOLD && (
-          <button
-            type="button"
-            onClick={onDemoMode}
-            className="surface hover:border-[color:var(--brand-primary)] rounded-lg py-2 text-xs flex items-center justify-center gap-1.5 transition animate-fade-up"
-          >
-            <FlaskConical size={12} />
-            Demo Modus (ohne echten Key)
-          </button>
-        )}
         <div className="flex items-center justify-center gap-1.5 text-[10px] text-muted">
           <ShieldCheck size={10} />
           <span>{de.enrollment.helpText}</span>
