@@ -84,15 +84,17 @@ export function MainScreen({
     if (pendingToggle.current) return;
     pendingToggle.current = true;
     setBusy(true);
+    const minBusy = new Promise((r) => setTimeout(r, 2500)); // particles visible min 2.5s
     try {
       if (isConnected) {
-        await invoke("nb_disconnect");
+        await Promise.all([invoke("nb_disconnect"), minBusy]);
         toast.info(de.toast.disconnected);
       } else {
-        await invoke("nb_connect", {});
+        await Promise.all([invoke("nb_connect", {}), minBusy]);
         toast.success(de.toast.connected);
       }
     } catch (e: unknown) {
+      await minBusy; // show particles even on error
       const msg = e instanceof Error ? e.message : String(e);
       toast.error(msg);
     } finally {
@@ -158,16 +160,16 @@ export function MainScreen({
             {isBusy && (
               <>
                 {[
-                  { angle: "0deg",   dist: "58px", speed: 1.3, delay: 0,   sz: 5, color: "#B51F29" },
-                  { angle: "50deg",  dist: "52px", speed: 1.5, delay: 0.2, sz: 3, color: "#4a8c3f" },
-                  { angle: "95deg",  dist: "55px", speed: 1.4, delay: 0.5, sz: 4, color: "#B51F29" },
-                  { angle: "140deg", dist: "50px", speed: 1.6, delay: 0.3, sz: 3, color: "#e8a317" },
-                  { angle: "185deg", dist: "56px", speed: 1.3, delay: 0.7, sz: 5, color: "#4a8c3f" },
-                  { angle: "230deg", dist: "48px", speed: 1.5, delay: 0.1, sz: 4, color: "#B51F29" },
-                  { angle: "275deg", dist: "54px", speed: 1.4, delay: 0.6, sz: 3, color: "#e8a317" },
-                  { angle: "320deg", dist: "52px", speed: 1.6, delay: 0.4, sz: 5, color: "#4a8c3f" },
-                  { angle: "25deg",  dist: "60px", speed: 1.7, delay: 0.8, sz: 3, color: "#B51F29" },
-                  { angle: "210deg", dist: "50px", speed: 1.3, delay: 0.9, sz: 4, color: "#e8a317" },
+                  { angle: "0deg",   dist: "90px", speed: 1.3, delay: 0,   sz: 5, color: "#B51F29" },
+                  { angle: "50deg",  dist: "85px", speed: 1.5, delay: 0.2, sz: 4, color: "#4a8c3f" },
+                  { angle: "95deg",  dist: "88px", speed: 1.4, delay: 0.5, sz: 5, color: "#B51F29" },
+                  { angle: "140deg", dist: "82px", speed: 1.6, delay: 0.3, sz: 4, color: "#e8a317" },
+                  { angle: "185deg", dist: "90px", speed: 1.3, delay: 0.7, sz: 5, color: "#4a8c3f" },
+                  { angle: "230deg", dist: "80px", speed: 1.5, delay: 0.1, sz: 4, color: "#B51F29" },
+                  { angle: "275deg", dist: "86px", speed: 1.4, delay: 0.6, sz: 5, color: "#e8a317" },
+                  { angle: "320deg", dist: "84px", speed: 1.6, delay: 0.4, sz: 4, color: "#4a8c3f" },
+                  { angle: "25deg",  dist: "92px", speed: 1.7, delay: 0.8, sz: 5, color: "#B51F29" },
+                  { angle: "210deg", dist: "82px", speed: 1.3, delay: 0.9, sz: 4, color: "#e8a317" },
                 ].map((p, i) => (
                   <div
                     key={i}
@@ -195,7 +197,7 @@ export function MainScreen({
                     className="logo-particle logo-particle-green"
                     style={{
                       "--angle": `${i * 45}deg`,
-                      "--dist": "62px",
+                      "--dist": "92px",
                       animationDelay: `${i * 0.04}s`,
                       width: 5,
                       height: 5,
