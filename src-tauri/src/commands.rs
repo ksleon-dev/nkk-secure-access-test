@@ -427,11 +427,39 @@ pub async fn nb_connect(
     setup_key: Option<String>,
     state: State<'_, AppState>,
 ) -> AppResult<()> {
+    // DEMO KEY: skip everything immediately — REMOVE BEFORE PRODUCTION
+    if setup_key.as_deref().map(|s| s.trim()) == Some("KRONDEMO2026") {
+        tracing::info!("Demo Key erkannt — fake connected Status");
+        let _ = write_enrolled_marker(&app);
+        let fake = StatusDto {
+            state: ConnectionState::Connected,
+            management_connected: true,
+            peers: vec![
+                crate::netbird::PeerDto {
+                    name: "Serv-TS2".into(),
+                    ip: "192.168.0.20".into(),
+                    connected: true,
+                    latency_ms: Some(18),
+                    relay: Some("P2P".into()),
+                },
+                crate::netbird::PeerDto {
+                    name: "Serv-TS1".into(),
+                    ip: "192.168.0.19".into(),
+                    connected: true,
+                    latency_ms: Some(22),
+                    relay: Some("P2P".into()),
+                },
+            ],
+            local_ip: Some("100.64.0.99".into()),
+            updated_at: chrono::Utc::now().to_rfc3339(),
+            cli_available: true,
+        };
+        let _ = app.emit("netbird-status-changed", &fake);
+        return Ok(());
+    }
+
     let branding = ensure_branding(&app, &state).await?;
 
-    // Pre-flight reachability probe — fail fast with a clear error if the
-    // management server cannot be reached at all instead of letting the
-    // netbird CLI hang for 30 seconds.
     if !management_reachable(&branding.netbird.management_url).await {
         tracing::warn!(
             "Management Server {} nicht erreichbar — versuche trotzdem.",
@@ -453,7 +481,9 @@ pub async fn nb_connect(
         .up(&branding.netbird.management_url, key.as_deref())
         .await?;
 
-    // Trigger an immediate status push so the UI feels snappy
+    // Mark as enrolled so next startup skips the enrollment screen
+    let _ = write_enrolled_marker(&app);
+
     if let Ok(s) = state.netbird.status().await {
         let _ = app.emit("netbird-status-changed", &s);
     }
@@ -505,22 +535,41 @@ pub async fn nb_status(state: State<'_, AppState>) -> AppResult<StatusDto> {
     }
 }
 
-/// Smart enrollment check — returns true if EITHER:
-/// 1. We have a setup key in our keyring (user enrolled via the app), OR
-/// 2. NetBird is already connected (enrolled via the NSIS installer /SETUPKEY=)
-/// This prevents showing the enrollment screen to users who were already
-/// provisioned by the IT admin's silent install.
+/// Enrollment check — uses a LOCAL FILE marker instead of keyring to avoid
+/// macOS Keychain prompts on every startup. Zero keychain hits at boot.
 #[tauri::command]
-pub async fn nb_is_enrolled(state: State<'_, AppState>) -> AppResult<bool> {
-    // Fast path: check our own keyring cache first (no subprocess)
-    if cached_setup_key(&state).await?.is_some() {
+pub async fn nb_is_enrolled(app: AppHandle, state: State<'_, AppState>) -> AppResult<bool> {
+    // Fast: check local marker file (no keychain, no subprocess)
+    if enrolled_marker_path(&app).map(|p| p.exists()).unwrap_or(false) {
         return Ok(true);
     }
-    // Slow path: ask netbird if it's already enrolled via management
+    // Slow: ask netbird if already connected (CLI call, no keychain)
     match timeout(Duration::from_secs(3), state.netbird.status()).await {
-        Ok(Ok(s)) if s.management_connected => Ok(true),
+        Ok(Ok(s)) if s.management_connected => {
+            // Create marker so next startup is instant
+            let _ = write_enrolled_marker(&app);
+            Ok(true)
+        }
         _ => Ok(false),
     }
+}
+
+fn enrolled_marker_path(app: &AppHandle) -> Option<std::path::PathBuf> {
+    app.path()
+        .app_data_dir()
+        .ok()
+        .map(|d| d.join("enrolled.flag"))
+}
+
+fn write_enrolled_marker(app: &AppHandle) -> AppResult<()> {
+    if let Some(path) = enrolled_marker_path(app) {
+        if let Some(parent) = path.parent() {
+            let _ = std::fs::create_dir_all(parent);
+        }
+        std::fs::write(&path, chrono::Utc::now().to_rfc3339())
+            .map_err(|e| AppError::Internal(format!("Marker schreiben: {}", e)))?;
+    }
+    Ok(())
 }
 
 #[tauri::command]
@@ -529,6 +578,10 @@ pub async fn nb_reset_enrollment(
     state: State<'_, AppState>,
 ) -> AppResult<()> {
     let _ = state.netbird.down().await;
+    // Delete the enrollment marker so the enrollment screen shows again
+    if let Some(path) = enrolled_marker_path(&app) {
+        let _ = std::fs::remove_file(path);
+    }
     cached_delete_setup_key(&state).await?;
     if let Ok(s) = state.netbird.status().await {
         let _ = app.emit("netbird-status-changed", &s);

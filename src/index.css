@@ -286,6 +286,14 @@ button:disabled {
   animation: logo-connected-pop 600ms cubic-bezier(0.2, 0.8, 0.2, 1);
 }
 
+@keyframes shake {
+  0%, 100% { transform: translateX(0); }
+  20% { transform: translateX(-8px); }
+  40% { transform: translateX(8px); }
+  60% { transform: translateX(-4px); }
+  80% { transform: translateX(4px); }
+}
+
 .logo-particle-green {
   animation-name: particle-burst;
   animation-duration: 0.7s;
