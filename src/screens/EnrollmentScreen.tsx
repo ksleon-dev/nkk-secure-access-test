@@ -77,7 +77,7 @@ export function EnrollmentScreen({ branding, onEnrolled }: Props) {
                   size={120}
                   className={
                     phase === "connecting" ? "logo-float" :
-                    phase === "error" ? "animate-[shake_0.5s_ease-in-out]" : ""
+                    phase === "error" ? "logo-shake logo-error-glow" : ""
                   }
                 />
                 {phase === "error" && (
