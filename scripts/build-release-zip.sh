@@ -23,42 +23,9 @@ mkdir -p "$OUTDIR"
 # EXE kopieren mit sauberem Namen
 cp "$EXE" "$OUTDIR/NKK Secure Access Setup.exe"
 
-# Anleitung als TXT (kein PDF nötig, einfach und lesbar)
-cat > "$OUTDIR/ANLEITUNG.txt" << 'EOF'
-╔══════════════════════════════════════════════════════════════╗
-║              NKK Secure Access — Anleitung                  ║
-╚══════════════════════════════════════════════════════════════╝
-
-INSTALLATION (einmalig, 2 Minuten)
-
-  1. Doppelklick auf "NKK Secure Access Setup.exe"
-  2. Installer durchklicken (Weiter, Weiter, Fertig)
-  3. App öffnen: Startmenü → KronSolutions → NKK Secure Access
-  4. Aktivierungsschlüssel eingeben (kommt in separater Mail)
-  5. Auf "Aktivieren" klicken — fertig!
-
-TÄGLICHE NUTZUNG
-
-  • App öffnen (oder Tray Icon unten rechts klicken)
-  • "Terminalserver 2" klicken → Arbeitsplatz öffnet sich
-  • Das wars!
-
-EINSTELLUNGEN
-
-  • Zahnrad Icon oben rechts → Einstellungen
-  • "Beim Anmelden starten" → App startet mit Windows (optional)
-
-BEI PROBLEMEN
-
-  • In der App: Headphones Icon oben rechts
-  • "Diagnose für Support kopieren" klicken
-  • Text per Mail schicken an: support@ticket.kronsolutions.de
-
-══════════════════════════════════════════════════════════════
-  Powered by KronSolutions GmbH
-  Zukunftssicher. Technologie mit Wirkung.
-══════════════════════════════════════════════════════════════
-EOF
+# Anleitung als HTML (schönes Brand Design, druckbar als PDF via Browser)
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+cp "$SCRIPT_DIR/../docs/anleitung.html" "$OUTDIR/Anleitung.html"
 
 # ZIP mit Passwort bauen
 ZIPFILE="$(pwd)/NKK-Secure-Access.zip"
