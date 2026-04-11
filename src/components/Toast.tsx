@@ -79,7 +79,7 @@ function Toast({ item, onClose }: { item: ToastItem; onClose: () => void }) {
           : "animate-[toast-in_300ms_cubic-bezier(0.2,0.8,0.2,1)_both]",
         item.kind === "success" && "bg-emerald-600 text-white",
         item.kind === "error" && "bg-[color:var(--brand-primary)] text-white",
-        item.kind === "info" && "bg-[color:var(--brand-primary)] text-white"
+        item.kind === "info" && "bg-[color:var(--brand-bg-soft)] text-[color:var(--brand-fg)] border border-[color:var(--brand-border)]"
       )}
     >
       <Icon size={15} className="shrink-0 opacity-90" />
