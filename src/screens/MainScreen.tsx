@@ -52,6 +52,9 @@ export function MainScreen({
   const accent = italicAccent(state);
   void bioFootnote;
 
+  const [logoTaps, setLogoTaps] = useState(0);
+  const easterEgg = logoTaps >= 7;
+
   // Track state transitions for animations
   const prevState = useRef(state);
   const transition = useMemo(() => {
@@ -155,7 +158,18 @@ export function MainScreen({
       {/* Centered hero — content sits directly on the cream background */}
       <main className="relative z-10 flex-1 flex flex-col items-center justify-center px-6 gap-3 py-2 text-center">
         <div className="fade-in-1 flex flex-col items-center">
-          <div className="relative flex items-center justify-center" style={{ width: 120, height: 120 }}>
+          <div
+            className="relative flex items-center justify-center cursor-pointer"
+            style={{ width: 120, height: 120 }}
+            onClick={() => {
+              setLogoTaps((t) => {
+                const next = t + 1;
+                if (next === 7) toast.info("🥕 Bio Power aktiviert!");
+                if (next >= 10) return 0;
+                return next;
+              });
+            }}
+          >
             {/* Professional particles — cherry red dots + subtle BIO labels */}
             {isBusy && (
               <>
@@ -212,6 +226,7 @@ export function MainScreen({
               branding={branding}
               size={104}
               className={clsx(
+                easterEgg && "animate-spin",
                 "relative z-10 transition-transform duration-300",
                 isBusy && "logo-float",
                 transition === "connected" && !isBusy && "logo-connected-pop"
