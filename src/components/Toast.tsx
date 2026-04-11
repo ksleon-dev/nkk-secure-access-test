@@ -78,8 +78,8 @@ function Toast({ item, onClose }: { item: ToastItem; onClose: () => void }) {
           ? "toast-dismiss"
           : "animate-[toast-in_300ms_cubic-bezier(0.2,0.8,0.2,1)_both]",
         item.kind === "success" && "bg-emerald-600 text-white",
-        item.kind === "error" && "bg-red-600 text-white",
-        item.kind === "info" && "bg-[color:var(--brand-fg)] text-[color:var(--brand-bg)]"
+        item.kind === "error" && "bg-[color:var(--brand-primary)] text-white",
+        item.kind === "info" && "bg-[color:var(--brand-primary)] text-white"
       )}
     >
       <Icon size={15} className="shrink-0 opacity-90" />
