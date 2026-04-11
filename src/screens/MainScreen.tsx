@@ -258,13 +258,14 @@ export function MainScreen({
       <div
         className={clsx(
           "fade-in-5 relative z-10 px-4 shrink-0 transition-colors duration-300",
+          "py-2.5",
           isConnected
-            ? "bg-emerald-600 py-2"
+            ? "bg-emerald-600"
             : state === "Connecting"
-            ? "bg-amber-500 py-2"
+            ? "bg-amber-500"
             : state === "Error"
-            ? "bg-red-600 py-2"
-            : "bg-[color:var(--brand-primary)] py-2.5",
+            ? "bg-red-600"
+            : "bg-[color:var(--brand-primary)]",
           transition === "connected" && "vpn-connected-enter",
           transition === "disconnected" && "vpn-disconnect-enter"
         )}
@@ -275,18 +276,15 @@ export function MainScreen({
         )}
 
         <div className="relative flex items-center gap-2">
-          {/* Status icon */}
-          {isBusy ? (
-            <div className="w-3 h-3 rounded-full bg-white vpn-connecting-dot shrink-0" />
-          ) : (
-            <div
-              className={clsx(
-                "w-2.5 h-2.5 rounded-full shrink-0",
-                isConnected ? "bg-white dot-connected" : "bg-white/50",
-                transition === "connected" && "vpn-dot-pulse"
-              )}
-            />
-          )}
+          {/* Status dot — always same size to prevent layout jump */}
+          <div
+            className={clsx(
+              "w-2.5 h-2.5 rounded-full shrink-0 transition-colors",
+              isBusy ? "bg-white vpn-connecting-dot" :
+              isConnected ? "bg-white dot-connected" : "bg-white/50",
+              transition === "connected" && "vpn-dot-pulse"
+            )}
+          />
 
           {/* Status text — fixed min-width so layout doesn't jump on state change */}
           <span className="flex-1 text-[12px] font-bold text-white truncate min-h-[18px]">
@@ -299,31 +297,25 @@ export function MainScreen({
               : "Nicht verbunden"}
           </span>
 
-          {/* Toggle button — prominent glow when disconnected, subtle when connected */}
-          {isConnected ? (
-            <button
-              onClick={toggle}
-              disabled={isBusy}
-              className="rounded-full px-3 py-1 text-[10px] font-bold uppercase tracking-wider bg-white/20 hover:bg-white/30 text-white border border-white/30 transition"
-            >
-              {isBusy ? "…" : "Trennen"}
-            </button>
-          ) : (
-            <button
-              onClick={toggle}
-              disabled={isBusy || (status ? !status.cli_available : false)}
-              className={clsx(
-                "relative rounded-full px-5 py-1.5 text-[12px] font-bold uppercase tracking-wider transition-all",
-                "bg-white text-[color:var(--brand-primary)] shadow-lg hover:shadow-xl active:scale-95",
-                isBusy && "opacity-50 cursor-not-allowed"
-              )}
-            >
-              {!isBusy && (
-                <span className="absolute inset-0 rounded-full bg-white/60 vpn-glow-ring" />
-              )}
-              <span className="relative">{isBusy ? "…" : "▶ Verbinden"}</span>
-            </button>
-          )}
+          {/* Toggle button — single element, changes style not structure */}
+          <button
+            onClick={toggle}
+            disabled={isBusy || (!isConnected && status ? !status.cli_available : false)}
+            className={clsx(
+              "relative rounded-full py-1.5 text-[11px] font-bold uppercase tracking-wider transition-all min-w-[100px]",
+              isConnected
+                ? "px-3 bg-white/20 hover:bg-white/30 text-white border border-white/30"
+                : "px-4 bg-white text-[color:var(--brand-primary)] shadow-lg hover:shadow-xl active:scale-95",
+              isBusy && "opacity-50 cursor-not-allowed"
+            )}
+          >
+            {!isConnected && !isBusy && (
+              <span className="absolute inset-0 rounded-full bg-white/60 vpn-glow-ring" />
+            )}
+            <span className="relative">
+              {isBusy ? "…" : isConnected ? "Trennen" : "▶ Verbinden"}
+            </span>
+          </button>
         </div>
       </div>
 
