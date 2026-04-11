@@ -1,40 +1,79 @@
 # NKK API Server
 
-Micro-Service für NKK Secure Access Clients. Läuft als Docker Container
-auf der NetBird Debian 12 VM neben dem bestehenden Stack.
+Micro-Service fuer NKK Secure Access Clients. Laeuft als Docker Container
+auf **nkk-secure** (Debian 12 VM, 142.132.143.129).
 
-## Funktionen
+## Architektur
 
-| Endpoint | Methode | Beschreibung |
-|---|---|---|
-| `/api/enrollment` | POST | Enrollment Diagnostic empfangen |
-| `/api/enrollments` | GET | Alle Reports als JSON Liste |
-| `/api/news` | GET | News JSON für Clients |
-| `/api/news` | POST | News JSON updaten (Admin) |
-| `/api/health` | GET | Status Check |
-
-## Setup auf der Debian VM
-
-```bash
-# Dateien auf die VM kopieren
-scp -r scripts/nkk-api/ root@142.132.143.129:/opt/kronsolutions/nkk-api/
-
-# Auf der VM:
-ssh root@142.132.143.129
-cd /opt/kronsolutions/nkk-api
-docker compose up -d --build
-
-# Firewall Port öffnen
-ufw allow 9876/tcp
-
-# Testen
-curl http://localhost:9876/api/health
+```
+Client (NKK Secure Access)
+    ↓ HTTPS
+api.secure.nkk-hb.de (A Record → 142.132.143.129)
+    ↓
+Nginx Reverse Proxy (SSL Termination, Rate Limiting)
+    ↓ HTTP :9876
+Docker Container (Python/Flask/Gunicorn)
+    ↓
+Docker Volume (nkk-data) → /data/enrollments/ + /data/news.json
 ```
 
-## News aktualisieren (von deinem Mac aus)
+## Endpoints
+
+| Endpoint | Methode | Beschreibung | Auth |
+|---|---|---|---|
+| `/api/enrollment` | POST | Enrollment Diagnostic empfangen | Keine (Rate Limited) |
+| `/api/enrollments` | GET | Alle Reports als JSON Liste | Keine |
+| `/api/news` | GET | News JSON fuer Clients | Keine |
+| `/api/news` | POST | News JSON updaten (Admin) | Keine* |
+| `/api/health` | GET | Status Check | Keine |
+
+*TODO: API Key Auth fuer POST /api/news in Zukunft
+
+## Schnell Deployment (vom Host via RDP)
+
+Per RDP auf NKK-MULTIVM verbinden, PowerShell als Admin:
+
+```powershell
+# Dateien nach C:\Umbau\nkk-api\ kopieren, dann:
+.\deploy-from-host.ps1
+```
+
+Das macht alles: SSH auf nkk-secure, Dateien hochladen, Docker bauen, Nginx, Firewall, SSL.
+
+## Manuelles Setup (direkt auf nkk-secure)
 
 ```bash
-curl -X POST http://142.132.143.129:9876/api/news \
+ssh root@142.132.143.129
+cd /opt/kronsolutions/nkk-api
+chmod +x deploy-debian.sh
+./deploy-debian.sh
+```
+
+## DNS Voraussetzung
+
+Bevor SSL funktioniert, muessen diese A Records gesetzt sein:
+
+| Domain | Typ | Wert |
+|---|---|---|
+| api.secure.nkk-hb.de | A | 142.132.143.129 |
+| vpn.secure.nkk-hb.de | A | 142.132.143.129 |
+
+## Dateien
+
+| Datei | Beschreibung |
+|---|---|
+| `server.py` | Flask API Server (5 Endpoints) |
+| `Dockerfile` | Python 3.11 slim + Gunicorn |
+| `docker-compose.yml` | Container Config mit Volume |
+| `deploy-debian.sh` | Komplettes Setup auf der VM (Nginx, UFW, SSL) |
+| `deploy-from-host.ps1` | Ein-Befehl Deploy vom NKK-MULTIVM Host (PowerShell) |
+| `deploy-from-mac.sh` | Ein-Befehl Deploy vom Mac (alternativ) |
+| `nginx-vpn.conf` | Extra Nginx Config fuer vpn.secure.nkk-hb.de |
+
+## News aktualisieren
+
+```bash
+curl -X POST https://api.secure.nkk-hb.de/api/news \
   -H "Content-Type: application/json" \
   -d '[
     {
@@ -47,18 +86,21 @@ curl -X POST http://142.132.143.129:9876/api/news \
   ]'
 ```
 
-## Enrollments ansehen
+## Logs & Debugging
 
 ```bash
-# Alle Reports als JSON
-curl http://142.132.143.129:9876/api/enrollments | python3 -m json.tool
+# Vom Host (PowerShell):
+ssh root@142.132.143.129 "docker logs -f nkk-api"
+ssh root@142.132.143.129 "ls /var/lib/docker/volumes/nkk-api_nkk-data/_data/enrollments/"
+ssh root@142.132.143.129 "tail -f /var/log/nginx/access.log"
 
-# Oder direkt auf der VM
-ls /var/lib/docker/volumes/nkk-api_nkk-data/_data/enrollments/
+# Health Check (von ueberall):
+curl https://api.secure.nkk-hb.de/api/health
 ```
 
-## Daten
+## Sicherheit
 
-Alles persistent im Docker Volume `nkk-data`:
-- `/data/enrollments/*.json` — ein File pro Enrollment
-- `/data/news.json` — aktuelle News für alle Clients
+- Port 9876 ist **nicht** von aussen erreichbar (UFW deny)
+- Nginx macht SSL Termination + CORS Headers
+- Rate Limiting auf `/api/enrollment`: max 10 Requests/Minute pro IP
+- TODO: API Key Auth fuer Admin Endpoints (POST /api/news)

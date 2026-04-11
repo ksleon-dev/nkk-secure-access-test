@@ -2,7 +2,7 @@
 """
 NKK Secure Access — API Server
 
-Läuft als Docker Container auf der NetBird Debian 12 VM.
+Laeuft als Docker Container auf nkk-secure (Debian 12 VM).
 Zwei Aufgaben:
   1. Enrollment Reports empfangen (POST /api/enrollment)
   2. News JSON ausliefern (GET /api/news)
