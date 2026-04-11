@@ -927,9 +927,18 @@ async fn quick_speed_test(host: &str) -> Option<SpeedResult> {
 /// Uses 1.1.1.1 (Cloudflare) as reference since it always responds to ICMP,
 /// unlike many Hetzner IPs which block ping.
 #[tauri::command]
-pub async fn run_ping_test() -> AppResult<Vec<PingResult>> {
+pub async fn run_ping_test(
+    app: AppHandle,
+    state: State<'_, AppState>,
+) -> AppResult<Vec<PingResult>> {
+    let branding = ensure_branding(&app, &state).await.ok();
+    let lan_target = branding
+        .as_ref()
+        .and_then(|b| b.quick_launch.iter().find(|q| q.kind == "rdp"))
+        .map(|q| q.target.clone())
+        .unwrap_or_else(|| "192.168.0.20".to_string());
     let (ping_lan, ping_ref) = tokio::join!(
-        avg_ping("192.168.0.20", "Terminalserver", 4),
+        avg_ping(&lan_target, "Terminalserver", 4),
         avg_ping("1.1.1.1", "Internet Referenz", 4),
     );
     let mut results = vec![];
@@ -1099,16 +1108,21 @@ pub async fn smart_debug(
     steps.push(vpn_step);
 
     // Step 4: LAN reachability
-    let lan_ok = ping_host("192.168.0.20", 2000).await;
+    let debug_lan = branding
+        .as_ref()
+        .and_then(|b| b.quick_launch.iter().find(|q| q.kind == "rdp"))
+        .map(|q| q.target.clone())
+        .unwrap_or_else(|| "192.168.0.20".to_string());
+    let lan_ok = ping_host(&debug_lan, 2000).await;
     steps.push(SmartDebugStep {
-        name: "Firmennetz (TS2)".into(),
+        name: "Firmennetz".into(),
         ok: lan_ok,
-        detail: if lan_ok { "192.168.0.20 erreichbar".into() } else { "Nicht erreichbar".into() },
+        detail: if lan_ok { format!("{} erreichbar", debug_lan) } else { "Nicht erreichbar".into() },
         action_taken: None,
     });
 
     // Step 5: Speed
-    let speed = quick_speed_test("192.168.0.20").await;
+    let speed = quick_speed_test(&debug_lan).await;
     if let Some(s) = &speed {
         steps.push(SmartDebugStep {
             name: "Latenz".into(),

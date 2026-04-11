@@ -182,7 +182,7 @@ function AppInner() {
         });
         unlisteners = [u1, u2, u3, u4, u5, u6, u7];
       } catch (e: unknown) {
-        if (mounted) setBootError(String(e));
+        if (mounted) setBootError(e instanceof Error ? e.message : String(e));
       } finally {
         if (mounted) setBootstrapping(false);
       }

@@ -39,7 +39,7 @@ export function EnrollmentScreen({
       toast.success(de.toast.connected);
       onEnrolled();
     } catch (e: unknown) {
-      setError(String(e));
+      setError(e instanceof Error ? e.message : String(e));
     } finally {
       setBusy(false);
     }

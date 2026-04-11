@@ -64,7 +64,7 @@ export function SettingsScreen({
       await invoke("set_autostart", { enable });
       setAutostart(enable);
     } catch (e: unknown) {
-      toast.error(String(e));
+      toast.error(e instanceof Error ? e.message : String(e));
     }
   }
 
@@ -74,7 +74,7 @@ export function SettingsScreen({
       const lines = await invoke<string[]>("nb_logs", { lines: 200 });
       setLogs(lines);
     } catch (e: unknown) {
-      toast.error(String(e));
+      toast.error(e instanceof Error ? e.message : String(e));
     } finally {
       setLoadingLogs(false);
     }
@@ -86,7 +86,7 @@ export function SettingsScreen({
       const r = await invoke<KeyringTestResult>("creds_test");
       setKeyringTest(r);
     } catch (e: unknown) {
-      setKeyringTest({ ok: false, backend: "?", message: String(e) });
+      setKeyringTest({ ok: false, backend: "?", message: e instanceof Error ? e.message : String(e) });
     } finally {
       setTesting(false);
     }
@@ -99,7 +99,7 @@ export function SettingsScreen({
       toast.info("Einrichtung zurückgesetzt.");
       onResetEnrollment();
     } catch (e: unknown) {
-      toast.error(String(e));
+      toast.error(e instanceof Error ? e.message : String(e));
     }
   }
 
@@ -117,7 +117,7 @@ export function SettingsScreen({
     try {
       await invoke("quit_app");
     } catch (e: unknown) {
-      toast.error(String(e));
+      toast.error(e instanceof Error ? e.message : String(e));
     }
   }
 

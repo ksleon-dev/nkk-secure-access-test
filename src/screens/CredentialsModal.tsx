@@ -88,7 +88,7 @@ export function CredentialsModal({ initial, onSaved, onClose }: Props) {
       );
       onSaved(saved);
     } catch (e: unknown) {
-      setError(String(e));
+      setError(e instanceof Error ? e.message : String(e));
     } finally {
       setBusy(false);
     }
