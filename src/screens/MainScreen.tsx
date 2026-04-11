@@ -153,7 +153,16 @@ export function MainScreen({
       {/* Centered hero — content sits directly on the cream background */}
       <main className="relative z-10 flex-1 flex flex-col items-center justify-center px-6 gap-3 py-2 text-center">
         <div className="fade-in-1 flex flex-col items-center">
-          <Logo branding={branding} size={104} />
+          <Logo
+            branding={branding}
+            size={104}
+            className={clsx(
+              "transition-all duration-500",
+              state === "Connecting" && "logo-connecting",
+              transition === "connected" && "logo-connected-enter",
+              isConnected && transition !== "connected" && "logo-connected-idle"
+            )}
+          />
           <TaglineMark width={180} className="mt-1.5" />
         </div>
 

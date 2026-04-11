@@ -245,6 +245,48 @@ button:disabled {
   animation: vpn-glow 2.5s ease-in-out infinite;
 }
 
+@keyframes logo-connecting-glow {
+  0%, 100% {
+    filter: drop-shadow(0 0 6px rgba(245, 158, 11, 0.3));
+    transform: scale(1);
+  }
+  50% {
+    filter: drop-shadow(0 0 20px rgba(245, 158, 11, 0.7)) drop-shadow(0 0 40px rgba(245, 158, 11, 0.3));
+    transform: scale(1.03);
+  }
+}
+@keyframes logo-connected-flash {
+  0% {
+    filter: drop-shadow(0 0 0 rgba(16, 185, 129, 0));
+    transform: scale(1);
+  }
+  30% {
+    filter: drop-shadow(0 0 30px rgba(16, 185, 129, 0.8)) drop-shadow(0 0 60px rgba(16, 185, 129, 0.4));
+    transform: scale(1.06);
+  }
+  100% {
+    filter: drop-shadow(0 0 8px rgba(16, 185, 129, 0.2));
+    transform: scale(1);
+  }
+}
+@keyframes logo-connected-idle {
+  0%, 100% {
+    filter: drop-shadow(0 0 6px rgba(16, 185, 129, 0.15));
+  }
+  50% {
+    filter: drop-shadow(0 0 12px rgba(16, 185, 129, 0.3));
+  }
+}
+.logo-connecting {
+  animation: logo-connecting-glow 1.5s ease-in-out infinite;
+}
+.logo-connected-enter {
+  animation: logo-connected-flash 800ms ease-out;
+}
+.logo-connected-idle {
+  animation: logo-connected-idle 3s ease-in-out infinite;
+}
+
 @keyframes toast-in {
   from {
     opacity: 0;
