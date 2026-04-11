@@ -22,7 +22,18 @@ export interface DebugInfo {
   peers_connected: number;
   detected_issue: string;
   speed: SpeedResult | null;
+  pings: PingResult[];
   timestamp: string;
+}
+
+export interface PingResult {
+  target: string;
+  label: string;
+  avg_ms: number;
+  min_ms: number;
+  max_ms: number;
+  pings: number;
+  ok: boolean;
 }
 
 export interface SmartDebugStep {

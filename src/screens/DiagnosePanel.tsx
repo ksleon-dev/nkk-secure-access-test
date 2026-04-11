@@ -90,6 +90,17 @@ export function DiagnosePanel({ branding, profile, onClose }: Props) {
     );
     lines.push(`Peers: ${info.peers_connected} / ${info.peers_total}`);
     lines.push(`Management: ${branding.netbird.managementUrl}`);
+    if (info.pings.length > 0) {
+      lines.push("");
+      lines.push("── Ping (4× Durchschnitt) ────────────");
+      for (const p of info.pings) {
+        if (p.ok) {
+          lines.push(`${p.label} (${p.target}): avg ${p.avg_ms.toFixed(1)} ms (min ${p.min_ms.toFixed(0)} / max ${p.max_ms.toFixed(0)})`);
+        } else {
+          lines.push(`${p.label} (${p.target}): TIMEOUT`);
+        }
+      }
+    }
     if (info.speed) {
       lines.push("");
       lines.push("── Speedtest ─────────────────────────");
@@ -227,37 +238,36 @@ export function DiagnosePanel({ branding, profile, onClose }: Props) {
                 />
               </InfoBlock>
 
-              {/* Speed Test */}
-              {info.speed && (
-                <InfoBlock title="Verbindungsqualität">
-                  <div className="flex items-center gap-2 py-1">
-                    <Gauge size={16} className={
-                      info.speed.duration_ms < 50 ? "text-emerald-600" :
-                      info.speed.duration_ms < 150 ? "text-amber-600" :
-                      "text-red-600"
-                    } />
-                    <div className="flex-1">
-                      <div className="text-[12px] font-bold">
-                        {info.speed.duration_ms} ms
-                        <span className="font-normal text-[10px] text-[color:var(--brand-fg)]/60 ml-1">
-                          {info.speed.duration_ms < 30 ? "Exzellent" :
-                           info.speed.duration_ms < 80 ? "Gut" :
-                           info.speed.duration_ms < 150 ? "Mittel" :
-                           "Langsam"}
-                        </span>
+              {/* Ping Results — 4-ping average, real values */}
+              {info.pings.length > 0 && (
+                <InfoBlock title="Verbindungsqualität (4× Ping Durchschnitt)">
+                  {info.pings.map((p, i) => (
+                    <div key={i} className="flex items-center gap-2 py-1.5 border-b border-[color:var(--brand-border)] last:border-b-0">
+                      <Gauge size={14} className={
+                        !p.ok ? "text-red-500" :
+                        p.avg_ms < 30 ? "text-emerald-600" :
+                        p.avg_ms < 80 ? "text-emerald-500" :
+                        p.avg_ms < 150 ? "text-amber-500" :
+                        "text-red-500"
+                      } />
+                      <div className="flex-1 min-w-0">
+                        <div className="text-[11px] font-bold truncate">{p.label}</div>
+                        <div className="text-[9px] font-mono text-[color:var(--brand-fg)]/50">{p.target}</div>
                       </div>
-                      {info.speed.mbps > 0 && (
-                        <div className="text-[10px] text-[color:var(--brand-fg)]/60">
-                          {info.speed.mbps} Mbit/s → {info.speed.target}
+                      {p.ok ? (
+                        <div className="text-right shrink-0">
+                          <div className="text-[13px] font-bold tabular-nums">
+                            {p.avg_ms.toFixed(1)} ms
+                          </div>
+                          <div className="text-[8px] font-mono text-[color:var(--brand-fg)]/40">
+                            {p.min_ms.toFixed(0)}–{p.max_ms.toFixed(0)} ms
+                          </div>
                         </div>
+                      ) : (
+                        <span className="text-[10px] font-bold text-red-500">Timeout</span>
                       )}
                     </div>
-                    <Zap size={12} className={
-                      info.speed.duration_ms < 50 ? "text-emerald-500" :
-                      info.speed.duration_ms < 150 ? "text-amber-500" :
-                      "text-red-500"
-                    } />
-                  </div>
+                  ))}
                 </InfoBlock>
               )}
 

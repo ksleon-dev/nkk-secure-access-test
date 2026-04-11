@@ -595,6 +595,17 @@ pub struct SpeedResult {
 }
 
 #[derive(Serialize, Clone, Debug)]
+pub struct PingResult {
+    pub target: String,
+    pub label: String,
+    pub avg_ms: f64,
+    pub min_ms: f64,
+    pub max_ms: f64,
+    pub pings: u32,
+    pub ok: bool,
+}
+
+#[derive(Serialize, Clone, Debug)]
 pub struct DebugInfo {
     pub os_username: String,
     pub hostname: String,
@@ -612,6 +623,7 @@ pub struct DebugInfo {
     pub peers_connected: usize,
     pub detected_issue: String,
     pub speed: Option<SpeedResult>,
+    pub pings: Vec<PingResult>,
     pub timestamp: String,
 }
 
@@ -735,8 +747,6 @@ pub async fn get_debug_info(
         .or_else(|_| std::env::var("USERNAME"))
         .unwrap_or_else(|_| "unbekannt".to_string());
 
-    // Quick speed test: download a small payload from the management server
-    // or the LAN target to measure real throughput. Non-blocking, best effort.
     let speed = if lan {
         quick_speed_test(&lan_target_clone).await
     } else if internet {
@@ -744,6 +754,16 @@ pub async fn get_debug_info(
     } else {
         None
     };
+
+    // 4-ping average to LAN target + Hetzner reference (parallel)
+    let lan_clone2 = lan_target.clone();
+    let (ping_lan, ping_hetzner) = tokio::join!(
+        avg_ping(&lan_clone2, "Terminalserver", 4),
+        avg_ping("142.132.143.129", "Hetzner Referenz", 4),
+    );
+    let mut pings = vec![];
+    if let Some(p) = ping_lan { pings.push(p); }
+    if let Some(p) = ping_hetzner { pings.push(p); }
 
     Ok(DebugInfo {
         os_username,
@@ -762,8 +782,110 @@ pub async fn get_debug_info(
         peers_connected,
         detected_issue,
         speed,
+        pings,
         timestamp: chrono::Utc::now().to_rfc3339(),
     })
+}
+
+/// Run N pings and parse the average RTT from the system ping output.
+/// Returns a structured PingResult with min/avg/max from the summary line.
+async fn avg_ping(host: &str, label: &str, count: u32) -> Option<PingResult> {
+    #[cfg(target_os = "windows")]
+    let args = vec!["-n".to_string(), count.to_string(), "-w".to_string(), "2000".to_string(), host.to_string()];
+    #[cfg(target_os = "macos")]
+    let args = vec!["-c".to_string(), count.to_string(), "-W".to_string(), "2000".to_string(), host.to_string()];
+    #[cfg(all(unix, not(target_os = "macos")))]
+    let args = vec!["-c".to_string(), count.to_string(), "-W".to_string(), "2".to_string(), host.to_string()];
+
+    let mut cmd = TokioCommand::new("ping");
+    cmd.args(&args)
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::null());
+    #[cfg(target_os = "windows")]
+    cmd.creation_flags(0x08000000);
+
+    let output = match timeout(Duration::from_secs(count as u64 * 3 + 2), cmd.output()).await {
+        Ok(Ok(o)) if o.status.success() => o,
+        _ => return Some(PingResult {
+            target: host.to_string(),
+            label: label.to_string(),
+            avg_ms: 0.0, min_ms: 0.0, max_ms: 0.0,
+            pings: count, ok: false,
+        }),
+    };
+
+    let stdout = String::from_utf8_lossy(&output.stdout);
+
+    // Parse avg from summary line:
+    // macOS/Linux: "round-trip min/avg/max/stddev = 18.5/19.2/20.1/0.5 ms"
+    // Windows:     "Minimum = 18ms, Maximum = 20ms, Average = 19ms" (German: Mittelwert)
+    let (min, avg, max) = parse_ping_summary(&stdout);
+
+    Some(PingResult {
+        target: host.to_string(),
+        label: label.to_string(),
+        avg_ms: avg,
+        min_ms: min,
+        max_ms: max,
+        pings: count,
+        ok: avg > 0.0,
+    })
+}
+
+fn parse_ping_summary(output: &str) -> (f64, f64, f64) {
+    // Unix format: min/avg/max/stddev = 18.5/19.2/20.1/0.5 ms
+    // or: min/avg/max/mdev = ...
+    for line in output.lines() {
+        if line.contains("min/avg/max") || line.contains("rtt min") || line.contains("round-trip") {
+            if let Some(eq_pos) = line.find('=') {
+                let nums = &line[eq_pos + 1..];
+                let parts: Vec<&str> = nums.trim().split('/').collect();
+                if parts.len() >= 3 {
+                    let min = parts[0].trim().parse::<f64>().unwrap_or(0.0);
+                    let avg = parts[1].trim().parse::<f64>().unwrap_or(0.0);
+                    let max = parts[2].trim().parse::<f64>().unwrap_or(0.0);
+                    return (min, avg, max);
+                }
+            }
+        }
+        // Windows: "Average = 19ms" or "Mittelwert = 19ms"
+        let lower = line.to_lowercase();
+        if lower.contains("average") || lower.contains("mittelwert") {
+            if let Some(eq_pos) = line.rfind('=') {
+                let val = line[eq_pos + 1..]
+                    .trim()
+                    .trim_end_matches("ms")
+                    .trim()
+                    .parse::<f64>()
+                    .unwrap_or(0.0);
+                // Windows also has Minimum and Maximum on the same line
+                let min = extract_windows_ping_val(line, "Minimum")
+                    .or_else(|| extract_windows_ping_val(line, "minimum"))
+                    .unwrap_or(val);
+                let max = extract_windows_ping_val(line, "Maximum")
+                    .or_else(|| extract_windows_ping_val(line, "maximum"))
+                    .unwrap_or(val);
+                return (min, val, max);
+            }
+        }
+    }
+    (0.0, 0.0, 0.0)
+}
+
+fn extract_windows_ping_val(line: &str, key: &str) -> Option<f64> {
+    let lower = line.to_lowercase();
+    let key_lower = key.to_lowercase();
+    if let Some(pos) = lower.find(&key_lower) {
+        let after = &line[pos + key.len()..];
+        if let Some(eq) = after.find('=') {
+            let val_str = after[eq + 1..]
+                .trim()
+                .split(|c: char| !c.is_ascii_digit() && c != '.')
+                .next()?;
+            return val_str.parse::<f64>().ok();
+        }
+    }
+    None
 }
 
 /// Quick connection quality test — measures TCP connect latency to the target
