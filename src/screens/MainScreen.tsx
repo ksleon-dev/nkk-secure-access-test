@@ -2,12 +2,12 @@ import { invoke } from "@tauri-apps/api/core";
 import clsx from "clsx";
 import {
   ArrowRight,
-  LifeBuoy,
+  Headphones,
   Loader2,
   Newspaper,
   Settings as SettingsIcon,
 } from "lucide-react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { Avatar } from "../components/Avatar";
 import { Decor } from "../components/Decor";
 import { Logo } from "../components/Logo";
@@ -51,6 +51,14 @@ export function MainScreen({
   const greeting = timeOfDayGreeting();
   const accent = italicAccent(state);
   void bioFootnote;
+
+  // Track state transitions for connect animation
+  const prevState = useRef(state);
+  const justConnected = useMemo(() => {
+    const was = prevState.current;
+    prevState.current = state;
+    return state === "Connected" && was !== "Connected";
+  }, [state]);
 
   // Live clock + date — updates every 30s
   function formatDateTime() {
@@ -127,7 +135,7 @@ export function MainScreen({
           aria-label="Diagnose & Support"
           title="Diagnose & Support"
         >
-          <LifeBuoy size={16} strokeWidth={2.4} />
+          <Headphones size={16} strokeWidth={2.4} />
         </button>
         <button
           onClick={onOpenSettings}
@@ -189,7 +197,8 @@ export function MainScreen({
             ? "bg-amber-500 py-2"
             : state === "Error"
             ? "bg-red-600 py-2"
-            : "bg-[color:var(--brand-primary)] py-2.5"
+            : "bg-[color:var(--brand-primary)] py-2.5",
+          justConnected && "vpn-connected-enter"
         )}
       >
         <div className="flex items-center gap-2">
@@ -200,8 +209,8 @@ export function MainScreen({
             <div
               className={clsx(
                 "w-2.5 h-2.5 rounded-full shrink-0",
-                isConnected                   ? "bg-white animate-pulse-soft"
-                  : "bg-white/50"
+                isConnected ? "bg-white" : "bg-white/50",
+                justConnected && "vpn-dot-pulse"
               )}
             />
           )}

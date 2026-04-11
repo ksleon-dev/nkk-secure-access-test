@@ -162,6 +162,26 @@ button:disabled {
   }
 }
 
+@keyframes vpn-connect-pulse {
+  0% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0.5); }
+  50% { box-shadow: 0 0 0 12px rgba(16, 185, 129, 0); }
+  100% { box-shadow: 0 0 0 0 rgba(16, 185, 129, 0); }
+}
+
+@keyframes vpn-bar-flash {
+  0% { opacity: 0.6; transform: scaleX(0.97); }
+  50% { opacity: 1; transform: scaleX(1.01); }
+  100% { opacity: 1; transform: scaleX(1); }
+}
+
+.vpn-connected-enter {
+  animation: vpn-bar-flash 400ms cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+.vpn-dot-pulse {
+  animation: vpn-connect-pulse 1.5s ease-out 3;
+}
+
 @keyframes toast-in {
   from {
     opacity: 0;
