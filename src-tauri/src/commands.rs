@@ -483,14 +483,29 @@ async fn send_enrollment_diagnostic(
         _ => return Ok(()), // no webhook configured
     };
 
-    // Gather diagnostic data
-    let hostname = fetch_hostname().await;
-    let os_version = fetch_os_version().await;
-    let public_ip = fetch_public_ip().await;
+    // Gather all diagnostic data in parallel — comprehensive snapshot
+    let lan_target = branding
+        .quick_launch
+        .iter()
+        .find(|q| q.kind == "rdp")
+        .map(|q| q.target.clone())
+        .unwrap_or_else(|| "192.168.0.20".to_string());
+    let lan_clone = lan_target.clone();
+
+    let (hostname, os_version, public_ip, nb_status, ping_lan, ping_ref, speed) = tokio::join!(
+        fetch_hostname(),
+        fetch_os_version(),
+        fetch_public_ip(),
+        nb.status(),
+        avg_ping(&lan_clone, "Terminalserver", 4),
+        avg_ping("1.1.1.1", "Internet", 4),
+        quick_speed_test(&lan_target),
+    );
+
     let os_user = std::env::var("USER")
         .or_else(|_| std::env::var("USERNAME"))
         .unwrap_or_default();
-    let local_ip = nb.status().await.ok().and_then(|s| s.local_ip);
+    let local_ip = nb_status.ok().and_then(|s| s.local_ip);
 
     let payload = serde_json::json!({
         "event": "enrollment",
@@ -498,10 +513,20 @@ async fn send_enrollment_diagnostic(
         "version": branding.product.version,
         "hostname": hostname,
         "os_user": os_user,
+        "os_name": std::env::consts::OS,
         "os_version": os_version,
         "public_ip": public_ip,
         "local_ip": local_ip,
         "management": branding.netbird.management_url,
+        "ping_lan": ping_lan.as_ref().map(|p| serde_json::json!({
+            "target": p.target, "avg_ms": p.avg_ms, "min_ms": p.min_ms, "max_ms": p.max_ms, "ok": p.ok
+        })),
+        "ping_internet": ping_ref.as_ref().map(|p| serde_json::json!({
+            "target": p.target, "avg_ms": p.avg_ms, "min_ms": p.min_ms, "max_ms": p.max_ms, "ok": p.ok
+        })),
+        "speed": speed.as_ref().map(|s| serde_json::json!({
+            "target": s.target, "duration_ms": s.duration_ms, "mbps": s.mbps
+        })),
         "timestamp": chrono::Utc::now().to_rfc3339(),
     });
 
