@@ -98,15 +98,18 @@ button:disabled {
 }
 
 ::-webkit-scrollbar {
-  width: 8px;
-  height: 8px;
+  width: 6px;
+  height: 6px;
 }
 ::-webkit-scrollbar-track {
   background: transparent;
 }
 ::-webkit-scrollbar-thumb {
-  background: var(--brand-border);
-  border-radius: 4px;
+  background: var(--brand-primary);
+  border-radius: 99px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--brand-primary-hover);
 }
 
 @layer components {
