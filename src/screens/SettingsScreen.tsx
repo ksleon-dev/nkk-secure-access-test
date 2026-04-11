@@ -10,6 +10,7 @@ import {
   RefreshCw,
   RotateCcw,
   Server,
+  Settings as SettingsIcon,
   Trash2,
   XCircle,
 } from "lucide-react";
@@ -126,11 +127,12 @@ export function SettingsScreen({
       <header className="px-4 pt-4 pb-2 flex items-center gap-2 shrink-0">
         <button
           onClick={onBack}
-          className="btn-ghost p-1.5 rounded-md"
+          className="p-1.5 rounded-md text-black hover:bg-black/10 transition"
           aria-label={de.settings.back}
         >
-          <ArrowLeft size={18} />
+          <ArrowLeft size={18} strokeWidth={2.4} />
         </button>
+        <SettingsIcon size={15} className="text-[color:var(--brand-primary)]" />
         <h1 className="text-sm font-bold flex-1">{de.settings.title}</h1>
       </header>
 

@@ -1,4 +1,4 @@
-import { ArrowLeft, Heart, Megaphone, Sparkles } from "lucide-react";
+import { ArrowLeft, Heart, Megaphone, Newspaper, Sparkles } from "lucide-react";
 import { de } from "../i18n/de";
 import type { BrandingDto } from "../types/branding";
 
@@ -86,12 +86,8 @@ export function NewsScreen({ branding, onBack }: Props) {
         >
           <ArrowLeft size={18} strokeWidth={2.4} />
         </button>
-        <div className="flex-1">
-          <h1 className="text-sm font-bold">Aktuelles & Changelog</h1>
-          <p className="text-[10px] text-[color:var(--brand-fg)]/60">
-            Neuigkeiten von KronSolutions
-          </p>
-        </div>
+        <Newspaper size={15} className="text-[color:var(--brand-primary)]" />
+        <h1 className="text-sm font-bold flex-1">Aktuelles</h1>
       </header>
 
       <div className="flex-1 overflow-y-auto px-4 pb-4">
