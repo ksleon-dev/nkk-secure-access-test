@@ -272,11 +272,11 @@ button:disabled {
   top: 50%;
   left: 50%;
   pointer-events: none;
-  font-size: var(--size, 12px);
-  line-height: 1;
-  animation: particle-burst var(--speed) ease-out infinite;
-  animation-delay: var(--delay);
   user-select: none;
+  animation-name: particle-burst;
+  animation-timing-function: ease-out;
+  animation-iteration-count: infinite;
+  animation-fill-mode: both;
 }
 
 .logo-float {
@@ -287,8 +287,11 @@ button:disabled {
 }
 
 .logo-particle-green {
-  animation: particle-burst 0.7s ease-out forwards;
-  font-size: 14px;
+  animation-name: particle-burst;
+  animation-duration: 0.7s;
+  animation-timing-function: ease-out;
+  animation-fill-mode: forwards;
+  animation-iteration-count: 1;
 }
 
 @keyframes toast-in {

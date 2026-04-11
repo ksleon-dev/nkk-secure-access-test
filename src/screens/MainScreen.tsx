@@ -158,16 +158,16 @@ export function MainScreen({
             {isBusy && (
               <>
                 {[
-                  { angle: "0deg",   dist: "58px", speed: "1.3s", delay: "0s",   sz: 5 },
-                  { angle: "50deg",  dist: "52px", speed: "1.5s", delay: "0.2s", sz: 3 },
-                  { angle: "95deg",  dist: "55px", speed: "1.4s", delay: "0.5s", sz: 4 },
-                  { angle: "140deg", dist: "50px", speed: "1.6s", delay: "0.3s", sz: 3 },
-                  { angle: "185deg", dist: "56px", speed: "1.3s", delay: "0.7s", sz: 5 },
-                  { angle: "230deg", dist: "48px", speed: "1.5s", delay: "0.1s", sz: 4 },
-                  { angle: "275deg", dist: "54px", speed: "1.4s", delay: "0.6s", sz: 3 },
-                  { angle: "320deg", dist: "52px", speed: "1.6s", delay: "0.4s", sz: 5 },
-                  { angle: "25deg",  dist: "60px", speed: "1.7s", delay: "0.8s", sz: 3 },
-                  { angle: "210deg", dist: "50px", speed: "1.3s", delay: "0.9s", sz: 4 },
+                  { angle: "0deg",   dist: "58px", speed: 1.3, delay: 0,   sz: 5, color: "#B51F29" },
+                  { angle: "50deg",  dist: "52px", speed: 1.5, delay: 0.2, sz: 3, color: "#4a8c3f" },
+                  { angle: "95deg",  dist: "55px", speed: 1.4, delay: 0.5, sz: 4, color: "#B51F29" },
+                  { angle: "140deg", dist: "50px", speed: 1.6, delay: 0.3, sz: 3, color: "#e8a317" },
+                  { angle: "185deg", dist: "56px", speed: 1.3, delay: 0.7, sz: 5, color: "#4a8c3f" },
+                  { angle: "230deg", dist: "48px", speed: 1.5, delay: 0.1, sz: 4, color: "#B51F29" },
+                  { angle: "275deg", dist: "54px", speed: 1.4, delay: 0.6, sz: 3, color: "#e8a317" },
+                  { angle: "320deg", dist: "52px", speed: 1.6, delay: 0.4, sz: 5, color: "#4a8c3f" },
+                  { angle: "25deg",  dist: "60px", speed: 1.7, delay: 0.8, sz: 3, color: "#B51F29" },
+                  { angle: "210deg", dist: "50px", speed: 1.3, delay: 0.9, sz: 4, color: "#e8a317" },
                 ].map((p, i) => (
                   <div
                     key={i}
@@ -175,13 +175,12 @@ export function MainScreen({
                     style={{
                       "--angle": p.angle,
                       "--dist": p.dist,
-                      "--speed": p.speed,
-                      "--delay": p.delay,
-                      "--size": `${p.sz}px`,
+                      animationDuration: `${p.speed}s`,
+                      animationDelay: `${p.delay}s`,
                       width: p.sz,
                       height: p.sz,
                       borderRadius: "50%",
-                      background: "var(--brand-primary)",
+                      background: p.color,
                     } as React.CSSProperties}
                   />
                 ))}
@@ -197,9 +196,7 @@ export function MainScreen({
                     style={{
                       "--angle": `${i * 45}deg`,
                       "--dist": "62px",
-                      "--speed": "0.7s",
-                      "--delay": `${i * 0.04}s`,
-                      "--size": "5px",
+                      animationDelay: `${i * 0.04}s`,
                       width: 5,
                       height: 5,
                       borderRadius: "50%",
