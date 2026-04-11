@@ -6,12 +6,13 @@ import { CredentialsModal } from "./screens/CredentialsModal";
 import { DiagnosePanel } from "./screens/DiagnosePanel";
 import { EnrollmentScreen } from "./screens/EnrollmentScreen";
 import { MainScreen } from "./screens/MainScreen";
+import { NewsScreen } from "./screens/NewsScreen";
 import { SettingsScreen } from "./screens/SettingsScreen";
 import type { BrandingDto, QuickLaunchEntry } from "./types/branding";
 import type { CredentialProfileMeta } from "./types/credentials";
 import type { StatusDto } from "./types/netbird";
 
-type Screen = "enrollment" | "main" | "settings";
+type Screen = "enrollment" | "main" | "settings" | "news";
 
 function applyTheme(b: BrandingDto) {
   const root = document.documentElement;
@@ -235,6 +236,13 @@ function AppInner() {
           }
           onOpenSettings={() => setScreen("settings")}
           onOpenAbout={() => setDiagnoseOpen(true)}
+          onOpenNews={() => setScreen("news")}
+        />
+      )}
+      {screen === "news" && (
+        <NewsScreen
+          branding={branding}
+          onBack={() => setScreen("main")}
         />
       )}
       {screen === "settings" && (

@@ -4,6 +4,7 @@ import {
   ArrowRight,
   Info,
   Loader2,
+  Newspaper,
   Settings as SettingsIcon,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
@@ -26,6 +27,7 @@ interface Props {
   onOpenCredentials: () => void;
   onOpenSettings: () => void;
   onOpenAbout: () => void;
+  onOpenNews: () => void;
 }
 
 export function MainScreen({
@@ -36,6 +38,7 @@ export function MainScreen({
   onOpenCredentials,
   onOpenSettings,
   onOpenAbout,
+  onOpenNews,
 }: Props) {
   const [busy, setBusy] = useState(false);
   const pendingToggle = useRef(false); // prevent double-click race condition
@@ -111,12 +114,20 @@ export function MainScreen({
           }
         />
         <button
+          onClick={onOpenNews}
+          className="p-1.5 rounded-md text-black hover:bg-black/10 transition"
+          aria-label="Aktuelles"
+          title="Aktuelles & Changelog"
+        >
+          <Newspaper size={16} strokeWidth={2.4} />
+        </button>
+        <button
           onClick={onOpenAbout}
           className="p-1.5 rounded-md text-black hover:bg-black/10 transition"
           aria-label="Diagnose & Support"
           title="Diagnose & Support"
         >
-          <Info size={17} strokeWidth={2.4} />
+          <Info size={16} strokeWidth={2.4} />
         </button>
         <button
           onClick={onOpenSettings}
@@ -124,7 +135,7 @@ export function MainScreen({
           aria-label={de.main.settings}
           title={de.main.settings}
         >
-          <SettingsIcon size={17} strokeWidth={2.4} />
+          <SettingsIcon size={16} strokeWidth={2.4} />
         </button>
       </header>
 
