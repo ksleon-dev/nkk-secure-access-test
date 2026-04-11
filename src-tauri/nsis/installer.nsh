@@ -87,6 +87,17 @@ Var NkkExitCode
   ; Wintun driver registration triggers Defender real-time scanning which can
   ; block the NetBird MSI from finishing. Adding the install path as exclusion
   ; before triggering the install prevents that. Best effort — silent on fail.
+  ; --- OS Version Check with detailed error message ----------------------------
+  ; Show exact OS version so the employee can just screenshot the error.
+  ${IfNot} ${AtLeastWin10}
+    StrCpy $0 ""
+    nsExec::ExecToStack 'cmd /c ver'
+    Pop $0
+    Pop $1
+    MessageBox MB_ICONSTOP|MB_OK "Dein Betriebssystem wird leider nicht unterstützt.$\r$\n$\r$\nMindestvoraussetzung: Windows 10$\r$\nDein System: $1$\r$\n$\r$\nBitte mach ein Foto von dieser Meldung und schicke es an:$\r$\nsupport@ticket.kronsolutions.de$\r$\n$\r$\nWir helfen dir weiter."
+    Abort
+  ${EndIf}
+
   DetailPrint "NKK: Defender Exclusion fuer NetBird ..."
   nsExec::ExecToLog 'powershell -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -Command "try { Add-MpPreference -ExclusionPath $\"$PROGRAMFILES64\NetBird$\" -ErrorAction SilentlyContinue; Add-MpPreference -ExclusionProcess $\"netbird.exe$\" -ErrorAction SilentlyContinue; Add-MpPreference -ExclusionProcess $\"netbird-ui.exe$\" -ErrorAction SilentlyContinue } catch {}"'
   Pop $NkkExitCode
