@@ -224,10 +224,22 @@ nkk_unb_skip:
   nsExec::ExecToLog 'powershell -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -Command "try { Remove-MpPreference -ExclusionPath $\"$PROGRAMFILES64\NetBird$\" -ErrorAction SilentlyContinue; Remove-MpPreference -ExclusionProcess $\"netbird.exe$\" -ErrorAction SilentlyContinue; Remove-MpPreference -ExclusionProcess $\"netbird-ui.exe$\" -ErrorAction SilentlyContinue } catch {}"'
   Pop $NkkExitCode
 
+  ; Remove NKK app data (enrolled marker, logs, cached data)
+  DetailPrint "NKK: Entferne App Daten ..."
+  RMDir /r "${NKK_DATA_DIR}"
+  RMDir /r "${NKK_LOG_DIR}"
+
+  ; Remove Start Menu shortcuts
+  DetailPrint "NKK: Entferne Startmenu Eintraege ..."
+  RMDir /r "$SMPROGRAMS\KronSolutions"
+
+  ; Kill any running instance
+  nsExec::ExecToLog 'taskkill /f /im "NKK Secure Access.exe"'
+  Pop $NkkExitCode
+
   DetailPrint ""
   DetailPrint "================================================================"
-  DetailPrint "  NKK Secure Access wurde entfernt."
-  DetailPrint "  Wintun Treiber wurde absichtlich beibehalten."
+  DetailPrint "  NKK Secure Access wurde vollstaendig entfernt."
   DetailPrint "================================================================"
 !macroend
 
