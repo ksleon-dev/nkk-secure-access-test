@@ -1,6 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { ToastProvider, useToast } from "./components/Toast";
 import { UpdateBanner } from "./components/UpdateBanner";
 import { useUpdater } from "./hooks/useUpdater";
@@ -8,13 +8,21 @@ import { CredentialsModal } from "./screens/CredentialsModal";
 import { DiagnosePanel } from "./screens/DiagnosePanel";
 import { EnrollmentScreen } from "./screens/EnrollmentScreen";
 import { MainScreen } from "./screens/MainScreen";
+import { SetupScreen } from "./screens/SetupScreen";
 import { NewsScreen } from "./screens/NewsScreen";
 import { SettingsScreen } from "./screens/SettingsScreen";
 import type { BrandingDto, QuickLaunchEntry } from "./types/branding";
 import type { CredentialProfileMeta } from "./types/credentials";
 import type { StatusDto } from "./types/netbird";
 
-type Screen = "enrollment" | "main" | "settings" | "news" | "diagnose";
+type Screen = "setup" | "enrollment" | "main" | "settings" | "news" | "diagnose";
+
+interface SetupCheckResult {
+  netbird_installed: boolean;
+  netbird_running: boolean;
+  needs_install: boolean;
+  message: string;
+}
 
 function applyTheme(b: BrandingDto) {
   const root = document.documentElement;
@@ -35,7 +43,7 @@ function AppInner() {
   const [credModalOpen, setCredModalOpen] = useState(false);
   const [editingProfile, setEditingProfile] =
     useState<CredentialProfileMeta | null>(null);
-  const [demoConnected, setDemoConnected] = useState(false);
+  const demoConnectedRef = useRef(false);
   const toast = useToast();
   const updater = useUpdater();
 
@@ -125,14 +133,19 @@ function AppInner() {
         setBranding(b);
         applyTheme(b);
 
-        // Only ONE keychain hit on startup: the setup key for enrollment.
-        // Credential profiles are loaded LAZILY when the user opens Settings
-        // or clicks an RDP button — avoids the second macOS Keychain prompt.
-        const enrolled = await invoke<boolean>("nb_is_enrolled").catch(
-          () => false
-        );
+        // Check if NetBird is installed — if not, show setup screen
+        const setupCheck = await invoke<SetupCheckResult>("check_netbird_setup").catch(() => null);
         if (!mounted) return;
-        setScreen(enrolled ? "main" : "enrollment");
+
+        if (setupCheck?.needs_install) {
+          setScreen("setup");
+        } else {
+          const enrolled = await invoke<boolean>("nb_is_enrolled").catch(
+            () => false
+          );
+          if (!mounted) return;
+          setScreen(enrolled ? "main" : "enrollment");
+        }
 
         try {
           const initial = await invoke<StatusDto>("nb_status");
@@ -143,10 +156,10 @@ function AppInner() {
 
         const u1 = await listen<StatusDto>("netbird-status-changed", (ev) => {
           // If demo connected, only accept Connected status (ignore poll overrides)
-          if (demoConnected && ev.payload.state !== "Connected" && !ev.payload.cli_available) return;
+          if (demoConnectedRef.current && ev.payload.state !== "Connected" && !ev.payload.cli_available) return;
           setStatus(ev.payload);
           if (ev.payload.state === "Connected" && ev.payload.local_ip === "100.64.0.99") {
-            setDemoConnected(true);
+            demoConnectedRef.current = true;
           }
         });
         const u2 = await listen<string>("netbird-error", (ev) => {
@@ -242,6 +255,12 @@ function AppInner() {
         onInstall={updater.install}
         onRestart={updater.restart}
       />
+      {screen === "setup" && (
+        <SetupScreen
+          branding={branding}
+          onComplete={() => setScreen("enrollment")}
+        />
+      )}
       {screen === "enrollment" && (
         <EnrollmentScreen
           branding={branding}

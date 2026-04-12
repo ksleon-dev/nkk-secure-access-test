@@ -8,9 +8,13 @@ use tokio::process::Command as TokioCommand;
 use tokio::sync::Mutex as AsyncMutex;
 use tokio::time::{sleep, timeout, Duration};
 
+#[cfg(not(target_os = "macos"))]
 const KEYRING_SERVICE: &str = "nkk-secure-access";
+#[cfg(not(target_os = "macos"))]
 const KEYRING_USER: &str = "setup-key";
+#[cfg(not(target_os = "macos"))]
 const KEYRING_PROFILES: &str = "credential-profiles";
+#[cfg(not(target_os = "macos"))]
 const KEYRING_TEST: &str = "diagnostic-roundtrip";
 
 /// A single stored credential profile (encrypted by the OS keystore).
@@ -57,23 +61,88 @@ impl From<&CredentialProfile> for CredentialProfileMeta {
     }
 }
 
+// ── Platform-aware credential storage ──
+// Windows: Keyring (Credential Manager) — stores username + password (cmdkey can inject)
+// macOS:   Local JSON file — stores username + domain only (no password, no Keychain prompts)
+
+#[cfg(not(target_os = "macos"))]
 fn profiles_entry() -> AppResult<keyring::Entry> {
     keyring::Entry::new(KEYRING_SERVICE, KEYRING_PROFILES).map_err(AppError::from)
 }
 
+#[cfg(not(target_os = "macos"))]
 fn load_profiles() -> AppResult<Vec<CredentialProfile>> {
     let entry = profiles_entry()?;
     match entry.get_password() {
-        Ok(s) => Ok(serde_json::from_str::<Vec<CredentialProfile>>(&s).unwrap_or_default()),
+        Ok(s) => {
+            let profiles: Vec<CredentialProfile> = serde_json::from_str(&s).unwrap_or_else(|e| {
+                tracing::warn!("Credential-Daten beschädigt, starte leer: {}", e);
+                vec![]
+            });
+            Ok(profiles)
+        }
         Err(keyring::Error::NoEntry) => Ok(vec![]),
         Err(e) => Err(AppError::Keyring(e.to_string())),
     }
 }
 
+#[cfg(not(target_os = "macos"))]
 fn store_profiles(profiles: &[CredentialProfile]) -> AppResult<()> {
     let json = serde_json::to_string(profiles)
         .map_err(|e| AppError::Internal(format!("profiles serialize: {}", e)))?;
     profiles_entry()?.set_password(&json)?;
+    Ok(())
+}
+
+#[cfg(target_os = "macos")]
+fn mac_profiles_path() -> std::path::PathBuf {
+    let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
+    std::path::PathBuf::from(home)
+        .join(".config")
+        .join("nkk-secure-access")
+        .join("profiles.json")
+}
+
+#[cfg(target_os = "macos")]
+fn load_profiles() -> AppResult<Vec<CredentialProfile>> {
+    let path = mac_profiles_path();
+    if !path.exists() {
+        return Ok(vec![]);
+    }
+    let content = std::fs::read_to_string(&path)
+        .map_err(|e| AppError::Io(format!("profiles lesen: {}", e)))?;
+    let mut profiles: Vec<CredentialProfile> = serde_json::from_str(&content).unwrap_or_else(|e| {
+        tracing::warn!("Profildatei beschädigt, starte leer: {}", e);
+        vec![]
+    });
+    // macOS: never store passwords — clear any that leaked in
+    for p in &mut profiles {
+        p.password.clear();
+    }
+    Ok(profiles)
+}
+
+#[cfg(target_os = "macos")]
+fn store_profiles(profiles: &[CredentialProfile]) -> AppResult<()> {
+    let path = mac_profiles_path();
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)
+            .map_err(|e| AppError::Io(format!("profiles Ordner: {}", e)))?;
+    }
+    // Strip passwords before saving on macOS
+    let clean: Vec<CredentialProfile> = profiles.iter().map(|p| CredentialProfile {
+        id: p.id.clone(),
+        label: p.label.clone(),
+        username: p.username.clone(),
+        domain: p.domain.clone(),
+        password: String::new(),
+        created_at: p.created_at.clone(),
+        updated_at: p.updated_at.clone(),
+    }).collect();
+    let json = serde_json::to_string_pretty(&clean)
+        .map_err(|e| AppError::Internal(format!("profiles serialize: {}", e)))?;
+    std::fs::write(&path, json)
+        .map_err(|e| AppError::Io(format!("profiles schreiben: {}", e)))?;
     Ok(())
 }
 
@@ -203,11 +272,21 @@ pub async fn creds_delete(state: State<'_, AppState>, id: String) -> AppResult<(
     }
 
     if profiles.is_empty() {
-        let entry = profiles_entry()?;
-        match entry.delete_credential() {
-            Ok(_) => {}
-            Err(keyring::Error::NoEntry) => {}
-            Err(e) => return Err(AppError::Keyring(e.to_string())),
+        #[cfg(not(target_os = "macos"))]
+        {
+            let entry = profiles_entry()?;
+            match entry.delete_credential() {
+                Ok(_) => {}
+                Err(keyring::Error::NoEntry) => {}
+                Err(e) => return Err(AppError::Keyring(e.to_string())),
+            }
+        }
+        #[cfg(target_os = "macos")]
+        {
+            let path = mac_profiles_path();
+            if path.exists() {
+                let _ = std::fs::remove_file(&path);
+            }
         }
     } else {
         store_profiles(&profiles)?;
@@ -225,9 +304,19 @@ pub struct KeyringTestResult {
 
 #[tauri::command]
 pub async fn creds_test() -> AppResult<KeyringTestResult> {
-    let backend = if cfg!(target_os = "macos") {
-        "macOS Keychain (Security framework)"
-    } else if cfg!(target_os = "windows") {
+    // macOS: no keyring used — always OK
+    #[cfg(target_os = "macos")]
+    {
+        return Ok(KeyringTestResult {
+            ok: true,
+            backend: "Lokale Datei (kein Schlüsselbund)".to_string(),
+            message: "Auf macOS werden Anmeldedaten lokal gespeichert — kein Keychain nötig.".to_string(),
+        });
+    }
+
+    #[cfg(not(target_os = "macos"))]
+    {
+    let backend = if cfg!(target_os = "windows") {
         "Windows Credential Manager (DPAPI)"
     } else {
         "Linux Secret Service"
@@ -279,6 +368,7 @@ pub async fn creds_test() -> AppResult<KeyringTestResult> {
         backend,
         message: "Schlüsselbund/Credential Manager funktioniert.".to_string(),
     })
+    } // end #[cfg(not(target_os = "macos"))]
 }
 
 #[tauri::command]
@@ -350,16 +440,21 @@ async fn cached_delete_setup_key(state: &AppState) -> AppResult<()> {
     Ok(())
 }
 
+// ── Setup key storage (platform-aware) ──
+
+#[cfg(not(target_os = "macos"))]
 fn keyring_entry() -> AppResult<keyring::Entry> {
     keyring::Entry::new(KEYRING_SERVICE, KEYRING_USER).map_err(AppError::from)
 }
 
+#[cfg(not(target_os = "macos"))]
 fn save_setup_key(key: &str) -> AppResult<()> {
     let entry = keyring_entry()?;
     entry.set_password(key)?;
     Ok(())
 }
 
+#[cfg(not(target_os = "macos"))]
 fn load_setup_key() -> AppResult<Option<String>> {
     let entry = keyring_entry()?;
     match entry.get_password() {
@@ -369,6 +464,7 @@ fn load_setup_key() -> AppResult<Option<String>> {
     }
 }
 
+#[cfg(not(target_os = "macos"))]
 fn delete_setup_key() -> AppResult<()> {
     let entry = keyring_entry()?;
     match entry.delete_credential() {
@@ -376,6 +472,53 @@ fn delete_setup_key() -> AppResult<()> {
         Err(keyring::Error::NoEntry) => Ok(()),
         Err(e) => Err(AppError::Keyring(e.to_string())),
     }
+}
+
+// macOS: local file instead of Keychain — zero password prompts
+#[cfg(target_os = "macos")]
+fn mac_setup_key_path() -> std::path::PathBuf {
+    let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
+    std::path::PathBuf::from(home)
+        .join(".config")
+        .join("nkk-secure-access")
+        .join("setup-key")
+}
+
+#[cfg(target_os = "macos")]
+fn save_setup_key(key: &str) -> AppResult<()> {
+    let path = mac_setup_key_path();
+    if let Some(parent) = path.parent() {
+        std::fs::create_dir_all(parent)
+            .map_err(|e| AppError::Io(format!("setup-key Ordner: {}", e)))?;
+    }
+    std::fs::write(&path, key)
+        .map_err(|e| AppError::Io(format!("setup-key schreiben: {}", e)))?;
+    Ok(())
+}
+
+#[cfg(target_os = "macos")]
+fn load_setup_key() -> AppResult<Option<String>> {
+    let path = mac_setup_key_path();
+    if !path.exists() {
+        return Ok(None);
+    }
+    let key = std::fs::read_to_string(&path)
+        .map_err(|e| AppError::Io(format!("setup-key lesen: {}", e)))?;
+    if key.trim().is_empty() {
+        Ok(None)
+    } else {
+        Ok(Some(key.trim().to_string()))
+    }
+}
+
+#[cfg(target_os = "macos")]
+fn delete_setup_key() -> AppResult<()> {
+    let path = mac_setup_key_path();
+    if path.exists() {
+        std::fs::remove_file(&path)
+            .map_err(|e| AppError::Io(format!("setup-key löschen: {}", e)))?;
+    }
+    Ok(())
 }
 
 async fn ensure_branding(app: &AppHandle, state: &State<'_, AppState>) -> AppResult<BrandingDto> {
@@ -1244,36 +1387,19 @@ pub async fn smart_debug(
         #[cfg(target_os = "macos")]
         {
             cli_step.action_taken = Some("Versuche Daemon zu starten …".into());
-            // Try launchctl to start the NetBird daemon
-            let load_result = timeout(
+            // Try starting via netbird service command (no sudo — avoids TTY hang)
+            let svc = timeout(
                 Duration::from_secs(5),
-                TokioCommand::new("sudo")
-                    .args(["launchctl", "load", "-w", "/Library/LaunchDaemons/netbird.plist"])
+                TokioCommand::new(state.netbird.binary_path())
+                    .args(["service", "start"])
                     .output(),
             ).await;
-            if matches!(load_result, Ok(Ok(_))) {
+            if matches!(svc, Ok(Ok(_))) {
                 sleep(Duration::from_secs(2)).await;
                 if state.netbird.status().await.is_ok() {
                     cli_step.ok = true;
-                    cli_step.detail = "Daemon war gestoppt".into();
-                    cli_step.action_taken = Some("Daemon erfolgreich gestartet!".into());
-                }
-            }
-            // Fallback: try starting via netbird service
-            if !cli_step.ok {
-                let svc = timeout(
-                    Duration::from_secs(5),
-                    TokioCommand::new(&state.netbird.binary_path())
-                        .args(["service", "start"])
-                        .output(),
-                ).await;
-                if matches!(svc, Ok(Ok(_))) {
-                    sleep(Duration::from_secs(2)).await;
-                    if state.netbird.status().await.is_ok() {
-                        cli_step.ok = true;
-                        cli_step.detail = "Service war gestoppt".into();
-                        cli_step.action_taken = Some("Service erfolgreich gestartet!".into());
-                    }
+                    cli_step.detail = "Service war gestoppt".into();
+                    cli_step.action_taken = Some("Service erfolgreich gestartet!".into());
                 }
             }
         }
@@ -1586,20 +1712,15 @@ pub async fn open_rdp(
             }
         }
 
-        // Fallback: .rdp file for Microsoft Remote Desktop (no password injection possible)
+        // Fallback: .rdp file for Microsoft Remote Desktop
+        // macOS: only pre-fill username (no domain — Apple RDP handles it automatically,
+        // no password — Keychain injection not possible on macOS)
         let mut rdp = format!(
             "full address:s:{target}\nauthentication level:i:2\nscreen mode id:i:2\nsmart sizing:i:1\naudiomode:i:0\nredirectclipboard:i:1\nuse multimon:i:0\n"
         );
         if let Some(p) = profiles.first() {
-            let user = match &p.domain {
-                Some(d) if !d.is_empty() => format!("{}\\{}", d, p.username),
-                _ => p.username.clone(),
-            };
-            rdp.push_str(&format!("username:s:{user}\n"));
-            if let Some(d) = &p.domain {
-                if !d.is_empty() {
-                    rdp.push_str(&format!("domain:s:{d}\n"));
-                }
+            if !p.username.is_empty() {
+                rdp.push_str(&format!("username:s:{}\n", p.username));
             }
             rdp.push_str("prompt for credentials:i:0\n");
         } else {
@@ -1757,6 +1878,108 @@ pub async fn is_autostart_enabled(app: AppHandle) -> AppResult<bool> {
     use tauri_plugin_autostart::ManagerExt;
     let manager = app.autolaunch();
     Ok(manager.is_enabled().unwrap_or(false))
+}
+
+#[derive(Serialize, Clone, Debug)]
+pub struct SetupCheckResult {
+    pub netbird_installed: bool,
+    pub netbird_running: bool,
+    pub needs_install: bool,
+    pub message: String,
+}
+
+/// Check if NetBird is installed and running. On macOS, auto-install if missing.
+#[tauri::command]
+pub async fn check_netbird_setup(state: State<'_, AppState>) -> AppResult<SetupCheckResult> {
+    // Check if netbird CLI is available
+    let status_result = state.netbird.status().await;
+    let installed = !matches!(status_result, Err(AppError::NetbirdMissing));
+
+    if installed {
+        let running = status_result.is_ok();
+        return Ok(SetupCheckResult {
+            netbird_installed: true,
+            netbird_running: running,
+            needs_install: false,
+            message: if running {
+                "NetBird ist bereit.".into()
+            } else {
+                "NetBird ist installiert aber der Dienst läuft nicht.".into()
+            },
+        });
+    }
+
+    Ok(SetupCheckResult {
+        netbird_installed: false,
+        netbird_running: false,
+        needs_install: true,
+        message: "NetBird muss noch installiert werden.".into(),
+    })
+}
+
+/// Install NetBird on macOS using the official install script with admin privileges.
+#[tauri::command]
+pub async fn install_netbird() -> AppResult<String> {
+    #[cfg(target_os = "macos")]
+    {
+        tracing::info!("Starte NetBird Installation auf macOS ...");
+
+        // Use the official NetBird install script with admin privileges via osascript
+        let install_script = r#"curl -fsSL https://pkgs.netbird.io/install.sh | sh"#;
+
+        let result = timeout(
+            Duration::from_secs(120),
+            TokioCommand::new("osascript")
+                .args([
+                    "-e",
+                    &format!(
+                        r#"do shell script "{}" with administrator privileges"#,
+                        install_script.replace('"', r#"\""#)
+                    ),
+                ])
+                .output(),
+        )
+        .await;
+
+        match result {
+            Ok(Ok(output)) if output.status.success() => {
+                tracing::info!("NetBird Installation erfolgreich");
+                // Wait for daemon to start
+                sleep(Duration::from_secs(3)).await;
+                Ok("NetBird wurde erfolgreich installiert!".into())
+            }
+            Ok(Ok(output)) => {
+                let stderr = String::from_utf8_lossy(&output.stderr);
+                let stdout = String::from_utf8_lossy(&output.stdout);
+                let msg = if stderr.contains("User canceled") || stdout.contains("User canceled") {
+                    "Installation abgebrochen. Bitte Admin-Passwort eingeben.".into()
+                } else {
+                    format!("Installation fehlgeschlagen: {}", stderr.trim())
+                };
+                tracing::warn!("NetBird Installation Fehler: {}", msg);
+                Err(AppError::Internal(msg))
+            }
+            Ok(Err(e)) => {
+                tracing::warn!("NetBird Installation konnte nicht gestartet werden: {}", e);
+                Err(AppError::Internal(format!("Konnte Installation nicht starten: {}", e)))
+            }
+            Err(_) => {
+                tracing::warn!("NetBird Installation Timeout (120s)");
+                Err(AppError::Internal("Installation hat zu lange gedauert. Bitte nochmal versuchen.".into()))
+            }
+        }
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        // Windows: NetBird is bundled with the NSIS installer, should never reach here
+        Ok("NetBird wird vom Installer eingerichtet.".into())
+    }
+
+    #[cfg(all(unix, not(target_os = "macos")))]
+    {
+        Err(AppError::Internal("Bitte NetBird manuell installieren: https://netbird.io/download".into()))
+    }
 }
 
 #[tauri::command]

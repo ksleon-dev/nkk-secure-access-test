@@ -82,6 +82,8 @@ pub fn run() {
             commands::run_ping_test,
             commands::run_speed_test,
             commands::smart_debug,
+            commands::check_netbird_setup,
+            commands::install_netbird,
         ])
         .on_window_event(|window, event| {
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {

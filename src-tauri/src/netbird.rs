@@ -134,10 +134,13 @@ pub struct NetbirdClient {
 impl NetbirdClient {
     pub fn new() -> Self {
         let binary = std::env::var("NETBIRD_BIN").unwrap_or_else(|_| find_netbird_binary());
-        Self {
-            binary,
+        let client = Self {
+            binary: binary.clone(),
             logs: Arc::new(LogBuffer::default()),
-        }
+        };
+        client.log(format!("NetBird Binary: {}", binary));
+        client.log(format!("Plattform: {} {}", std::env::consts::OS, std::env::consts::ARCH));
+        client
     }
 
     pub fn binary_path(&self) -> &str {
@@ -231,7 +234,14 @@ impl NetbirdClient {
 
     pub async fn status(&self) -> AppResult<StatusDto> {
         let raw = self.run(&["status", "--json"]).await?;
-        parse_status(&raw)
+        let result = parse_status(&raw)?;
+        self.log(format!(
+            "Status: {:?} | IP: {} | Management: {}",
+            result.state,
+            result.local_ip.as_deref().unwrap_or("–"),
+            if result.management_connected { "OK" } else { "getrennt" },
+        ));
+        Ok(result)
     }
 }
 

@@ -1,6 +1,6 @@
 [package]
 name = "nkk-secure-access"
-version = "0.2.1"
+version = "0.2.2"
 description = "NKK Secure Access — Netbird VPN Client (white-label fähig)"
 authors = ["KronSolutions GmbH"]
 edition = "2021"
