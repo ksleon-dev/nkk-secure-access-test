@@ -1,54 +1,58 @@
-# NKK Secure Access — Mail Vorlagen für Rollout
+# NKK Secure Access Mailvorlagen
 
-## Mail 1: ZIP + Anleitung
+## Mail 1: ZIP mit Installer (Anhang: NKK-Secure-Access.zip)
 
-**Betreff:** NKK Secure Access — Neuer Fernzugang
-
-**Anhang:** `NKK-Secure-Access.zip` (Passwort: nkk)
+**Betreff:** Euer neuer Fernzugang ist da
 
 ---
 
-Hallo [Name],
+Hallo zusammen,
 
-im Anhang findest du unseren neuen Fernzugang. Ab jetzt brauchst du nur noch eine App um auf die Terminalserver zuzugreifen.
+wir haben einen neuen, einfacheren Fernzugang für euch vorbereitet. Ab sofort braucht ihr nur noch eine einzige App um auf eure Terminalserver zuzugreifen.
 
-**ZIP Passwort: nkk**
+Im Anhang findet ihr eine ZIP-Datei. So geht die Einrichtung:
 
-So gehts:
+1. ZIP-Datei entpacken (Rechtsklick → "Alle extrahieren"). Das Passwort ist: **nkk**
+2. Die Datei **"NKK Secure Access Setup.exe"** per Doppelklick starten
+3. Den Installer einfach durchklicken (Weiter, Weiter, Fertig)
+4. Die App öffnen: Startmenü → KronSolutions → NKK Secure Access
+5. Euren Aktivierungsschlüssel eingeben (den schicken wir euch gleich in einer separaten Mail)
+6. Auf **Terminalserver 2** klicken und wie gewohnt arbeiten
 
-1. ZIP entpacken (Passwort: nkk)
-2. "NKK Secure Access Setup.exe" doppelklicken
-3. Installer durchklicken (Weiter, Weiter, Fertig)
-4. App öffnen: Startmenü → KronSolutions → NKK Secure Access
-5. Aktivierungsschlüssel eingeben (kommt in einer separaten Mail)
-6. Fertig! Auf Terminalserver 2 klicken um wie gewohnt zu arbeiten
+**Wichtig:** Bitte den bisherigen VPN Client vorher beenden und deaktivieren. Deinstallieren müsst ihr ihn erstmal nicht.
 
-Die App startet nicht automatisch. Falls gewünscht könnt ihr das in den Einstellungen (Zahnrad Icon oben rechts) unter "Beim Anmelden starten" aktivieren.
+Falls Windows eine blaue Warnung zeigt: Klickt einfach auf "Weitere Informationen" und dann auf "Trotzdem ausführen". Das kommt nur beim ersten Mal.
 
-Updates kommen automatisch.
+In der ZIP liegt auch eine **Anleitung.html** mit Bildern und allen Details. Einfach im Browser öffnen.
 
-Bei Problemen: In der App Headphones Icon oben rechts → "Diagnose für Support kopieren" → per Mail an support@ticket.kronsolutions.de
+Updates kommen in Zukunft ganz automatisch, da müsst ihr euch um nichts kümmern.
 
-In der ZIP liegt auch eine ANLEITUNG.txt mit allen Details.
+Falls etwas nicht klappt: In der App oben rechts auf das Kopfhörer-Symbol klicken, dann "Diagnose kopieren" und das Ganze per Mail an support@ticket.kronsolutions.de schicken.
+
+Wir entschuldigen uns für die Schwierigkeiten in dieser Woche und arbeiten daran, alles so schnell wie möglich zu optimieren. Vielen Dank für eure Geduld!
 
 Viele Grüße
+Euer IT Team
 KronSolutions GmbH
 
 ---
 
-## Mail 2: Setup Key (separat senden)
+## Mail 2: Aktivierungsschlüssel (separat senden!)
 
-**Betreff:** Dein Aktivierungsschlüssel
+**Betreff:** Euer Aktivierungsschlüssel für NKK Secure Access
 
 ---
 
-Hallo [Name],
+Hallo zusammen,
 
-hier ist dein persönlicher Aktivierungsschlüssel für NKK Secure Access:
+hier ist euer persönlicher Aktivierungsschlüssel für NKK Secure Access:
 
-[SETUP-KEY-HIER]
+**[SETUP-KEY-HIER-EINFÜGEN]**
 
-Einfach in der App eingeben und auf "Aktivieren" klicken.
+Einfach die App öffnen, den Schlüssel reinkopieren und auf "Aktivieren" klicken. Danach braucht ihr den Schlüssel nie wieder.
+
+Falls ihr die App noch nicht installiert habt, schaut in die andere Mail mit der ZIP-Datei.
 
 Viele Grüße
+Euer IT Team
 KronSolutions GmbH

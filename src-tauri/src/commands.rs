@@ -607,6 +607,25 @@ pub async fn nb_connect(
         _ => cached_setup_key(&state).await?,
     };
 
+    // On Windows, ensure the NetBird service is running before attempting "up".
+    // The installer sets it to auto-start but it may not be running yet.
+    #[cfg(target_os = "windows")]
+    {
+        let status_check = state.netbird.status().await;
+        if matches!(status_check, Err(AppError::NetbirdMissing) | Err(AppError::NetbirdCli(_))) {
+            tracing::info!("NetBird Service scheint nicht zu laufen, versuche Start ...");
+            let mut sc = TokioCommand::new("sc.exe");
+            sc.args(["start", "netbird"]);
+            #[cfg(target_os = "windows")]
+            {
+                use std::os::windows::process::CommandExt;
+                sc.creation_flags(0x08000000);
+            }
+            let _ = timeout(Duration::from_secs(5), sc.output()).await;
+            sleep(Duration::from_secs(3)).await;
+        }
+    }
+
     state
         .netbird
         .up(&branding.netbird.management_url, key.as_deref())

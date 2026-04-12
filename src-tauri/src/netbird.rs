@@ -154,6 +154,10 @@ impl NetbirdClient {
     }
 
     async fn run(&self, args: &[&str]) -> AppResult<String> {
+        self.run_with_timeout(args, 10).await
+    }
+
+    async fn run_with_timeout(&self, args: &[&str], timeout_secs: u64) -> AppResult<String> {
         // Mask sensitive args in logs
         let safe_args: Vec<String> = args
             .iter()
@@ -175,10 +179,7 @@ impl NetbirdClient {
         #[cfg(target_os = "windows")]
         cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
 
-        // Hard 10 second timeout on every CLI call. If netbird hangs (daemon
-        // dead, network stall) we don't want zombie processes piling up over
-        // a 9-hour work day. The child process is killed on timeout.
-        let output = match timeout(Duration::from_secs(10), cmd.output()).await {
+        let output = match timeout(Duration::from_secs(timeout_secs), cmd.output()).await {
             Ok(Ok(out)) => out,
             Ok(Err(e)) => {
                 return if e.kind() == std::io::ErrorKind::NotFound {
@@ -223,12 +224,15 @@ impl NetbirdClient {
             args.push("--setup-key");
             args.push(k);
         }
-        self.run(&args).await?;
+        // "up" with a setup key needs more time than status queries (first
+        // enrollment can take 15-30s on Windows: service start + handshake +
+        // WireGuard tunnel). Use a longer timeout here.
+        self.run_with_timeout(&args, 30).await?;
         Ok(())
     }
 
     pub async fn down(&self) -> AppResult<()> {
-        self.run(&["down"]).await?;
+        self.run_with_timeout(&["down"], 15).await?;
         Ok(())
     }
 
