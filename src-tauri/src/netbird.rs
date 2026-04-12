@@ -140,6 +140,10 @@ impl NetbirdClient {
         }
     }
 
+    pub fn binary_path(&self) -> &str {
+        &self.binary
+    }
+
     fn log(&self, line: impl Into<String>) {
         let l = line.into();
         tracing::info!("{}", l);

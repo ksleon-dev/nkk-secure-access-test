@@ -493,7 +493,7 @@ pub async fn nb_connect(
 /// This lets the team map setup keys to hostnames, IPs, and OS versions
 /// without the employee having to do anything manually.
 async fn send_enrollment_diagnostic(
-    app: &AppHandle,
+    _app: &AppHandle,
     nb: &NetbirdClient,
     branding: &BrandingDto,
 ) -> AppResult<()> {
@@ -1241,6 +1241,42 @@ pub async fn smart_debug(
                 }
             }
         }
+        #[cfg(target_os = "macos")]
+        {
+            cli_step.action_taken = Some("Versuche Daemon zu starten …".into());
+            // Try launchctl to start the NetBird daemon
+            let load_result = timeout(
+                Duration::from_secs(5),
+                TokioCommand::new("sudo")
+                    .args(["launchctl", "load", "-w", "/Library/LaunchDaemons/netbird.plist"])
+                    .output(),
+            ).await;
+            if matches!(load_result, Ok(Ok(_))) {
+                sleep(Duration::from_secs(2)).await;
+                if state.netbird.status().await.is_ok() {
+                    cli_step.ok = true;
+                    cli_step.detail = "Daemon war gestoppt".into();
+                    cli_step.action_taken = Some("Daemon erfolgreich gestartet!".into());
+                }
+            }
+            // Fallback: try starting via netbird service
+            if !cli_step.ok {
+                let svc = timeout(
+                    Duration::from_secs(5),
+                    TokioCommand::new(&state.netbird.binary_path())
+                        .args(["service", "start"])
+                        .output(),
+                ).await;
+                if matches!(svc, Ok(Ok(_))) {
+                    sleep(Duration::from_secs(2)).await;
+                    if state.netbird.status().await.is_ok() {
+                        cli_step.ok = true;
+                        cli_step.detail = "Service war gestoppt".into();
+                        cli_step.action_taken = Some("Service erfolgreich gestartet!".into());
+                    }
+                }
+            }
+        }
         if !cli_step.ok {
             cli_step.action_taken = Some("Bitte NKK Secure Access Installer erneut ausführen.".into());
         }
@@ -1280,6 +1316,24 @@ pub async fn smart_debug(
             sc_start.args(["start", "netbird"]);
             sc_start.creation_flags(0x08000000);
             let _ = timeout(Duration::from_secs(3), sc_start.output()).await;
+            sleep(Duration::from_secs(2)).await;
+        }
+        #[cfg(target_os = "macos")]
+        {
+            vpn_step.action_taken = Some("Starte Daemon neu …".into());
+            let _ = timeout(
+                Duration::from_secs(3),
+                TokioCommand::new(&state.netbird.binary_path())
+                    .args(["service", "stop"])
+                    .output(),
+            ).await;
+            sleep(Duration::from_millis(500)).await;
+            let _ = timeout(
+                Duration::from_secs(3),
+                TokioCommand::new(&state.netbird.binary_path())
+                    .args(["service", "start"])
+                    .output(),
+            ).await;
             sleep(Duration::from_secs(2)).await;
         }
 
