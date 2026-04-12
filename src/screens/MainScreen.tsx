@@ -14,7 +14,7 @@ import { Logo } from "../components/Logo";
 import { TaglineMark } from "../components/TaglineMark";
 import { useToast } from "../components/Toast";
 import { de } from "../i18n/de";
-import { bioFootnote, italicAccent, timeOfDayGreeting } from "../lib/greeting";
+import { italicAccent, timeOfDayGreeting } from "../lib/greeting";
 import type { BrandingDto, QuickLaunchEntry } from "../types/branding";
 import { displayName, type CredentialProfileMeta } from "../types/credentials";
 import type { ConnectionState, StatusDto } from "../types/netbird";
@@ -50,11 +50,6 @@ export function MainScreen({
   const greetingName = displayName(profile);
   const greeting = timeOfDayGreeting();
   const accent = italicAccent(state);
-  void bioFootnote;
-
-  const [logoTaps, setLogoTaps] = useState(0);
-  const [easterEggEnding, setEasterEggEnding] = useState(false);
-  const easterEgg = logoTaps >= 7 && !easterEggEnding;
 
   // Track state transitions for animations
   const prevState = useRef(state);
@@ -162,22 +157,7 @@ export function MainScreen({
           <div
             className="relative flex items-center justify-center cursor-pointer"
             style={{ width: 120, height: 120 }}
-            onClick={() => {
-              if (easterEgg) {
-                // Smooth wind-down: play one last slow rotation then stop
-                setEasterEggEnding(true);
-                setTimeout(() => {
-                  setLogoTaps(0);
-                  setEasterEggEnding(false);
-                }, 1500);
-                return;
-              }
-              setLogoTaps((t) => {
-                const next = t + 1;
-                if (next === 7) toast.info("🥕 Bio Power aktiviert!");
-                return next;
-              });
-            }}
+            onClick={() => { /* logo tap — no action */ }}
           >
             {/* Professional particles — cherry red dots + subtle BIO labels */}
             {isBusy && (
@@ -235,8 +215,6 @@ export function MainScreen({
               branding={branding}
               size={104}
               className={clsx(
-                easterEgg && "logo-party",
-                easterEggEnding && "logo-party-off",
                 "relative z-10 transition-transform duration-300",
                 isBusy && "logo-float",
                 transition === "connected" && !isBusy && "logo-connected-pop"
@@ -346,17 +324,7 @@ export function MainScreen({
 
       {/* Permanent KronSolutions footer */}
       <div
-        className="relative z-10 text-center text-[9px] py-1 shrink-0 font-bold uppercase tracking-[0.15em] text-[color:var(--brand-surface)]/85 bg-[color:var(--brand-primary)]/95 cursor-pointer active:scale-95 transition"
-        onClick={() => {
-          const msgs = [
-            "Zukunftssicher. Technologie mit Wirkung. 🚀",
-            "Handgemacht in Bremen mit ❤️ und Kaffee",
-            "fun fact: diese App hat über 6000 Zeilen Code",
-            "Du hast das Easter Egg gefunden! 🎉",
-            "100% Bio Code — pestizidfrei 🌿",
-          ];
-          toast.info(msgs[Math.floor(Math.random() * msgs.length)]);
-        }}
+        className="relative z-10 text-center text-[9px] py-1 shrink-0 font-bold uppercase tracking-[0.15em] text-[color:var(--brand-surface)]/85 bg-[color:var(--brand-primary)]/95"
       >
         {branding.vendor.footer}
       </div>
