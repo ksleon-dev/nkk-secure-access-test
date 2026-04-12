@@ -9,6 +9,39 @@ use tokio::time::{timeout, Duration};
 
 const LOG_BUFFER_SIZE: usize = 500;
 
+/// Finds the netbird binary. Bundled macOS .app doesn't inherit the user's
+/// shell PATH, so we probe well-known install locations.
+fn find_netbird_binary() -> String {
+    #[cfg(target_os = "macos")]
+    {
+        let candidates = [
+            "/usr/local/bin/netbird",
+            "/opt/homebrew/bin/netbird",
+            "/opt/netbird/bin/netbird",
+        ];
+        for path in candidates {
+            if std::path::Path::new(path).exists() {
+                tracing::info!("NetBird gefunden: {}", path);
+                return path.to_string();
+            }
+        }
+    }
+    #[cfg(target_os = "windows")]
+    {
+        let candidates = [
+            r"C:\Program Files\NetBird\netbird.exe",
+            r"C:\Program Files (x86)\NetBird\netbird.exe",
+        ];
+        for path in candidates {
+            if std::path::Path::new(path).exists() {
+                tracing::info!("NetBird gefunden: {}", path);
+                return path.to_string();
+            }
+        }
+    }
+    "netbird".to_string()
+}
+
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "PascalCase")]
 pub enum ConnectionState {
@@ -100,7 +133,7 @@ pub struct NetbirdClient {
 
 impl NetbirdClient {
     pub fn new() -> Self {
-        let binary = std::env::var("NETBIRD_BIN").unwrap_or_else(|_| "netbird".to_string());
+        let binary = std::env::var("NETBIRD_BIN").unwrap_or_else(|_| find_netbird_binary());
         Self {
             binary,
             logs: Arc::new(LogBuffer::default()),
@@ -202,10 +235,13 @@ fn parse_status(raw: &str) -> AppResult<StatusDto> {
     let v: serde_json::Value = serde_json::from_str(raw)
         .map_err(|e| AppError::NetbirdParse(format!("invalid JSON: {}", e)))?;
 
-    // Management connection state
+    // Management connection state — covers multiple netbird versions:
+    // v0.68+: { "management": { "connected": true } } and { "daemonStatus": "Connected" }
+    // older:  { "managementState": { "Connected": true } } or { "managementConnState": "Connected" }
     let management_connected = first_bool(
         &v,
         &[
+            &["management", "connected"],
             &["managementState", "Connected"],
             &["managementState", "connected"],
             &["ManagementState", "Connected"],
@@ -214,21 +250,28 @@ fn parse_status(raw: &str) -> AppResult<StatusDto> {
     .unwrap_or(false)
         || first_str(
             &v,
-            &[&["managementConnState"], &["ManagementConnState"]],
+            &[
+                &["daemonStatus"],
+                &["managementConnState"],
+                &["ManagementConnState"],
+            ],
         )
         .map(|s| s.eq_ignore_ascii_case("connected"))
         .unwrap_or(false);
 
-    // Local wireguard IP
+    // Local wireguard IP — v0.68+ uses "netbirdIp", older uses "wireguardIp"
     let local_ip = first_str(
         &v,
         &[
+            &["netbirdIp"],
             &["wireguardIp"],
             &["WireguardIP"],
             &["localPeerState", "ip"],
             &["localPeerState", "IP"],
         ],
-    );
+    )
+    // Strip CIDR suffix (e.g. "100.102.159.205/16" → "100.102.159.205")
+    .map(|s| s.split('/').next().unwrap_or(&s).to_string());
 
     // Peers
     let mut peers = Vec::new();
@@ -248,8 +291,9 @@ fn parse_status(raw: &str) -> AppResult<StatusDto> {
         .unwrap_or_else(|| "unbenannt".to_string());
         let ip = first_str(
             &p,
-            &[&["ip"], &["IP"], &["wireguardIp"], &["WireguardIP"]],
+            &[&["netbirdIp"], &["ip"], &["IP"], &["wireguardIp"], &["WireguardIP"]],
         )
+        .map(|s| s.split('/').next().unwrap_or(&s).to_string())
         .unwrap_or_default();
         let status_str = first_str(&p, &[&["status"], &["Status"]]).unwrap_or_default();
         let connected = status_str.eq_ignore_ascii_case("connected");
@@ -360,6 +404,35 @@ mod tests {
         assert_eq!(parse_latency("500µs"), Some(0));
         assert_eq!(parse_latency(""), None);
         assert_eq!(parse_latency("0s"), None);
+    }
+
+    #[test]
+    fn parses_v068_status() {
+        let raw = r#"{
+            "peers": {
+                "total": 1,
+                "connected": 1,
+                "details": [{
+                    "fqdn": "serv-secure.netbird.selfhosted",
+                    "netbirdIp": "100.102.162.60",
+                    "status": "Connected",
+                    "connectionType": "Relayed",
+                    "latency": 0
+                }]
+            },
+            "daemonVersion": "0.68.1",
+            "daemonStatus": "Connected",
+            "management": { "url": "https://vpn.secure.nkk-hb.de:443", "connected": true, "error": "" },
+            "signal": { "url": "https://vpn.secure.nkk-hb.de:443", "connected": true, "error": "" },
+            "netbirdIp": "100.102.159.205/16"
+        }"#;
+        let s = parse_status(raw).unwrap();
+        assert!(s.management_connected);
+        assert_eq!(s.state, ConnectionState::Connected);
+        assert_eq!(s.local_ip.as_deref(), Some("100.102.159.205"));
+        assert_eq!(s.peers.len(), 1);
+        assert_eq!(s.peers[0].ip, "100.102.162.60");
+        assert!(s.peers[0].connected);
     }
 
     #[test]

@@ -1485,8 +1485,54 @@ pub async fn open_rdp(
 
     #[cfg(target_os = "macos")]
     {
-        // Pre-fill username in .rdp if profile exists
         let profiles = cached_profiles(&state).await.unwrap_or_default();
+
+        // Try xfreerdp first (supports password injection)
+        let has_xfreerdp = std::process::Command::new("which")
+            .arg("xfreerdp3")
+            .output()
+            .map(|o| o.status.success())
+            .unwrap_or(false)
+            || std::process::Command::new("which")
+                .arg("xfreerdp")
+                .output()
+                .map(|o| o.status.success())
+                .unwrap_or(false);
+
+        if has_xfreerdp {
+            if let Some(p) = profiles.first() {
+                let bin = if std::process::Command::new("which")
+                    .arg("xfreerdp3")
+                    .output()
+                    .map(|o| o.status.success())
+                    .unwrap_or(false)
+                {
+                    "xfreerdp3"
+                } else {
+                    "xfreerdp"
+                };
+                let user = match &p.domain {
+                    Some(d) if !d.is_empty() => format!("{}\\{}", d, p.username),
+                    _ => p.username.clone(),
+                };
+                std::process::Command::new(bin)
+                    .args([
+                        &format!("/v:{}", target),
+                        &format!("/u:{}", user),
+                        &format!("/p:{}", p.password),
+                        "/cert:ignore",
+                        "/f",
+                        "/clipboard",
+                        "/sound",
+                        "/smart-sizing",
+                    ])
+                    .spawn()
+                    .map_err(|e| AppError::Internal(format!("xfreerdp: {}", e)))?;
+                return Ok(());
+            }
+        }
+
+        // Fallback: .rdp file for Microsoft Remote Desktop (no password injection possible)
         let mut rdp = format!(
             "full address:s:{target}\nauthentication level:i:2\nscreen mode id:i:2\nsmart sizing:i:1\naudiomode:i:0\nredirectclipboard:i:1\nuse multimon:i:0\n"
         );

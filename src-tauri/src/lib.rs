@@ -24,6 +24,13 @@ pub fn run() {
             None,
         ))
         .plugin(tauri_plugin_updater::Builder::new().build())
+        .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
+            // Second instance tried to start → focus the existing window
+            if let Some(w) = app.get_webview_window("main") {
+                let _ = w.show();
+                let _ = w.set_focus();
+            }
+        }))
         .manage(commands::AppState::new())
         .setup(|app| {
             // Tray setup is non-fatal — if it fails the user can still use
