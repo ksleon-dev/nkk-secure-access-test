@@ -1206,47 +1206,40 @@ fn extract_windows_ping_val(line: &str, key: &str) -> Option<f64> {
 /// Quick connection quality test — measures TCP connect latency to the target
 /// and runs 3 pings in parallel to get a reliable RTT average. This isn't a
 /// bandwidth test but gives Support a clear signal how good the connection is.
-async fn quick_speed_test(host: &str) -> Option<SpeedResult> {
-    // Strategy 1: TCP connect time (most reliable, works through firewalls)
-    let addr = if host.contains(':') {
-        host.to_string()
-    } else {
-        // Try common ports — RDP first (3389), then HTTPS (443)
-        format!("{}:3389", host)
+/// Quick speed test for enrollment diagnostics — downloads 500 KB from
+/// Cloudflare CDN and measures real throughput. Fast enough for background use.
+async fn quick_speed_test(_host: &str) -> Option<SpeedResult> {
+    #[cfg(target_os = "windows")]
+    let null_dev = "NUL";
+    #[cfg(not(target_os = "windows"))]
+    let null_dev = "/dev/null";
+
+    let url = "https://speed.cloudflare.com/__down?bytes=500000";
+
+    let mut cmd = TokioCommand::new("curl");
+    cmd.args(["-s", "-o", null_dev, "-w", "%{speed_download}", "--max-time", "8", url])
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::null());
+    #[cfg(target_os = "windows")]
+    cmd.creation_flags(0x08000000);
+
+    let start = tokio::time::Instant::now();
+    let output = match timeout(Duration::from_secs(10), cmd.output()).await {
+        Ok(Ok(o)) if o.status.success() => o,
+        _ => return None,
     };
+    let elapsed = start.elapsed().as_millis() as u64;
 
-    let tcp_start = tokio::time::Instant::now();
-    let tcp_ok = timeout(
-        Duration::from_secs(3),
-        tokio::net::TcpStream::connect(&addr),
-    )
-    .await;
-    let tcp_ms = tcp_start.elapsed().as_millis() as u64;
+    let speed_str = String::from_utf8_lossy(&output.stdout).trim().to_string();
+    let bytes_per_sec: f64 = speed_str.parse().unwrap_or(0.0);
+    let mbps = (bytes_per_sec * 8.0 / 1_000_000.0 * 100.0).round() / 100.0;
 
-    if matches!(tcp_ok, Ok(Ok(_))) {
-        return Some(SpeedResult {
-            target: host.to_string(),
-            bytes: 0,
-            duration_ms: tcp_ms,
-            mbps: 0.0,
-        });
-    }
-
-    // Strategy 2: fallback to ICMP ping
-    let ping_start = tokio::time::Instant::now();
-    let ok = ping_host(host, 3000).await;
-    let ping_ms = ping_start.elapsed().as_millis() as u64;
-
-    if ok {
-        Some(SpeedResult {
-            target: host.to_string(),
-            bytes: 0,
-            duration_ms: ping_ms,
-            mbps: 0.0,
-        })
-    } else {
-        None
-    }
+    Some(SpeedResult {
+        target: "Cloudflare CDN (500 KB)".to_string(),
+        bytes: 500_000,
+        duration_ms: elapsed,
+        mbps,
+    })
 }
 
 /// Separate ping quality test — called lazily AFTER the diagnose page loads.
