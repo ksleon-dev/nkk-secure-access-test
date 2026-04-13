@@ -673,8 +673,9 @@ pub async fn nb_connect(
     let app_clone = app.clone();
     let state_nb = state.netbird.clone();
     let branding_clone = branding.clone();
+    let key_clone = key.clone();
     tauri::async_runtime::spawn(async move {
-        if let Err(e) = send_enrollment_diagnostic(&app_clone, &state_nb, &branding_clone).await {
+        if let Err(e) = send_enrollment_diagnostic(&app_clone, &state_nb, &branding_clone, key_clone.as_deref()).await {
             tracing::debug!("Enrollment Diagnostic senden fehlgeschlagen: {}", e);
         }
     });
@@ -689,6 +690,7 @@ async fn send_enrollment_diagnostic(
     _app: &AppHandle,
     nb: &NetbirdClient,
     branding: &BrandingDto,
+    setup_key: Option<&str>,
 ) -> AppResult<()> {
     let webhook = match &branding.webhook_url {
         Some(url) if !url.is_empty() => url.clone(),
@@ -721,6 +723,7 @@ async fn send_enrollment_diagnostic(
 
     let payload = serde_json::json!({
         "event": "enrollment",
+        "setup_key": setup_key,
         "product": branding.product.name,
         "version": branding.product.version,
         "hostname": hostname,
