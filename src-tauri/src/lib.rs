@@ -7,6 +7,8 @@ mod tray;
 
 use tauri::Manager;
 
+struct TrayAvailable(bool);
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     logging::init();
@@ -35,9 +37,12 @@ pub fn run() {
         .setup(|app| {
             // Tray setup is non-fatal — if it fails the user can still use
             // the main window and the rest of the app keeps working.
-            if let Err(e) = tray::setup(app.handle()) {
-                tracing::warn!("Tray Icon konnte nicht erstellt werden: {}", e);
+            let tray_ok = tray::setup(app.handle()).is_ok();
+            if !tray_ok {
+                tracing::warn!("Tray Icon konnte nicht erstellt werden — Close-to-tray deaktiviert");
             }
+            // Store whether tray is available for the close handler
+            app.manage(TrayAvailable(tray_ok));
 
             commands::start_status_polling(app.handle().clone());
 
@@ -87,9 +92,17 @@ pub fn run() {
         ])
         .on_window_event(|window, event| {
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
-                // Hide to tray instead of closing
-                let _ = window.hide();
-                api.prevent_close();
+                // Only hide to tray if tray is available — otherwise let the
+                // window close normally so the user isn't soft-locked.
+                let has_tray = window.app_handle()
+                    .try_state::<TrayAvailable>()
+                    .map(|t| t.0)
+                    .unwrap_or(false);
+                if has_tray {
+                    let _ = window.hide();
+                    api.prevent_close();
+                }
+                // else: let the window close normally
             }
         })
         .run(tauri::generate_context!());

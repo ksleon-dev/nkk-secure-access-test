@@ -128,6 +128,12 @@ fn store_profiles(profiles: &[CredentialProfile]) -> AppResult<()> {
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)
             .map_err(|e| AppError::Io(format!("profiles Ordner: {}", e)))?;
+        // Restrict directory to owner only (chmod 700)
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let _ = std::fs::set_permissions(parent, std::fs::Permissions::from_mode(0o700));
+        }
     }
     // Strip passwords before saving on macOS
     let clean: Vec<CredentialProfile> = profiles.iter().map(|p| CredentialProfile {
@@ -535,6 +541,19 @@ async fn ensure_branding(app: &AppHandle, state: &State<'_, AppState>) -> AppRes
     Ok(b)
 }
 
+/// Like ensure_branding but takes AppState directly (for background tasks
+/// that don't have a State<'_> wrapper).
+async fn ensure_branding_from_state(app: &AppHandle, state: &AppState) -> Option<BrandingDto> {
+    let mut g = state.branding.lock().await;
+    if let Some(b) = g.as_ref() {
+        return Some(b.clone());
+    }
+    let resource_dir = app.path().resource_dir().ok()?;
+    let b = branding::load(&resource_dir).ok()?;
+    *g = Some(b.clone());
+    Some(b)
+}
+
 /// Validate a NetBird setup key. Setup keys are typically UUIDs or long
 /// alphanumeric strings — we accept anything between 8 and 128 chars made up
 /// of alphanumerics and dashes. This blocks accidental command injection
@@ -570,25 +589,6 @@ pub async fn nb_connect(
     setup_key: Option<String>,
     state: State<'_, AppState>,
 ) -> AppResult<()> {
-    // DEMO KEY — REMOVE BEFORE PRODUCTION
-    if setup_key.as_deref().map(|s| s.trim()) == Some("KRONDEMO2026") {
-        tracing::info!("Demo Key erkannt");
-        let _ = write_enrolled_marker(&app);
-        let fake = StatusDto {
-            state: ConnectionState::Connected,
-            management_connected: true,
-            peers: vec![
-                crate::netbird::PeerDto { name: "Serv-TS2".into(), ip: "192.168.0.20".into(), connected: true, latency_ms: Some(18), relay: Some("P2P".into()) },
-                crate::netbird::PeerDto { name: "Serv-TS1".into(), ip: "192.168.0.19".into(), connected: true, latency_ms: Some(22), relay: Some("P2P".into()) },
-            ],
-            local_ip: Some("100.64.0.99".into()),
-            updated_at: chrono::Utc::now().to_rfc3339(),
-            cli_available: true,
-        };
-        let _ = app.emit("netbird-status-changed", &fake);
-        return Ok(());
-    }
-
     let branding = ensure_branding(&app, &state).await?;
 
     if !management_reachable(&branding.netbird.management_url).await {
@@ -1217,7 +1217,7 @@ async fn quick_speed_test(_host: &str) -> Option<SpeedResult> {
     #[cfg(not(target_os = "windows"))]
     let null_dev = "/dev/null";
 
-    let url = "https://speed.cloudflare.com/__down?bytes=500000";
+    let url = "https://speed.cloudflare.com/__down?bytes=5000000";
 
     let mut cmd = TokioCommand::new("curl");
     cmd.args(["-s", "-o", null_dev, "-w", "%{speed_download}", "--max-time", "8", url])
@@ -1238,8 +1238,8 @@ async fn quick_speed_test(_host: &str) -> Option<SpeedResult> {
     let mbps = (bytes_per_sec * 8.0 / 1_000_000.0 * 100.0).round() / 100.0;
 
     Some(SpeedResult {
-        target: "Cloudflare CDN (500 KB)".to_string(),
-        bytes: 500_000,
+        target: "Cloudflare CDN (5 MB)".to_string(),
+        bytes: 5_000_000,
         duration_ms: elapsed,
         mbps,
     })
@@ -1654,9 +1654,9 @@ pub async fn open_rdp(
     let nb_clone = state.netbird.clone();
     let branding_result = ensure_branding(&app, &state).await.ok();
     let key = cached_setup_key(&state).await.ok().flatten();
+    let app_reconnect = app.clone();
 
     tauri::async_runtime::spawn(async move {
-        // Quick 2s status check — if VPN is down, fire-and-forget a reconnect
         let needs_reconnect = match timeout(Duration::from_secs(2), nb_clone.status()).await {
             Ok(Ok(s)) => !matches!(s.state, ConnectionState::Connected),
             _ => true,
@@ -1664,7 +1664,11 @@ pub async fn open_rdp(
         if needs_reconnect {
             if let Some(b) = branding_result {
                 tracing::info!("RDP: VPN nicht verbunden, versuche Background-Reconnect");
-                let _ = nb_clone.up(&b.netbird.management_url, key.as_deref()).await;
+                if nb_clone.up(&b.netbird.management_url, key.as_deref()).await.is_ok() {
+                    if let Ok(s) = nb_clone.status().await {
+                        let _ = app_reconnect.emit("netbird-status-changed", &s);
+                    }
+                }
             }
         }
     });
@@ -1706,6 +1710,15 @@ pub async fn open_rdp(
             .creation_flags(0x08000000)
             .spawn()
             .map_err(|e| AppError::Internal(format!("mstsc start: {}", e)))?;
+        // Clean up cmdkey after 30s so credentials don't persist forever
+        let target_cleanup = target.clone();
+        tauri::async_runtime::spawn(async move {
+            sleep(Duration::from_secs(30)).await;
+            let _ = std::process::Command::new("cmdkey")
+                .arg(format!("/delete:TERMSRV/{}", target_cleanup))
+                .creation_flags(0x08000000)
+                .output();
+        });
         return Ok(());
     }
 
@@ -2075,24 +2088,46 @@ pub fn start_status_polling(app: AppHandle) {
                     // getrennt" notification like OpenVPN does — but only when the
                     // state actually changes, not on every poll cycle.
                     let new_state = format!("{:?}", payload.state);
-                    let mut last = LAST_KNOWN_STATE.lock().unwrap_or_else(|e| e.into_inner());
-                    let changed = last.as_ref() != Some(&new_state);
-                    if changed {
-                        let prev = last.clone();
-                        *last = Some(new_state.clone());
-                        drop(last); // release lock before async work
-
-                        if prev.is_some() {
-                            // Only notify after the FIRST poll (skip the initial transition
-                            // from None → whatever, which is just app startup).
-                            send_status_notification(&app, &payload);
+                    let (changed, should_notify) = {
+                        let mut last = LAST_KNOWN_STATE.lock().unwrap_or_else(|e| e.into_inner());
+                        let changed = last.as_ref() != Some(&new_state);
+                        let had_prev = last.is_some();
+                        if changed {
+                            *last = Some(new_state.clone());
                         }
-                    } else {
-                        drop(last);
+                        (changed, changed && had_prev)
+                    }; // MutexGuard dropped here — safe for async below
+
+                    if should_notify {
+                        send_status_notification(&app, &payload);
                     }
 
                     update_tray_tooltip(&app, &payload);
                     let _ = app.emit("netbird-status-changed", &payload);
+
+                    // Auto-reconnect: if VPN was connected but dropped,
+                    // silently attempt to reconnect. Corporate VPN must stay up.
+                    // Must be AFTER the mutex lock is dropped (above).
+                    if changed && matches!(payload.state, ConnectionState::Disconnected) && payload.cli_available {
+                        let reconnect_nb = state.netbird.clone();
+                        let reconnect_branding = state.branding.lock().await.clone();
+                        let reconnect_setup = state.setup_key_cache.lock().await.clone();
+                        let reconnect_app = app.clone();
+                        tauri::async_runtime::spawn(async move {
+                            tracing::info!("Auto-Reconnect: VPN getrennt, versuche Wiederverbindung ...");
+                            let mgmt_url = reconnect_branding
+                                .as_ref()
+                                .map(|b| b.netbird.management_url.clone());
+                            let key = reconnect_setup.flatten();
+                            if let Some(url) = mgmt_url {
+                                if reconnect_nb.up(&url, key.as_deref()).await.is_ok() {
+                                    if let Ok(s) = reconnect_nb.status().await {
+                                        let _ = reconnect_app.emit("netbird-status-changed", &s);
+                                    }
+                                }
+                            }
+                        });
+                    }
                 }
                 POLL_IN_FLIGHT.store(false, Ordering::Relaxed);
             }

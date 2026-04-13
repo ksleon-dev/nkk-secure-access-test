@@ -340,9 +340,7 @@ fn parse_status(raw: &str) -> AppResult<StatusDto> {
     let any_peer_connected = peers.iter().any(|p| p.connected);
     let state = if management_connected && any_peer_connected {
         ConnectionState::Connected
-    } else if management_connected {
-        ConnectionState::Connected
-    } else if !peers.is_empty() {
+    } else if management_connected || !peers.is_empty() {
         ConnectionState::Connecting
     } else {
         ConnectionState::Disconnected

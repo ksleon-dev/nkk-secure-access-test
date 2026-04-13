@@ -84,8 +84,11 @@ export function NewsScreen({ branding, onBack }: Props) {
     setLoading(true);
     fetch(branding.newsUrl)
       .then((r) => r.json())
-      .then((data: NewsItem[]) => {
-        if (Array.isArray(data) && data.length > 0) setNews(data);
+      .then((data: unknown) => {
+        if (Array.isArray(data) && data.length > 0) {
+          const valid = data.filter((d: Record<string, unknown>) => d && d.id && d.type && d.body);
+          if (valid.length > 0) setNews(valid as NewsItem[]);
+        }
       })
       .catch(() => {}) // silent fallback to hardcoded
       .finally(() => setLoading(false));
