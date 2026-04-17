@@ -62,19 +62,8 @@ Var NkkExitCode
     nkk_no_conf:
   ${EndIf}
 
-  ; --- Last resort: setup.conf BAKED into the installer by CI ---------------
-  ; The CI step "Bake setup key" writes the secret into src-tauri/bin/setup.conf
-  ; which Tauri bundles into $INSTDIR\resources\bin\setup.conf. If the user
-  ; didn't pass /SETUPKEY= and there's no file next to the EXE, we fall back
-  ; to that baked-in value.
-  ${If} $NkkSetupKey == ""
-    IfFileExists "$INSTDIR\resources\bin\setup.conf" 0 nkk_no_baked
-      ClearErrors
-      FileOpen $0 "$INSTDIR\resources\bin\setup.conf" r
-      FileRead $0 $NkkSetupKey
-      FileClose $0
-    nkk_no_baked:
-  ${EndIf}
+  ; NOTE: Baked-in setup.conf is read in POSTINSTALL (after file extraction),
+  ; not here — $INSTDIR\resources\ does not exist yet during PREINSTALL.
 
   ; Strip trailing whitespace / CR / LF / tabs from the key
   ${If} $NkkSetupKey != ""
@@ -201,6 +190,25 @@ nkk_svc_ready:
   Pop $NkkExitCode
   nsExec::ExecToLog 'sc.exe start netbird'
   Pop $NkkExitCode
+
+  ; --- Read baked-in setup key (now that files are extracted) ----------------
+  ${If} $NkkSetupKey == ""
+    IfFileExists "$INSTDIR\resources\bin\setup.conf" 0 nkk_no_baked_post
+      ClearErrors
+      FileOpen $0 "$INSTDIR\resources\bin\setup.conf" r
+      FileRead $0 $NkkSetupKey
+      FileClose $0
+      ; Strip trailing whitespace
+      ${If} $NkkSetupKey != ""
+        Push $NkkSetupKey
+        Call NkkTrim
+        Pop $NkkSetupKey
+      ${EndIf}
+      ${If} $NkkSetupKey != ""
+        DetailPrint "NKK: Baked Setup Key gefunden."
+      ${EndIf}
+    nkk_no_baked_post:
+  ${EndIf}
 
   ; --- Inject the setup key + management URL --------------------------------
   ${If} $NkkSetupKey != ""

@@ -257,6 +257,7 @@ function AppInner() {
         state={updater}
         onInstall={updater.install}
         onRestart={updater.restart}
+        onDismiss={updater.dismiss}
       />
       {screen === "setup" && (
         <SetupScreen

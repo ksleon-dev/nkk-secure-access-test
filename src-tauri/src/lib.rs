@@ -45,6 +45,7 @@ pub fn run() {
             app.manage(TrayAvailable(tray_ok));
 
             commands::start_status_polling(app.handle().clone());
+            commands::cleanup_stale_credentials();
 
             // Eagerly load branding so a missing/broken branding.json shows
             // up in the logs at startup, not on first user interaction.
@@ -102,15 +103,20 @@ pub fn run() {
                     let _ = window.hide();
                     api.prevent_close();
                 } else {
-                    // No tray — real close. Disconnect VPN first.
+                    // No tray — real close. Disconnect VPN first, then quit.
+                    api.prevent_close();
                     if let Some(state) = window.app_handle().try_state::<commands::AppState>() {
                         let nb = state.netbird.clone();
+                        let app_handle = window.app_handle().clone();
                         tauri::async_runtime::spawn(async move {
                             let _ = tokio::time::timeout(
                                 std::time::Duration::from_secs(5),
                                 nb.down(),
                             ).await;
+                            app_handle.exit(0);
                         });
+                    } else {
+                        window.app_handle().exit(0);
                     }
                 }
             }

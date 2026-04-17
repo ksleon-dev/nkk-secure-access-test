@@ -6,9 +6,10 @@ interface Props {
   state: UpdateState;
   onInstall: () => void;
   onRestart: () => void;
+  onDismiss: () => void;
 }
 
-export function UpdateBanner({ state, onInstall, onRestart }: Props) {
+export function UpdateBanner({ state, onInstall, onRestart, onDismiss }: Props) {
   if (!state.available) return null;
 
   return (
@@ -115,6 +116,12 @@ export function UpdateBanner({ state, onInstall, onRestart }: Props) {
               </button>
             ) : (
               <>
+                <button
+                  onClick={onDismiss}
+                  className="flex-1 bg-white/20 hover:bg-white/30 font-bold text-[13px] rounded-xl py-2.5 transition"
+                >
+                  Nicht jetzt
+                </button>
                 <button
                   onClick={onInstall}
                   className="flex-[2] bg-white text-[color:var(--brand-primary)] font-bold text-[13px] rounded-xl py-2.5 hover:bg-white/90 active:scale-[0.98] transition-all shadow-lg"

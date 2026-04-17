@@ -402,6 +402,10 @@ pub struct AppState {
     /// `nb_is_enrolled` + `nb_connect` would each fire a separate Keychain
     /// prompt on unsigned dev builds.
     pub setup_key_cache: AsyncMutex<CachedSetupKey>,
+    /// Set to true when the user explicitly disconnects via the UI.
+    /// Prevents auto-reconnect from fighting the user's intent.
+    /// Reset to false when the user explicitly connects.
+    pub user_disconnected: AtomicBool,
 }
 
 impl Default for AppState {
@@ -417,6 +421,7 @@ impl AppState {
             branding: AsyncMutex::new(None),
             profiles_cache: AsyncMutex::new(None),
             setup_key_cache: AsyncMutex::new(None),
+            user_disconnected: AtomicBool::new(false),
         }
     }
 }
@@ -603,6 +608,8 @@ pub async fn nb_connect(
     setup_key: Option<String>,
     state: State<'_, AppState>,
 ) -> AppResult<()> {
+    // User explicitly connecting — clear the disconnect flag so auto-reconnect works again
+    state.user_disconnected.store(false, Ordering::Relaxed);
     let branding = ensure_branding(&app, &state).await?;
 
     if !management_reachable(&branding.netbird.management_url).await {
@@ -810,6 +817,8 @@ pub async fn nb_disconnect(
     app: AppHandle,
     state: State<'_, AppState>,
 ) -> AppResult<()> {
+    // User explicitly disconnecting — set flag so auto-reconnect won't fight them
+    state.user_disconnected.store(true, Ordering::Relaxed);
     state.netbird.down().await?;
     if let Ok(s) = state.netbird.status().await {
         let _ = app.emit("netbird-status-changed", &s);
@@ -2116,6 +2125,24 @@ static POLL_IN_FLIGHT: AtomicBool = AtomicBool::new(false);
 use std::sync::Mutex as StdMutex;
 static LAST_KNOWN_STATE: StdMutex<Option<String>> = StdMutex::new(None);
 
+/// Clean up any stale TERMSRV credentials left over from a previous crash.
+/// If the app was killed before the 60s cleanup timer fired, cmdkey entries
+/// for our RDP targets persist in Windows Credential Manager.
+pub fn cleanup_stale_credentials() {
+    #[cfg(target_os = "windows")]
+    {
+        use std::os::windows::process::CommandExt;
+        // Try to delete common NKK RDP targets
+        for target in &["192.168.0.19", "192.168.0.20"] {
+            let _ = std::process::Command::new("cmdkey")
+                .arg(format!("/delete:TERMSRV/{}", target))
+                .creation_flags(0x08000000)
+                .output();
+        }
+        tracing::debug!("Stale TERMSRV Credentials aufgeraeumt.");
+    }
+}
+
 pub fn start_status_polling(app: AppHandle) {
     tauri::async_runtime::spawn(async move {
         sleep(Duration::from_millis(500)).await;
@@ -2167,8 +2194,13 @@ pub fn start_status_polling(app: AppHandle) {
 
                     // Auto-reconnect: if VPN was connected but dropped,
                     // silently attempt to reconnect. Corporate VPN must stay up.
+                    // But NOT if the user explicitly clicked "Trennen".
                     // Must be AFTER the mutex lock is dropped (above).
-                    if changed && matches!(payload.state, ConnectionState::Disconnected) && payload.cli_available {
+                    if changed
+                        && matches!(payload.state, ConnectionState::Disconnected)
+                        && payload.cli_available
+                        && !state.user_disconnected.load(Ordering::Relaxed)
+                    {
                         let reconnect_nb = state.netbird.clone();
                         let reconnect_branding = state.branding.lock().await.clone();
                         let reconnect_setup = state.setup_key_cache.lock().await.clone();

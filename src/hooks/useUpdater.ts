@@ -93,5 +93,9 @@ export function useUpdater() {
     }
   }, []);
 
-  return { ...state, install, restart };
+  const dismiss = useCallback(() => {
+    setState((s) => ({ ...s, available: false }));
+  }, []);
+
+  return { ...state, install, restart, dismiss };
 }

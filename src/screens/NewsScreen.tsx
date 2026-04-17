@@ -20,12 +20,20 @@ interface NewsItem {
 // Fallback news — used when remote fetch fails or no URL configured.
 const FALLBACK_NEWS: NewsItem[] = [
   {
+    id: "v025",
+    date: "15. April 2026",
+    type: "update",
+    version: "0.2.5",
+    title: "Copy/Paste, Dateien, Stabilität",
+    body: "Copy/Paste und Dateien kopieren zwischen PC und Terminalserver funktioniert jetzt zuverlässig. VPN trennt sich sauber beim Beenden. Fehlende Windows Komponenten werden automatisch mitinstalliert. Viele Stabilitätsverbesserungen unter der Haube.",
+  },
+  {
     id: "v020",
     date: "11. April 2026",
     type: "update",
     version: "0.2.0",
     title: "Schneller, stabiler, schöner",
-    body: "Terminalserver öffnet sich jetzt sofort. Auto Updater eingebaut — Updates kommen automatisch. Speedtest + Smart Debug in der Diagnose. Logo Animation beim Verbinden. Verbindung läuft den ganzen Arbeitstag stabil durch.",
+    body: "Terminalserver öffnet sich jetzt sofort. Auto Updater eingebaut. Speedtest + Smart Debug in der Diagnose. Logo Animation beim Verbinden. Verbindung läuft den ganzen Arbeitstag stabil durch.",
   },
   {
     id: "welcome-1",

@@ -24,7 +24,12 @@ $vcTarget = Join-Path $scriptDir "vc_redist.x64.exe"
 if (-not (Test-Path $vcTarget)) {
     Write-Host "NKK: Lade Visual C++ Redistributable ..."
     Invoke-WebRequest -Uri "https://aka.ms/vs/17/release/vc_redist.x64.exe" -OutFile $vcTarget -UseBasicParsing
-    Write-Host "NKK: VC++ Redist OK ($([math]::Round((Get-Item $vcTarget).Length / 1MB, 2)) MB)"
+    $vcSize = (Get-Item $vcTarget).Length
+    if ($vcSize -lt 1000000) {
+        Write-Error "VC++ Redist zu klein ($vcSize Bytes) — Download fehlgeschlagen."
+        exit 1
+    }
+    Write-Host "NKK: VC++ Redist OK ($([math]::Round($vcSize / 1MB, 2)) MB)"
 } else {
     Write-Host "NKK: VC++ Redist bereits vorhanden, ueberspringe."
 }
@@ -40,7 +45,12 @@ if (-not (Test-Path $wintunDll)) {
     Copy-Item (Join-Path $wintunDir "wintun\bin\amd64\wintun.dll") $wintunDll -Force
     Remove-Item $wintunZip -Force
     Remove-Item $wintunDir -Recurse -Force
-    Write-Host "NKK: wintun.dll OK ($([math]::Round((Get-Item $wintunDll).Length / 1KB, 1)) KB)"
+    $wintunSize = (Get-Item $wintunDll).Length
+    if ($wintunSize -lt 100000) {
+        Write-Error "wintun.dll zu klein ($wintunSize Bytes) — Download fehlgeschlagen."
+        exit 1
+    }
+    Write-Host "NKK: wintun.dll OK ($([math]::Round($wintunSize / 1KB, 1)) KB)"
 } else {
     Write-Host "NKK: wintun.dll bereits vorhanden, ueberspringe."
 }
