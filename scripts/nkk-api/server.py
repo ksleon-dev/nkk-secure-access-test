@@ -105,6 +105,22 @@ def update_news():
     return jsonify({"status": "ok", "entries": len(data)}), 200
 
 
+# ── Downloads ──────────────────────────────────────────────
+
+DOWNLOADS_DIR = os.path.join(DATA_DIR, "downloads")
+os.makedirs(DOWNLOADS_DIR, exist_ok=True)
+
+@app.route("/download/<path:filename>", methods=["GET"])
+def download_file(filename):
+    """Serve installer files for direct download links."""
+    # Sanitize: only allow filenames, no path traversal
+    safe = os.path.basename(filename)
+    filepath = os.path.join(DOWNLOADS_DIR, safe)
+    if not os.path.exists(filepath):
+        return jsonify({"error": "file not found"}), 404
+    return send_file(filepath, as_attachment=True, download_name=safe)
+
+
 # ── Health ──────────────────────────────────────────────────
 
 @app.route("/api/health", methods=["GET"])
@@ -124,6 +140,7 @@ if __name__ == "__main__":
     print(f"  GET  /api/enrollments — Alle Reports listen")
     print(f"  GET  /api/news        — News JSON ausliefern")
     print(f"  POST /api/news        — News JSON updaten")
+    print(f"  GET  /download/<file> — Installer Download")
     print(f"  GET  /api/health      — Status")
     print(f"  Data: {DATA_DIR}")
     app.run(host="0.0.0.0", port=port)

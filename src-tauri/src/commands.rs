@@ -157,13 +157,15 @@ fn now_iso() -> String {
 }
 
 fn random_id() -> String {
-    // No external uuid dep — derive from current epoch + a small random nonce.
+    use std::sync::atomic::{AtomicU64, Ordering};
+    static COUNTER: AtomicU64 = AtomicU64::new(0);
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)
         .map(|d| d.as_nanos())
         .unwrap_or(0);
     let pid = std::process::id();
-    format!("p_{:x}_{:x}", now, pid)
+    let seq = COUNTER.fetch_add(1, Ordering::Relaxed);
+    format!("p_{:x}_{:x}_{:x}", now, pid, seq)
 }
 
 /// Returns the cached profile list, populating the cache from the OS keystore
@@ -496,9 +498,21 @@ fn save_setup_key(key: &str) -> AppResult<()> {
     if let Some(parent) = path.parent() {
         std::fs::create_dir_all(parent)
             .map_err(|e| AppError::Io(format!("setup-key Ordner: {}", e)))?;
+        // Restrict directory to owner only
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let _ = std::fs::set_permissions(parent, std::fs::Permissions::from_mode(0o700));
+        }
     }
     std::fs::write(&path, key)
         .map_err(|e| AppError::Io(format!("setup-key schreiben: {}", e)))?;
+    // Restrict file to owner only
+    #[cfg(unix)]
+    {
+        use std::os::unix::fs::PermissionsExt;
+        let _ = std::fs::set_permissions(&path, std::fs::Permissions::from_mode(0o600));
+    }
     Ok(())
 }
 
@@ -1673,51 +1687,85 @@ pub async fn open_rdp(
         }
     });
 
-    // Pre-stage credentials from stored profile (if any) via cmdkey on Windows.
-    // This must happen BEFORE mstsc launch so it picks them up.
+    // Launch RDP IMMEDIATELY — no waiting for VPN.
+    // Generate a .rdp file with all redirections enabled (clipboard, files, printers).
+    // Plain `mstsc /v:` does NOT enable clipboard/drive redirection by default,
+    // so employees can't copy/paste text or files between local PC and server.
     #[cfg(target_os = "windows")]
     {
+        use std::os::windows::process::CommandExt;
+
         let profiles = cached_profiles(&state).await.unwrap_or_default();
+        let safe_name = target.replace([':', '/', '\\'], "_");
+        let rdp_path = std::env::temp_dir().join(format!("nkk-{}.rdp", safe_name));
+
+        // .rdp files MUST use \r\n line endings — mstsc.exe on some Windows
+        // versions silently ignores settings with \n-only line endings.
+        let mut lines: Vec<&str> = vec![
+            "authentication level:i:2",
+            "screen mode id:i:2",
+            "smart sizing:i:1",
+            "audiomode:i:0",
+            "redirectclipboard:i:1",
+            "redirectprinters:i:1",
+            "drivestoredirect:s:*",
+            "use multimon:i:0",
+            "autoreconnection enabled:i:1",
+            "networkautodetect:i:1",
+            "bandwidthautodetect:i:1",
+        ];
+        let full_addr = format!("full address:s:{}", target);
+        let mut owned_lines: Vec<String> = vec![full_addr];
+
         if let Some(p) = profiles.first() {
-            use std::os::windows::process::CommandExt;
+            // Inject credentials via cmdkey BEFORE mstsc reads the .rdp file
             let user = match &p.domain {
                 Some(d) if !d.is_empty() => format!("{}\\{}", d, p.username),
                 _ => p.username.clone(),
             };
-            tracing::info!("RDP: Injiziere Credentials für {} via cmdkey", user);
-            let cmdkey_result = std::process::Command::new("cmdkey")
+            tracing::info!("RDP: Injiziere Credentials fuer {} via cmdkey", user);
+            let _ = std::process::Command::new("cmdkey")
                 .args([
                     &format!("/generic:TERMSRV/{}", target),
                     &format!("/user:{}", user),
                     &format!("/pass:{}", p.password),
                 ])
-                .creation_flags(0x08000000) // CREATE_NO_WINDOW
+                .creation_flags(0x08000000)
                 .output();
-            match &cmdkey_result {
-                Ok(o) if o.status.success() => tracing::info!("RDP: cmdkey erfolgreich"),
-                Ok(o) => tracing::warn!("RDP: cmdkey Exit Code {}", o.status),
-                Err(e) => tracing::warn!("RDP: cmdkey Fehler: {}", e),
+            if !p.username.is_empty() {
+                owned_lines.push(format!("username:s:{}", user));
             }
         }
-    }
 
-    // Launch RDP IMMEDIATELY — no waiting for VPN
-    #[cfg(target_os = "windows")]
-    {
-        use std::os::windows::process::CommandExt;
+        let mut rdp_content = String::new();
+        for l in &owned_lines {
+            rdp_content.push_str(l);
+            rdp_content.push_str("\r\n");
+        }
+        for l in &lines {
+            rdp_content.push_str(l);
+            rdp_content.push_str("\r\n");
+        }
+
+        std::fs::write(&rdp_path, &rdp_content)
+            .map_err(|e| AppError::Internal(format!("rdp file: {}", e)))?;
+
         std::process::Command::new("mstsc.exe")
-            .arg(format!("/v:{}", target))
+            .arg(rdp_path.to_string_lossy().to_string())
             .creation_flags(0x08000000)
             .spawn()
             .map_err(|e| AppError::Internal(format!("mstsc start: {}", e)))?;
-        // Clean up cmdkey after 30s so credentials don't persist forever
+
+        // Clean up cmdkey + temp file after 60s (gives mstsc time to read the file
+        // and the user time to authenticate if cmdkey didn't inject credentials)
         let target_cleanup = target.clone();
         tauri::async_runtime::spawn(async move {
-            sleep(Duration::from_secs(30)).await;
+            sleep(Duration::from_secs(60)).await;
             let _ = std::process::Command::new("cmdkey")
                 .arg(format!("/delete:TERMSRV/{}", target_cleanup))
                 .creation_flags(0x08000000)
                 .output();
+            let _ = std::fs::remove_file(&rdp_path);
         });
         return Ok(());
     }
@@ -1764,6 +1812,7 @@ pub async fn open_rdp(
                         "/clipboard",
                         "/sound",
                         "/smart-sizing",
+                        "/auto-reconnect",
                     ])
                     .spawn()
                     .map_err(|e| AppError::Internal(format!("xfreerdp: {}", e)))?;
@@ -2042,7 +2091,18 @@ pub async fn install_netbird() -> AppResult<String> {
 }
 
 #[tauri::command]
-pub async fn quit_app(app: AppHandle) -> AppResult<()> {
+pub async fn quit_app(app: AppHandle, state: State<'_, AppState>) -> AppResult<()> {
+    // Disconnect VPN before quitting so the tunnel doesn't stay open
+    // after the employee thinks they closed everything.
+    tracing::info!("App wird beendet — trenne VPN ...");
+    match tokio::time::timeout(
+        Duration::from_secs(5),
+        state.netbird.down(),
+    ).await {
+        Ok(Ok(())) => tracing::info!("VPN getrennt."),
+        Ok(Err(e)) => tracing::warn!("VPN trennen fehlgeschlagen: {}", e),
+        Err(_) => tracing::warn!("VPN trennen Timeout — beende trotzdem."),
+    }
     app.exit(0);
     Ok(())
 }

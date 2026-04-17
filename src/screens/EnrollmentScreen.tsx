@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import {
   ArrowRight,
   Check,
@@ -7,12 +8,13 @@ import {
   ShieldCheck,
   XCircle,
 } from "lucide-react";
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Logo } from "../components/Logo";
 import { TaglineMark } from "../components/TaglineMark";
 import { useToast } from "../components/Toast";
 import { de } from "../i18n/de";
 import type { BrandingDto } from "../types/branding";
+import type { StatusDto } from "../types/netbird";
 
 interface Props {
   branding: BrandingDto;
@@ -25,6 +27,49 @@ export function EnrollmentScreen({ branding, onEnrolled }: Props) {
   const [phase, setPhase] = useState<"idle" | "connecting" | "success" | "error">("idle");
   const [error, setError] = useState<string | null>(null);
   const toast = useToast();
+  const enrolledRef = useRef(false);
+
+  // Listen for status changes — if NetBird connects (e.g. manually via CLI),
+  // auto-transition to main screen even if the UI enrollment failed.
+  useEffect(() => {
+    let cancelled = false;
+    let unlisten: UnlistenFn | undefined;
+
+    function handleConnected() {
+      if (enrolledRef.current || cancelled) return;
+      enrolledRef.current = true;
+      toast.success(de.toast.connected);
+      setTimeout(() => onEnrolled(), 1200);
+    }
+
+    // Listen to backend status events
+    (async () => {
+      const fn = await listen<StatusDto>("netbird-status-changed", (ev) => {
+        if (ev.payload.state === "Connected" && ev.payload.management_connected) {
+          handleConnected();
+        }
+      });
+      if (cancelled) { fn(); return; }
+      unlisten = fn;
+    })();
+
+    // Also poll every 3s as fallback (covers manual CLI connect)
+    const pollTimer = setInterval(async () => {
+      if (enrolledRef.current || cancelled) return;
+      try {
+        const s = await invoke<StatusDto>("nb_status");
+        if (s.state === "Connected" && s.management_connected) {
+          handleConnected();
+        }
+      } catch { /* ignore */ }
+    }, 3000);
+
+    return () => {
+      cancelled = true;
+      unlisten?.();
+      clearInterval(pollTimer);
+    };
+  }, [onEnrolled, toast]);
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
@@ -37,6 +82,8 @@ export function EnrollmentScreen({ branding, onEnrolled }: Props) {
     setPhase("connecting");
     try {
       await invoke("nb_connect", { setupKey: key.trim() });
+      if (enrolledRef.current) return; // listener already handled it
+      enrolledRef.current = true;
       setPhase("success");
       toast.success(de.toast.connected);
       await new Promise((r) => setTimeout(r, 1800));

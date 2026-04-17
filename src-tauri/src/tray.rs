@@ -117,7 +117,20 @@ pub fn setup<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()> {
                     let _ = app.emit("tray-open-settings", ());
                 }
                 "quit" => {
-                    app.exit(0);
+                    // Disconnect VPN before quitting
+                    if let Some(state) = app.try_state::<crate::commands::AppState>() {
+                        let nb = state.netbird.clone();
+                        let app_quit = app.clone();
+                        tauri::async_runtime::spawn(async move {
+                            let _ = tokio::time::timeout(
+                                std::time::Duration::from_secs(5),
+                                nb.down(),
+                            ).await;
+                            app_quit.exit(0);
+                        });
+                    } else {
+                        app.exit(0);
+                    }
                 }
                 _ => {}
             }

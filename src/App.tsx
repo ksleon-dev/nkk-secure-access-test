@@ -154,6 +154,9 @@ function AppInner() {
           /* ignore */
         }
 
+        // Load credential profiles early so the main screen can show the user's name
+        await refreshProfiles();
+
         const u1 = await listen<StatusDto>("netbird-status-changed", (ev) => {
           // If demo connected, only accept Connected status (ignore poll overrides)
           if (demoConnectedRef.current && ev.payload.state !== "Connected" && !ev.payload.cli_available) return;

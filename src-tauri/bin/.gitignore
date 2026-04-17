@@ -1,6 +1,9 @@
 netbird-installer.exe
 netbird-amd64.msi
+wintun.zip
+wintun-extract/
 *.msi
-*.exe
+# vc_redist.x64.exe and wintun.dll are tracked as empty placeholders.
+# CI (fetch-netbird.ps1) overwrites them with the real files before build.
 # setup.conf IS tracked (empty placeholder) — CI overwrites for releases
 

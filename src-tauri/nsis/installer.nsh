@@ -114,6 +114,35 @@ Var NkkExitCode
 !macro NSIS_HOOK_POSTINSTALL
   StrCpy $NkkNetbirdInstaller "$INSTDIR\resources\bin\netbird-installer.exe"
 
+  ; --- Install VC++ Runtime if missing (VCRUNTIME140.dll) -------------------
+  ; Bundled in the installer — no internet needed at customer site.
+  IfFileExists "$SYSDIR\vcruntime140.dll" nkk_vcpp_ok nkk_vcpp_install
+nkk_vcpp_install:
+  DetailPrint "NKK: Visual C++ Runtime fehlt — installiere aus Bundle ..."
+  IfFileExists "$INSTDIR\resources\bin\vc_redist.x64.exe" nkk_vcpp_run nkk_vcpp_missing
+nkk_vcpp_run:
+  nsExec::ExecToLog '"$INSTDIR\resources\bin\vc_redist.x64.exe" /install /quiet /norestart'
+  Pop $NkkExitCode
+  DetailPrint "NKK: VC++ Runtime Exit Code: $NkkExitCode"
+  Goto nkk_vcpp_ok
+nkk_vcpp_missing:
+  DetailPrint "NKK: WARNUNG — vc_redist.x64.exe nicht im Bundle gefunden."
+nkk_vcpp_ok:
+
+  ; --- Install wintun.dll if missing ----------------------------------------
+  ; Bundled in the installer — no internet needed at customer site.
+  IfFileExists "$SYSDIR\wintun.dll" nkk_wintun_ok nkk_wintun_install
+nkk_wintun_install:
+  DetailPrint "NKK: wintun.dll fehlt — kopiere aus Bundle ..."
+  IfFileExists "$INSTDIR\resources\bin\wintun.dll" nkk_wintun_copy nkk_wintun_missing
+nkk_wintun_copy:
+  CopyFiles /SILENT "$INSTDIR\resources\bin\wintun.dll" "$SYSDIR\wintun.dll"
+  DetailPrint "NKK: wintun.dll nach System32 kopiert."
+  Goto nkk_wintun_ok
+nkk_wintun_missing:
+  DetailPrint "NKK: WARNUNG — wintun.dll nicht im Bundle gefunden."
+nkk_wintun_ok:
+
   ; --- Detect existing NetBird install --------------------------------------
   IfFileExists "${NKK_NETBIRD_BIN}" nkk_netbird_already nkk_netbird_install
 
@@ -147,8 +176,23 @@ nkk_netbird_missing:
 
 nkk_netbird_done:
 
-  ; --- Wait for the netbird service to register -----------------------------
+  ; --- Wait for the netbird service to register (poll up to 30s) ------------
+  DetailPrint "NKK: Warte auf NetBird Service ..."
+  StrCpy $0 0
+nkk_svc_wait:
+  nsExec::ExecToStack 'sc.exe query netbird'
+  Pop $1
+  ${If} $1 == 0
+    Goto nkk_svc_ready
+  ${EndIf}
+  IntOp $0 $0 + 1
+  ${If} $0 > 10
+    DetailPrint "NKK: NetBird Service nicht gefunden nach 30s — fahre trotzdem fort."
+    Goto nkk_svc_ready
+  ${EndIf}
   Sleep 3000
+  Goto nkk_svc_wait
+nkk_svc_ready:
 
   ; --- Force the NetBird service to start automatically on boot -------------
   ; (Required so the tunnel is up BEFORE the user logs in and our app starts.)

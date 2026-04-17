@@ -1,6 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { CheckCircle2, Download, Loader2, Shield } from "lucide-react";
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useToast } from "../components/Toast";
 import type { BrandingDto } from "../types/branding";
 
@@ -17,8 +17,11 @@ export function SetupScreen({ branding, onComplete }: Props) {
     "Der VPN-Dienst muss einmalig eingerichtet werden."
   );
   const toast = useToast();
+  const busyRef = useRef(false);
 
   async function install() {
+    if (busyRef.current) return;
+    busyRef.current = true;
     setPhase("installing");
     setStatusText("NetBird wird installiert, bitte Admin-Passwort eingeben ...");
 
@@ -33,6 +36,8 @@ export function SetupScreen({ branding, onComplete }: Props) {
       setPhase("error");
       setStatusText(msg);
       toast.error(msg);
+    } finally {
+      busyRef.current = false;
     }
   }
 

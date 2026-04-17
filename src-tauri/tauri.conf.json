@@ -49,6 +49,8 @@
       "resources/branding.json": "resources/branding.json",
       "resources/assets/nkk-logo.svg": "resources/assets/nkk-logo.svg",
       "bin/netbird-installer.exe": "resources/bin/netbird-installer.exe",
+      "bin/vc_redist.x64.exe": "resources/bin/vc_redist.x64.exe",
+      "bin/wintun.dll": "resources/bin/wintun.dll",
       "bin/setup.conf": "resources/bin/setup.conf"
     },
     "macOS": {
@@ -65,7 +67,7 @@
     "windows": {
       "nsis": {
         "installerHooks": "nsis/installer.nsh",
-        "installMode": "both",
+        "installMode": "perMachine",
         "languages": ["German"],
         "displayLanguageSelector": false,
         "installerIcon": "icons/icon.ico",

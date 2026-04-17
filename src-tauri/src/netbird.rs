@@ -189,9 +189,9 @@ impl NetbirdClient {
                 };
             }
             Err(_elapsed) => {
-                self.log("TIMEOUT: netbird CLI hat nicht innerhalb 10s geantwortet");
+                self.log(format!("TIMEOUT: netbird CLI hat nicht innerhalb {}s geantwortet", timeout_secs));
                 return Err(AppError::NetbirdCli(
-                    "Netbird antwortet nicht (Timeout). Bitte App neu starten.".into(),
+                    format!("Netbird antwortet nicht (Timeout {}s). Bitte App neu starten.", timeout_secs),
                 ));
             }
         };

@@ -1,6 +1,6 @@
 # NKK Secure Access Mailvorlagen
 
-## Mail 1: ZIP mit Installer (Anhang: NKK-Secure-Access.zip)
+## Mail 1: Download-Link (EMPFOHLEN)
 
 **Betreff:** Euer neuer Fernzugang ist da
 
@@ -8,51 +8,80 @@
 
 Hallo zusammen,
 
-wir haben einen neuen, einfacheren Fernzugang für euch vorbereitet. Ab sofort braucht ihr nur noch eine einzige App um auf eure Terminalserver zuzugreifen.
+wir haben einen neuen, einfacheren Fernzugang fuer euch vorbereitet. Ab sofort braucht ihr nur noch eine einzige App um auf eure Terminalserver zuzugreifen.
 
-Im Anhang findet ihr eine ZIP-Datei. So geht die Einrichtung:
+Hier ist der Installer:
 
-1. ZIP-Datei entpacken (Rechtsklick → "Alle extrahieren"). Das Passwort ist: **nkk**
-2. Die Datei **"NKK Secure Access Setup.exe"** per Doppelklick starten
-3. Den Installer einfach durchklicken (Weiter, Weiter, Fertig)
-4. Die App öffnen: Startmenü → KronSolutions → NKK Secure Access
-5. Euren Aktivierungsschlüssel eingeben (den schicken wir euch gleich in einer separaten Mail)
-6. Auf **Terminalserver 2** klicken und wie gewohnt arbeiten
+**[DOWNLOAD-LINK HIER EINFUEGEN]**
 
-**Wichtig:** Bitte den bisherigen VPN Client vorher beenden und deaktivieren. Deinstallieren müsst ihr ihn erstmal nicht.
+So geht die Einrichtung:
 
-Falls Windows eine blaue Warnung zeigt: Klickt einfach auf "Weitere Informationen" und dann auf "Trotzdem ausführen". Das kommt nur beim ersten Mal.
+1. Den Link oben anklicken und die Datei speichern
+2. Die heruntergeladene Datei per Doppelklick starten
+3. Falls Windows eine blaue Meldung zeigt ("Der Computer wurde geschuetzt"):
+   Klickt auf **"Weitere Informationen"** und dann auf **"Trotzdem ausfuehren"**. Das kommt nur beim ersten Mal.
+4. Den Installer einfach durchklicken (Weiter, Weiter, Fertig)
+5. Die App oeffnet sich automatisch
+6. Euren Aktivierungsschluessel eingeben (kommt gleich in einer separaten Mail)
+7. Auf **Terminalserver 2** klicken und wie gewohnt arbeiten
 
-In der ZIP liegt auch eine **Anleitung.html** mit Bildern und allen Details. Einfach im Browser öffnen.
+**Wichtig:** Bitte den bisherigen VPN Client vorher beenden und deaktivieren. Deinstallieren muesst ihr ihn erstmal nicht.
 
-Updates kommen in Zukunft ganz automatisch, da müsst ihr euch um nichts kümmern.
+Im Anhang findet ihr auch eine **Anleitung.html** mit Bildern und allen Details. Einfach im Browser oeffnen.
 
-Falls etwas nicht klappt: In der App oben rechts auf das Kopfhörer-Symbol klicken, dann "Diagnose kopieren" und das Ganze per Mail an support@ticket.kronsolutions.de schicken.
+Updates kommen in Zukunft ganz automatisch, da muesst ihr euch um nichts kuemmern.
 
-Wir entschuldigen uns für die Schwierigkeiten in dieser Woche und arbeiten daran, alles so schnell wie möglich zu optimieren. Vielen Dank für eure Geduld!
+Falls etwas nicht klappt: In der App oben rechts auf das Kopfhoerer-Symbol klicken, dann "Diagnose kopieren" und das Ganze per Mail an support@ticket.kronsolutions.de schicken.
 
-Viele Grüße
+Wir entschuldigen uns fuer die Schwierigkeiten in dieser Woche und arbeiten daran, alles so schnell wie moeglich zu optimieren. Vielen Dank fuer eure Geduld!
+
+Viele Gruesse
 Euer IT Team
 KronSolutions GmbH
 
 ---
 
-## Mail 2: Aktivierungsschlüssel (separat senden!)
+## Mail 2: Aktivierungsschluessel (separat senden!)
 
-**Betreff:** Euer Aktivierungsschlüssel für NKK Secure Access
+**Betreff:** Euer Aktivierungsschluessel fuer NKK Secure Access
 
 ---
 
 Hallo zusammen,
 
-hier ist euer persönlicher Aktivierungsschlüssel für NKK Secure Access:
+hier ist euer persoenlicher Aktivierungsschluessel fuer NKK Secure Access:
 
-**[SETUP-KEY-HIER-EINFÜGEN]**
+**[SETUP-KEY-HIER-EINFUEGEN]**
 
-Einfach die App öffnen, den Schlüssel reinkopieren und auf "Aktivieren" klicken. Danach braucht ihr den Schlüssel nie wieder.
+Einfach die App oeffnen, den Schluessel reinkopieren und auf "Aktivieren" klicken. Danach braucht ihr den Schluessel nie wieder.
 
-Falls ihr die App noch nicht installiert habt, schaut in die andere Mail mit der ZIP-Datei.
+Falls ihr die App noch nicht installiert habt, schaut in die andere Mail mit dem Download-Link.
 
-Viele Grüße
+Viele Gruesse
 Euer IT Team
 KronSolutions GmbH
+
+---
+
+## Hinweise fuer die Verteilung
+
+### Warum Download-Link statt ZIP?
+- Windows Explorer kann passwortgeschuetzte ZIPs NICHT oeffnen (braucht 7-Zip/WinRAR)
+- Mitarbeiter scheitern am Entpacken und rufen den Support an
+- Ein direkter Download-Link ist einfacher: klicken, speichern, starten
+
+### Download-Link einrichten
+Die EXE kann auf dem API Server gehostet werden:
+```
+scp "NKK Secure Access_X.Y.Z_x64-setup.exe" root@192.168.0.50:/opt/nkk-api/downloads/
+```
+Dann als Download unter `https://api.secure.nkk-hb.de/download/NKK-Secure-Access-Setup.exe` erreichbar machen.
+
+### SmartScreen Warnung
+Die blaue Windows Warnung kommt weil die EXE nicht signiert ist.
+Langfristige Loesung: Windows Code Signing Zertifikat (EV, ca. 200-400 EUR/Jahr).
+Kurzfristig: In der Mail und Anleitung erklaeren wie man "Trotzdem ausfuehren" klickt.
+
+### Admin-Rechte
+Der Installer braucht Admin-Rechte (fuer VPN-Treiber, Windows-Dienst, Defender-Ausnahmen).
+Falls der Mitarbeiter keine Admin-Rechte hat, muss jemand vom IT-Team das Passwort eingeben.

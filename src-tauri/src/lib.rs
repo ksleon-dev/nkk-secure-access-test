@@ -101,8 +101,18 @@ pub fn run() {
                 if has_tray {
                     let _ = window.hide();
                     api.prevent_close();
+                } else {
+                    // No tray — real close. Disconnect VPN first.
+                    if let Some(state) = window.app_handle().try_state::<commands::AppState>() {
+                        let nb = state.netbird.clone();
+                        tauri::async_runtime::spawn(async move {
+                            let _ = tokio::time::timeout(
+                                std::time::Duration::from_secs(5),
+                                nb.down(),
+                            ).await;
+                        });
+                    }
                 }
-                // else: let the window close normally
             }
         })
         .run(tauri::generate_context!());
