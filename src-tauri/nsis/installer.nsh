@@ -31,6 +31,7 @@
 
 !include "FileFunc.nsh"
 !include "LogicLib.nsh"
+!include "WinVer.nsh"
 
 !define NKK_LOG_DIR "$PROGRAMDATA\KronSolutions\NKK-Secure-Access\logs"
 !define NKK_DATA_DIR "$PROGRAMDATA\KronSolutions\NKK-Secure-Access"
