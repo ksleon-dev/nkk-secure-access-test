@@ -43,6 +43,32 @@ Var NkkNetbirdInstaller
 Var NkkExitCode
 
 !macro NSIS_HOOK_PREINSTALL
+  ; --- Kill any running instance first ----------------------------------------
+  nsExec::ExecToLog 'taskkill /f /im "NKK Secure Access.exe"'
+  Pop $NkkExitCode
+
+  ; --- Remove old per-user installations (v0.1.x was installMode "both") ------
+  ; Without this, old versions in $LOCALAPPDATA stay around forever and the
+  ; Start Menu shortcut / autostart keeps launching the OLD version even after
+  ; the new per-machine version is installed.
+  DetailPrint "NKK: Raeume alte per-User Installation auf ..."
+  ; Try running the old uninstaller silently
+  IfFileExists "$LOCALAPPDATA\NKK Secure Access\uninstall.exe" 0 nkk_old_no_uninst
+    nsExec::ExecToLog '"$LOCALAPPDATA\NKK Secure Access\uninstall.exe" /S _?=$LOCALAPPDATA\NKK Secure Access'
+    Pop $NkkExitCode
+    Sleep 2000
+  nkk_old_no_uninst:
+  ; Force-remove leftover directories regardless
+  RMDir /r "$LOCALAPPDATA\NKK Secure Access"
+  RMDir /r "$LOCALAPPDATA\Programs\NKK Secure Access"
+  ; Remove old per-user registry entries
+  DeleteRegKey HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\NKK Secure Access"
+  ; Remove old per-user autostart
+  DeleteRegValue HKCU "Software\Microsoft\Windows\CurrentVersion\Run" "NKK Secure Access"
+  ; Remove old Start Menu shortcuts (per-user)
+  RMDir /r "$SMPROGRAMS\NKK Secure Access"
+  RMDir /r "$SMPROGRAMS\KronSolutions"
+
   ; --- Set up data + log directory under ProgramData (per-machine, persistent) -
   CreateDirectory "${NKK_DATA_DIR}"
   CreateDirectory "${NKK_LOG_DIR}"
@@ -281,9 +307,16 @@ nkk_unb_skip:
   RMDir /r "${NKK_DATA_DIR}"
   RMDir /r "${NKK_LOG_DIR}"
 
-  ; Remove Start Menu shortcuts
+  ; Remove Start Menu shortcuts (both per-user and per-machine)
   DetailPrint "NKK: Entferne Startmenu Eintraege ..."
   RMDir /r "$SMPROGRAMS\KronSolutions"
+  RMDir /r "$SMPROGRAMS\NKK Secure Access"
+
+  ; Remove old per-user install leftovers
+  RMDir /r "$LOCALAPPDATA\NKK Secure Access"
+  RMDir /r "$LOCALAPPDATA\Programs\NKK Secure Access"
+  DeleteRegKey HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\NKK Secure Access"
+  DeleteRegValue HKCU "Software\Microsoft\Windows\CurrentVersion\Run" "NKK Secure Access"
 
   ; Kill any running instance
   nsExec::ExecToLog 'taskkill /f /im "NKK Secure Access.exe"'
