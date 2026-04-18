@@ -639,7 +639,6 @@ pub async fn nb_connect(
                 tracing::info!("NetBird Service nicht erreichbar, starte Service ...");
                 let mut sc = TokioCommand::new("sc.exe");
                 sc.args(["start", "netbird"]);
-                use std::os::windows::process::CommandExt;
                 sc.creation_flags(0x08000000);
                 let _ = timeout(Duration::from_secs(5), sc.output()).await;
                 sleep(Duration::from_secs(3)).await;
@@ -654,7 +653,6 @@ pub async fn nb_connect(
             // Restart service and retry
             #[cfg(target_os = "windows")]
             {
-                use std::os::windows::process::CommandExt;
                 let mut sc_stop = TokioCommand::new("sc.exe");
                 sc_stop.args(["stop", "netbird"]);
                 sc_stop.creation_flags(0x08000000);
