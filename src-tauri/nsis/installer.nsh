@@ -51,14 +51,9 @@ Var NkkExitCode
   ; Without this, old versions in $LOCALAPPDATA stay around forever and the
   ; Start Menu shortcut / autostart keeps launching the OLD version even after
   ; the new per-machine version is installed.
+  ; IMPORTANT: Do NOT run the old uninstaller — it would delete the setup key
+  ; from Windows Credential Manager. Only remove the files and registry entries.
   DetailPrint "NKK: Raeume alte per-User Installation auf ..."
-  ; Try running the old uninstaller silently
-  IfFileExists "$LOCALAPPDATA\NKK Secure Access\uninstall.exe" 0 nkk_old_no_uninst
-    nsExec::ExecToLog '"$LOCALAPPDATA\NKK Secure Access\uninstall.exe" /S _?=$LOCALAPPDATA\NKK Secure Access'
-    Pop $NkkExitCode
-    Sleep 2000
-  nkk_old_no_uninst:
-  ; Force-remove leftover directories regardless
   RMDir /r "$LOCALAPPDATA\NKK Secure Access"
   RMDir /r "$LOCALAPPDATA\Programs\NKK Secure Access"
   ; Remove old per-user registry entries
