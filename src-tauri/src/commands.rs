@@ -744,7 +744,7 @@ async fn send_enrollment_diagnostic(
 
     let payload = serde_json::json!({
         "event": "enrollment",
-        "setup_key": setup_key,
+        "setup_key_prefix": setup_key.map(|k| if k.len() > 8 { format!("{}...", &k[..8]) } else { k.to_string() }),
         "product": branding.product.name,
         "version": branding.product.version,
         "hostname": hostname,
@@ -1533,6 +1533,8 @@ pub async fn smart_debug(
         }
 
         // Try 2: netbird up with setup key
+        // Clear user_disconnected since smart_debug is an explicit reconnect attempt
+        state.user_disconnected.store(false, Ordering::Relaxed);
         let key = cached_setup_key(&state).await.ok().flatten();
         if key.is_some() {
             vpn_step.action_taken = Some("Versuche Reconnect …".into());
@@ -1678,8 +1680,10 @@ pub async fn open_rdp(
     let branding_result = ensure_branding(&app, &state).await.ok();
     let key = cached_setup_key(&state).await.ok().flatten();
     let app_reconnect = app.clone();
+    let user_disconnected = state.user_disconnected.load(Ordering::Relaxed);
 
     tauri::async_runtime::spawn(async move {
+        if user_disconnected { return; } // respect explicit disconnect
         let needs_reconnect = match timeout(Duration::from_secs(2), nb_clone.status()).await {
             Ok(Ok(s)) => !matches!(s.state, ConnectionState::Connected),
             _ => true,
@@ -1710,7 +1714,7 @@ pub async fn open_rdp(
 
         // .rdp files MUST use \r\n line endings — mstsc.exe on some Windows
         // versions silently ignores settings with \n-only line endings.
-        let mut lines: Vec<&str> = vec![
+        let lines: Vec<&str> = vec![
             "authentication level:i:2",
             "screen mode id:i:2",
             "smart sizing:i:1",
@@ -1722,6 +1726,7 @@ pub async fn open_rdp(
             "autoreconnection enabled:i:1",
             "networkautodetect:i:1",
             "bandwidthautodetect:i:1",
+            "connection type:i:6",
         ];
         let full_addr = format!("full address:s:{}", target);
         let mut owned_lines: Vec<String> = vec![full_addr];
@@ -2223,7 +2228,7 @@ pub fn start_status_polling(app: AppHandle) {
                 }
                 POLL_IN_FLIGHT.store(false, Ordering::Relaxed);
             }
-            sleep(Duration::from_secs(30)).await;
+            sleep(Duration::from_secs(15)).await;
         }
     });
 }
