@@ -6,6 +6,15 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), [SemVer](https
 
 ## [Unreleased]
 
+## [0.2.6] — 2026-04-28
+
+### Fixed
+- VPN Disconnect — Trennen Knopf setzt `user_disconnected` Flag, Auto-Reconnect respektiert es
+- Alle Exit Pfade (Quit, Tray Beenden, Window Close) rufen `netbird down` mit 5s Timeout
+- RDP Clipboard + Files: `.rdp` mit `\r\n` Line Endings, `redirectclipboard`/`drivestoredirect`/`redirectprinters` aktiv
+- Old Install Cleanup: Setup Key bleibt im Credential Manager beim Upgrade
+- Installer entfernt alte Per-User Installationen vor Upgrade
+
 ### Hardening Pass
 - Rust Panic Audit — `expect()` durch `tracing::warn!` + graceful fallback ersetzt in `lib.rs` und `tray.rs`
 - Setup Key Validierung (8-128 Zeichen, alphanumerisch + `-_`)

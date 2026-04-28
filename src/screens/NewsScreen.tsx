@@ -20,6 +20,14 @@ interface NewsItem {
 // Fallback news — used when remote fetch fails or no URL configured.
 const FALLBACK_NEWS: NewsItem[] = [
   {
+    id: "v026",
+    date: "28. April 2026",
+    type: "update",
+    version: "0.2.6",
+    title: "Audit Fixes + sauberer Disconnect",
+    body: "Trennen Knopf trennt jetzt wirklich und der Auto-Reconnect respektiert das. Setup Key wird beim Update sauber übernommen. RDP läuft mit besserer Bildqualität. Installer räumt alte Per-User Installationen vor dem Upgrade auf.",
+  },
+  {
     id: "v025",
     date: "15. April 2026",
     type: "update",
