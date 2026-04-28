@@ -1,4 +1,4 @@
-name: Build Windows Installer
+name: Build NKK Secure Access (Windows + macOS)
 
 on:
   push:
@@ -10,14 +10,14 @@ on:
 # Cancel in-progress runs of the same workflow on the same branch — only the
 # latest commit is built.
 concurrency:
-  group: build-windows-${{ github.ref }}
+  group: build-${{ github.ref }}
   cancel-in-progress: true
 
 permissions:
   contents: write
 
 jobs:
-  build:
+  build-windows:
     runs-on: windows-latest
     timeout-minutes: 30
 
@@ -25,7 +25,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v4
         with:
-          fetch-depth: 0  # for git describe
+          fetch-depth: 0
 
       - name: Setup Node
         uses: actions/setup-node@v4
@@ -42,6 +42,7 @@ jobs:
         uses: swatinem/rust-cache@v2
         with:
           workspaces: "src-tauri -> target"
+          key: windows
 
       - name: Install npm dependencies
         run: npm ci
@@ -52,21 +53,14 @@ jobs:
 
       - name: Run Rust unit tests
         working-directory: src-tauri
-        # Tests need to run AFTER netbird-installer.exe is fetched because
-        # the Tauri build script verifies bundled resource paths exist.
         run: cargo test --release --quiet --lib
-        continue-on-error: true  # don't gate the build on tests during pilot
+        continue-on-error: true
 
       - name: Bake setup key into installer (if secret is set)
         shell: pwsh
         env:
           NKK_SETUP_KEY: ${{ secrets.NKK_SETUP_KEY }}
         run: |
-          # Write the setup key to a file that the NSIS installer reads at
-          # install time. The file is bundled as a Tauri resource so it ends
-          # up in $INSTDIR\resources\bin\setup.conf.
-          # If the secret is not set, we leave the existing empty placeholder
-          # in place so the Tauri resources mapping still resolves.
           $key = if ($env:NKK_SETUP_KEY) { $env:NKK_SETUP_KEY.Trim() } else { "" }
           if ($key) {
             Set-Content -Path src-tauri/bin/setup.conf -Value $key -NoNewline -Encoding ASCII
@@ -97,6 +91,7 @@ jobs:
           "name=$($exe.Name)" >> $env:GITHUB_OUTPUT
 
       - name: Upload installer artifact
+        continue-on-error: true
         uses: actions/upload-artifact@v4
         with:
           name: nkk-secure-access-windows
@@ -104,9 +99,9 @@ jobs:
             ${{ steps.find_installer.outputs.path }}
             src-tauri/target/release/bundle/nsis/*.sig
           if-no-files-found: error
-          retention-days: 30
+          retention-days: 7
 
-      - name: Generate updater manifest (latest.json)
+      - name: Generate Windows updater manifest (latest.json)
         if: startsWith(github.ref, 'refs/tags/v')
         shell: pwsh
         run: |
@@ -129,7 +124,7 @@ jobs:
           Set-Content -Path "latest.json" -Value $manifest
           Write-Host "Generated latest.json for v$version"
 
-      - name: Create GitHub Release on tag
+      - name: Publish Windows assets to GitHub Release
         if: startsWith(github.ref, 'refs/tags/v')
         uses: softprops/action-gh-release@v2
         with:
@@ -143,8 +138,109 @@ jobs:
           body: |
             ## NKK Secure Access ${{ github.ref_name }}
 
-            **Auto Update:** Bestehende Installationen aktualisieren sich automatisch.
+            **Windows Auto Update:** Bestehende Installationen aktualisieren sich automatisch über `latest.json`.
 
-            **Neuinstallation:** `${{ steps.find_installer.outputs.name }}` herunterladen und doppelklicken.
+            **Neuinstallation Windows:** `${{ steps.find_installer.outputs.name }}` herunterladen und doppelklicken.
+
+            **Neuinstallation macOS:** `NKK Secure Access_${{ github.ref_name }}_universal.dmg` herunterladen, doppelklicken, App in Programme ziehen.
 
             Support: support@ticket.kronsolutions.de
+
+  build-macos:
+    runs-on: macos-latest
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+
+      - name: Setup Rust (universal)
+        uses: dtolnay/rust-toolchain@stable
+        with:
+          targets: x86_64-apple-darwin,aarch64-apple-darwin
+
+      - name: Rust cache
+        uses: swatinem/rust-cache@v2
+        with:
+          workspaces: "src-tauri -> target"
+          key: macos-universal
+
+      - name: Install npm dependencies
+        run: npm ci
+
+      # Tauri's bundle.resources mapping references Windows-only files (the
+      # NetBird MSI, vc_redist, wintun.dll). They aren't used at runtime on
+      # macOS but the bundler refuses to build if a resource path is missing.
+      # We materialize empty placeholder files so the bundle step can succeed.
+      - name: Materialize Windows-only bundle resources (macOS placeholder)
+        run: |
+          set -e
+          cd src-tauri/bin
+          : > netbird-installer.exe
+          : > vc_redist.x64.exe
+          : > wintun.dll
+          : > setup.conf
+
+      - name: Bake setup key into bundle (if secret is set)
+        env:
+          NKK_SETUP_KEY: ${{ secrets.NKK_SETUP_KEY }}
+        run: |
+          if [ -n "${NKK_SETUP_KEY:-}" ]; then
+            printf '%s' "${NKK_SETUP_KEY}" > src-tauri/bin/setup.conf
+            echo "Setup key baked into bundle (length: ${#NKK_SETUP_KEY})"
+          else
+            echo "No NKK_SETUP_KEY secret set — leaving setup.conf empty."
+          fi
+
+      - name: Build Tauri (universal DMG)
+        run: npm run tauri build -- --bundles dmg --target universal-apple-darwin
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ""
+
+      - name: Locate built DMG
+        id: find_dmg
+        run: |
+          set -e
+          DMG=$(find src-tauri/target/universal-apple-darwin/release/bundle/dmg -name "*.dmg" -type f | head -1)
+          if [ -z "$DMG" ]; then
+            echo "::error::No DMG produced"
+            exit 1
+          fi
+          SIZE=$(stat -f%z "$DMG")
+          echo "Found: $DMG"
+          echo "Size:  $((SIZE / 1024 / 1024)) MB"
+          echo "path=$DMG" >> "$GITHUB_OUTPUT"
+          echo "name=$(basename "$DMG")" >> "$GITHUB_OUTPUT"
+
+      - name: Upload DMG artifact
+        continue-on-error: true
+        uses: actions/upload-artifact@v4
+        with:
+          name: nkk-secure-access-macos
+          path: |
+            ${{ steps.find_dmg.outputs.path }}
+            src-tauri/target/universal-apple-darwin/release/bundle/dmg/*.sig
+          if-no-files-found: error
+          retention-days: 7
+
+      - name: Publish macOS DMG to GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            ${{ steps.find_dmg.outputs.path }}
+            src-tauri/target/universal-apple-darwin/release/bundle/dmg/*.sig
+          draft: false
+          prerelease: false
+          # name/body intentionally omitted — Windows job already populates
+          # the release; this run just appends the DMG asset.
