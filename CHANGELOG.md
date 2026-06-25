@@ -13,7 +13,7 @@ Komfort und Netz-Intelligenz.
 - Smart Network: erkennt Büro-LAN, WLAN und Remote und warnt, wenn zwei Netze gleichzeitig laufen. Genau das macht eine Verbindung sonst still langsam.
 - Terminalserver 1 ist aus der Hauptansicht raus und liegt jetzt auf Shift+1.
 - Support-Paket fragt vor dem Export, in welchen Ordner es soll.
-- RDP-Einstellungen direkt in den Einstellungen: Zwischenablage, Laufwerke, Drucker, Kamera, Mikrofon und mehrere Bildschirme an- und abschaltbar. Laufwerke sind aus Sicherheitsgründen standardmäßig aus.
+- RDP-Einstellungen direkt in den Einstellungen: Zwischenablage, Laufwerke, Drucker und mehr an- und abschaltbar. Laufwerke sind aus Sicherheitsgründen standardmäßig aus.
 - Optionale Desktop-Verknüpfung zum Terminalserver, auch nutzbar ohne die App vorher zu öffnen.
 - NetBird lässt sich aus dem Service-Menü auf jeder Plattform sauber aktualisieren, mit Versionsprüfung.
 - Sicherheits-Update (Tauri 2.11.3) und ein Wächter um den Status-Poller, damit die Verbindung im Dauerbetrieb stabil bleibt.
