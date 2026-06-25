@@ -21,6 +21,7 @@ import { useCallback, useEffect, useState } from "react";
 import { ConnectionQuality } from "../components/ConnectionQuality";
 import { PathMtu } from "../components/PathMtu";
 import { useToast } from "../components/Toast";
+import { copyText } from "../lib/clipboard";
 import type { BrandingDto } from "../types/branding";
 import type { CredentialProfileMeta } from "../types/credentials";
 import type {
@@ -189,10 +190,9 @@ export function DiagnosePanel({ branding, profile, onClose }: Props) {
       `-- bitte diesen Block an ${branding.vendor.supportEmail} schicken --`
     );
 
-    try {
-      await navigator.clipboard.writeText(lines.join("\n"));
+    if (await copyText(lines.join("\n"))) {
       toast.success("Diagnose kopiert.");
-    } catch {
+    } else {
       toast.error("Kopieren fehlgeschlagen.");
     }
   }
@@ -542,10 +542,9 @@ export function DiagnosePanel({ branding, profile, onClose }: Props) {
           <button
             type="button"
             onClick={async () => {
-              try {
-                await navigator.clipboard.writeText(branding.vendor.supportEmail);
+              if (await copyText(branding.vendor.supportEmail)) {
                 toast.success("Support Email kopiert.");
-              } catch {
+              } else {
                 toast.error("Konnte nicht kopieren.");
               }
             }}

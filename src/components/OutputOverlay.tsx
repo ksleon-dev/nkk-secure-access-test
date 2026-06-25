@@ -1,4 +1,5 @@
 import { ArrowLeft, Copy } from "lucide-react";
+import { copyText } from "../lib/clipboard";
 import { useToast } from "./Toast";
 
 // Full-window, scrollable view for command output. The inline preview at the
@@ -28,9 +29,9 @@ export function OutputOverlay({
           {title}
         </span>
         <button
-          onClick={() => {
-            navigator.clipboard.writeText(text);
-            toast.success("Kopiert.");
+          onClick={async () => {
+            if (await copyText(text)) toast.success("Kopiert.");
+            else toast.error("Kopieren nicht möglich.");
           }}
           className="btn-ghost rounded-md px-2 py-1.5 flex items-center gap-1 text-[12px] font-semibold text-[color:var(--brand-fg)]"
         >

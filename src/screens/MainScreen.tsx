@@ -24,6 +24,7 @@ import { Logo } from "../components/Logo";
 import { TaglineMark } from "../components/TaglineMark";
 import { useToast } from "../components/Toast";
 import { de } from "../i18n/de";
+import { copyText } from "../lib/clipboard";
 import { italicAccent, timeOfDayGreeting } from "../lib/greeting";
 import type { BrandingDto, QuickLaunchEntry } from "../types/branding";
 import { displayName, type CredentialProfileMeta } from "../types/credentials";
@@ -617,9 +618,10 @@ function LaunchCard({
           {
             label: "Adresse kopieren",
             icon: <Copy size={13} />,
-            onClick: () => {
-              navigator.clipboard.writeText(item.target);
-              toast.success("Adresse kopiert.");
+            onClick: async () => {
+              const ok = await copyText(item.target);
+              if (ok) toast.success("Adresse kopiert.");
+              else toast.error("Kopieren nicht möglich.");
             },
           },
           ...(item.type === "rdp"

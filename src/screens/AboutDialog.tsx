@@ -1,5 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { ExternalLink, Mail, X } from "lucide-react";
+import { copyText } from "../lib/clipboard";
 import { Logo } from "../components/Logo";
 import { useToast } from "../components/Toast";
 import { de } from "../i18n/de";
@@ -16,12 +17,9 @@ export function AboutDialog({ branding, onClose }: Props) {
     invoke("open_url", { url: branding.vendor.supportUrl }).catch(() => {});
   }
   async function copyMail() {
-    try {
-      await navigator.clipboard.writeText(branding.vendor.supportEmail);
+    if (await copyText(branding.vendor.supportEmail))
       toast.success("Support Email kopiert.");
-    } catch {
-      toast.error("Konnte nicht kopieren.");
-    }
+    else toast.error("Konnte nicht kopieren.");
   }
 
   return (

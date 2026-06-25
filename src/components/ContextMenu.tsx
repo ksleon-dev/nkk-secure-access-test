@@ -79,6 +79,9 @@ export function ContextMenuProvider({ children }: { children: ReactNode }) {
   const top = menu
     ? Math.max(8, Math.min(menu.y, window.innerHeight - estH - 8))
     : 0;
+  // Grow from whichever corner sits next to the cursor, even when clamped.
+  const originX = menu && left < menu.x ? "right" : "left";
+  const originY = menu && top < menu.y ? "bottom" : "top";
 
   return (
     <Ctx.Provider value={show}>
@@ -86,7 +89,12 @@ export function ContextMenuProvider({ children }: { children: ReactNode }) {
       {menu && (
         <div
           className="fixed z-[60] surface rounded-lg shadow-xl py-1 context-pop"
-          style={{ left, top, width: WIDTH }}
+          style={{
+            left,
+            top,
+            width: WIDTH,
+            transformOrigin: `${originY} ${originX}`,
+          }}
           onClick={(e) => e.stopPropagation()}
           onContextMenu={(e) => e.preventDefault()}
         >
