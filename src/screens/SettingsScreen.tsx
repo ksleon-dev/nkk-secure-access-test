@@ -2,8 +2,10 @@ import { invoke } from "@tauri-apps/api/core";
 import {
   ArrowLeft,
   CheckCircle2,
+  ChevronDown,
   Loader2,
   LogOut,
+  Monitor,
   Pencil,
   Plus,
   Power,
@@ -14,6 +16,16 @@ import {
   Trash2,
   XCircle,
 } from "lucide-react";
+
+interface RdpSettings {
+  clipboard: boolean;
+  drives: boolean;
+  printers: boolean;
+  camera: boolean;
+  microphone: boolean;
+  audio: boolean;
+  multimon: boolean;
+}
 import { useEffect, useState } from "react";
 import { Avatar } from "../components/Avatar";
 import { useToast } from "../components/Toast";
@@ -48,14 +60,20 @@ export function SettingsScreen({
   const [loadingLogs, setLoadingLogs] = useState(false);
   const [keyringTest, setKeyringTest] = useState<KeyringTestResult | null>(null);
   const [testing, setTesting] = useState(false);
+  const [rdp, setRdp] = useState<RdpSettings | null>(null);
+  const [rdpOpen, setRdpOpen] = useState(false);
+  const [creatingShortcut, setCreatingShortcut] = useState(false);
   const toast = useToast();
 
   useEffect(() => {
     invoke<boolean>("is_autostart_enabled")
       .then(setAutostart)
       .catch(() => setAutostart(false));
+    invoke<RdpSettings>("rdp_settings_get")
+      .then(setRdp)
+      .catch(() => {});
     refreshLogs();
-    // NOTE: keyring test is explicit — triggered by the user via a button so
+    // NOTE: keyring test is explicit - triggered by the user via a button so
     // the macOS Keychain access prompt does not pop every time Settings is
     // opened on unsigned dev builds.
   }, []);
@@ -66,6 +84,27 @@ export function SettingsScreen({
       setAutostart(enable);
     } catch (e: unknown) {
       toast.error(e instanceof Error ? e.message : String(e));
+    }
+  }
+
+  function setRdpField(key: keyof RdpSettings, value: boolean) {
+    if (!rdp) return;
+    const next = { ...rdp, [key]: value };
+    setRdp(next);
+    invoke("rdp_settings_save", { settings: next }).catch((e) =>
+      toast.error(e instanceof Error ? e.message : String(e))
+    );
+  }
+
+  async function createShortcut() {
+    setCreatingShortcut(true);
+    try {
+      await invoke<string>("create_desktop_rdp_shortcut");
+      toast.success("Verknüpfung auf dem Desktop erstellt.");
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : String(e));
+    } finally {
+      setCreatingShortcut(false);
     }
   }
 
@@ -151,7 +190,7 @@ export function SettingsScreen({
           }
         >
           <p className="text-[12px] text-[color:var(--brand-fg)]/85 mb-2 leading-snug">
-            Mehrere Profile speicherbar — verschlüsselt im OS Tresor.
+            Mehrere Profile speicherbar - verschlüsselt im OS Tresor.
           </p>
           {profiles.length === 0 ? (
             <button
@@ -199,7 +238,7 @@ export function SettingsScreen({
             </div>
           )}
 
-          {/* Keyring test — opt-in button, so macOS keychain prompt only pops
+          {/* Keyring test - opt-in button, so macOS keychain prompt only pops
               when the admin actively tests it */}
           {!keyringTest ? (
             <button
@@ -253,6 +292,77 @@ export function SettingsScreen({
           <Toggle checked={autostart} onChange={toggleAutostart} />
         </Section>
 
+        <Section title="Remote Desktop">
+          <button
+            onClick={() => setRdpOpen((v) => !v)}
+            className="w-full surface rounded-md px-2.5 py-2 flex items-center justify-between text-[12px] font-semibold text-[color:var(--brand-fg)] hover:border-[color:var(--brand-primary)] transition"
+          >
+            <span className="flex items-center gap-1.5">
+              <Monitor size={13} className="text-[color:var(--brand-primary)]" />
+              Was im Remote Desktop mitgeht
+            </span>
+            <ChevronDown
+              size={14}
+              className={`transition-transform ${rdpOpen ? "rotate-180" : ""}`}
+            />
+          </button>
+          {rdpOpen && rdp && (
+            <div className="mt-1.5 surface rounded-md px-2.5 py-0.5 flex flex-col">
+              <RdpRow
+                label="Zwischenablage"
+                hint="Text und Dateien kopieren"
+                checked={rdp.clipboard}
+                onChange={(v) => setRdpField("clipboard", v)}
+              />
+              <RdpRow
+                label="Laufwerke"
+                hint="Lokale Ordner im Server sehen"
+                checked={rdp.drives}
+                onChange={(v) => setRdpField("drives", v)}
+              />
+              <RdpRow
+                label="Mehrere Bildschirme"
+                checked={rdp.multimon}
+                onChange={(v) => setRdpField("multimon", v)}
+              />
+              <RdpRow
+                label="Kamera"
+                hint="Webcam mitnehmen"
+                checked={rdp.camera}
+                onChange={(v) => setRdpField("camera", v)}
+              />
+              <RdpRow
+                label="Mikrofon"
+                checked={rdp.microphone}
+                onChange={(v) => setRdpField("microphone", v)}
+              />
+              <RdpRow
+                label="Ton"
+                hint="Audio vom Server hören"
+                checked={rdp.audio}
+                onChange={(v) => setRdpField("audio", v)}
+              />
+              <RdpRow
+                label="Drucker"
+                checked={rdp.printers}
+                onChange={(v) => setRdpField("printers", v)}
+              />
+            </div>
+          )}
+          <button
+            onClick={createShortcut}
+            disabled={creatingShortcut}
+            className="mt-1.5 w-full surface hover:border-[color:var(--brand-primary)] rounded-md px-3 py-2 text-[12px] font-semibold flex items-center justify-center gap-1.5 text-[color:var(--brand-fg)] transition"
+          >
+            {creatingShortcut ? (
+              <Loader2 size={12} className="animate-spin" />
+            ) : (
+              <Monitor size={12} />
+            )}
+            Desktop-Verknüpfung zum Terminalserver
+          </button>
+        </Section>
+
         <Section title={de.settings.management}>
           <div className="surface rounded-md px-2.5 py-2 flex items-center gap-2">
             <Server size={14} className="text-[color:var(--brand-primary)] shrink-0" />
@@ -279,7 +389,7 @@ export function SettingsScreen({
           }
         >
           <pre className="surface allow-select rounded-md p-2 text-[11px] font-mono overflow-auto h-32 whitespace-pre-wrap leading-tight text-[color:var(--brand-fg)]">
-            {logs.length === 0 ? "—" : logs.slice(-50).join("\n")}
+            {logs.length === 0 ? "-" : logs.slice(-50).join("\n")}
           </pre>
         </Section>
 
@@ -374,5 +484,31 @@ function Toggle({
         }`}
       />
     </button>
+  );
+}
+
+function RdpRow({
+  label,
+  hint,
+  checked,
+  onChange,
+}: {
+  label: string;
+  hint?: string;
+  checked: boolean;
+  onChange: (next: boolean) => void;
+}) {
+  return (
+    <div className="flex items-center justify-between py-1.5 border-b border-[color:var(--brand-border)] last:border-b-0">
+      <div className="min-w-0">
+        <div className="text-[12.5px] font-semibold text-[color:var(--brand-fg)]">
+          {label}
+        </div>
+        {hint && (
+          <div className="text-[10px] text-[color:var(--brand-fg)]/55">{hint}</div>
+        )}
+      </div>
+      <Toggle checked={checked} onChange={onChange} />
+    </div>
   );
 }

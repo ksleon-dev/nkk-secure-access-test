@@ -2,7 +2,7 @@ use crate::branding::{self, BrandingDto};
 use crate::error::{AppError, AppResult};
 use crate::netbird::{ConnectionState, NetbirdClient, StatusDto};
 use serde::{Deserialize, Serialize};
-use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 use tauri::{AppHandle, Emitter, Manager, State};
 use tokio::process::Command as TokioCommand;
 use tokio::sync::Mutex as AsyncMutex;
@@ -32,7 +32,7 @@ pub struct CredentialProfile {
     pub updated_at: String,
 }
 
-/// Lightweight metadata variant for the frontend — never carries the password.
+/// Lightweight metadata variant for the frontend - never carries the password.
 #[derive(Serialize, Clone, Debug)]
 pub struct CredentialProfileMeta {
     pub id: String,
@@ -62,8 +62,8 @@ impl From<&CredentialProfile> for CredentialProfileMeta {
 }
 
 // ── Platform-aware credential storage ──
-// Windows: Keyring (Credential Manager) — stores username + password (cmdkey can inject)
-// macOS:   Local JSON file — stores username + domain only (no password, no Keychain prompts)
+// Windows: Keyring (Credential Manager) - stores username + password (cmdkey can inject)
+// macOS:   Local JSON file - stores username + domain only (no password, no Keychain prompts)
 
 #[cfg(not(target_os = "macos"))]
 fn profiles_entry() -> AppResult<keyring::Entry> {
@@ -115,7 +115,7 @@ fn load_profiles() -> AppResult<Vec<CredentialProfile>> {
         tracing::warn!("Profildatei beschädigt, starte leer: {}", e);
         vec![]
     });
-    // macOS: never store passwords — clear any that leaked in
+    // macOS: never store passwords - clear any that leaked in
     for p in &mut profiles {
         p.password.clear();
     }
@@ -236,7 +236,7 @@ pub async fn creds_save(
         let p = &mut profiles[pos];
         p.label = label;
         p.username = username;
-        // Empty password on edit = "keep current" — don't overwrite with ""
+        // Empty password on edit = "keep current" - don't overwrite with ""
         if !password.is_empty() {
             p.password = password;
         }
@@ -257,7 +257,7 @@ pub async fn creds_save(
         profiles.push(new);
     }
 
-    // Single keystore write — no round-trip verify (that triggered an extra
+    // Single keystore write - no round-trip verify (that triggered an extra
     // Keychain prompt on macOS for each save).
     store_profiles(&profiles)?;
     *cache = Some(profiles);
@@ -312,13 +312,13 @@ pub struct KeyringTestResult {
 
 #[tauri::command]
 pub async fn creds_test() -> AppResult<KeyringTestResult> {
-    // macOS: no keyring used — always OK
+    // macOS: no keyring used - always OK
     #[cfg(target_os = "macos")]
     {
         return Ok(KeyringTestResult {
             ok: true,
             backend: "Lokale Datei (kein Schlüsselbund)".to_string(),
-            message: "Auf macOS werden Anmeldedaten lokal gespeichert — kein Keychain nötig.".to_string(),
+            message: "Auf macOS werden Anmeldedaten lokal gespeichert - kein Keychain nötig.".to_string(),
         });
     }
 
@@ -388,13 +388,13 @@ pub fn creds_default_username() -> String {
 
 /// Wraps the cached "is the setup key loaded" state. The outer Option is
 /// "have we ever loaded from the keystore", the inner Option is "is there a
-/// key" — `Some(None)` therefore means "we know there's no key yet".
+/// key" - `Some(None)` therefore means "we know there's no key yet".
 type CachedSetupKey = Option<Option<String>>;
 
 pub struct AppState {
     pub netbird: NetbirdClient,
     pub branding: AsyncMutex<Option<BrandingDto>>,
-    /// Lazy in-memory cache for the credential profile list — populated on
+    /// Lazy in-memory cache for the credential profile list - populated on
     /// first read so we only ever hit the OS keystore once per app session
     /// instead of triggering the macOS Keychain prompt on every save / list.
     pub profiles_cache: AsyncMutex<Option<Vec<CredentialProfile>>>,
@@ -406,6 +406,9 @@ pub struct AppState {
     /// Prevents auto-reconnect from fighting the user's intent.
     /// Reset to false when the user explicitly connects.
     pub user_disconnected: AtomicBool,
+    /// True once the hidden service menu was unlocked this session. Gates the
+    /// admin_* commands. In-memory only, never persisted.
+    pub admin_unlocked: AtomicBool,
 }
 
 impl Default for AppState {
@@ -422,11 +425,12 @@ impl AppState {
             profiles_cache: AsyncMutex::new(None),
             setup_key_cache: AsyncMutex::new(None),
             user_disconnected: AtomicBool::new(false),
+            admin_unlocked: AtomicBool::new(false),
         }
     }
 }
 
-/// Cached read of the setup key — single keystore hit per app session.
+/// Cached read of the setup key - single keystore hit per app session.
 async fn cached_setup_key(state: &AppState) -> AppResult<Option<String>> {
     let mut g = state.setup_key_cache.lock().await;
     if let Some(cached) = g.as_ref() {
@@ -437,7 +441,7 @@ async fn cached_setup_key(state: &AppState) -> AppResult<Option<String>> {
     Ok(loaded)
 }
 
-/// Cached write of the setup key — updates both the keystore and the in
+/// Cached write of the setup key - updates both the keystore and the in
 /// memory cache so future reads do not hit the keystore again.
 async fn cached_save_setup_key(state: &AppState, key: &str) -> AppResult<()> {
     save_setup_key(key)?;
@@ -487,7 +491,7 @@ fn delete_setup_key() -> AppResult<()> {
     }
 }
 
-// macOS: local file instead of Keychain — zero password prompts
+// macOS: local file instead of Keychain - zero password prompts
 #[cfg(target_os = "macos")]
 fn mac_setup_key_path() -> std::path::PathBuf {
     let home = std::env::var("HOME").unwrap_or_else(|_| "/tmp".to_string());
@@ -574,7 +578,7 @@ async fn ensure_branding_from_state(app: &AppHandle, state: &AppState) -> Option
 }
 
 /// Validate a NetBird setup key. Setup keys are typically UUIDs or long
-/// alphanumeric strings — we accept anything between 8 and 128 chars made up
+/// alphanumeric strings - we accept anything between 8 and 128 chars made up
 /// of alphanumerics and dashes. This blocks accidental command injection
 /// attempts and copy/paste mistakes (whitespace, quotes, control chars).
 fn validate_setup_key(key: &str) -> AppResult<String> {
@@ -608,13 +612,15 @@ pub async fn nb_connect(
     setup_key: Option<String>,
     state: State<'_, AppState>,
 ) -> AppResult<()> {
-    // User explicitly connecting — clear the disconnect flag so auto-reconnect works again
+    // User explicitly connecting - clear the disconnect flag so auto-reconnect works again
     state.user_disconnected.store(false, Ordering::Relaxed);
+    set_user_disconnected_marker(&app, false);
+    reset_reconnect_state();
     let branding = ensure_branding(&app, &state).await?;
 
     if !management_reachable(&branding.netbird.management_url).await {
         tracing::warn!(
-            "Management Server {} nicht erreichbar — versuche trotzdem.",
+            "Management Server {} nicht erreichbar - versuche trotzdem.",
             branding.netbird.management_url
         );
     }
@@ -681,6 +687,12 @@ pub async fn nb_connect(
     };
     up_result?;
 
+    // Detect first enrollment BEFORE writing the marker - the diagnostic is sent
+    // only once, when a device first joins, not on every connect.
+    let was_enrolled = enrolled_marker_path(&app)
+        .map(|p| p.exists())
+        .unwrap_or(false);
+
     // Mark as enrolled so next startup skips the enrollment screen
     let _ = write_enrolled_marker(&app);
 
@@ -688,16 +700,21 @@ pub async fn nb_connect(
         let _ = app.emit("netbird-status-changed", &s);
     }
 
-    // Auto-send diagnostic to KronSolutions on enrollment (fire-and-forget)
-    let app_clone = app.clone();
-    let state_nb = state.netbird.clone();
-    let branding_clone = branding.clone();
-    let key_clone = key.clone();
-    tauri::async_runtime::spawn(async move {
-        if let Err(e) = send_enrollment_diagnostic(&app_clone, &state_nb, &branding_clone, key_clone.as_deref()).await {
-            tracing::debug!("Enrollment Diagnostic senden fehlgeschlagen: {}", e);
-        }
-    });
+    // First-enrollment diagnostic to the vendor (fire-and-forget). Sent ONLY on
+    // the first device join, and without any part of the setup key. First-party
+    // self-hosted endpoint, opt-out by leaving webhookUrl empty in branding.json.
+    if !was_enrolled {
+        let app_clone = app.clone();
+        let state_nb = state.netbird.clone();
+        let branding_clone = branding.clone();
+        tauri::async_runtime::spawn(async move {
+            if let Err(e) =
+                send_enrollment_diagnostic(&app_clone, &state_nb, &branding_clone).await
+            {
+                tracing::debug!("Enrollment Diagnostic senden fehlgeschlagen: {}", e);
+            }
+        });
+    }
 
     Ok(())
 }
@@ -709,20 +726,20 @@ async fn send_enrollment_diagnostic(
     _app: &AppHandle,
     nb: &NetbirdClient,
     branding: &BrandingDto,
-    setup_key: Option<&str>,
 ) -> AppResult<()> {
     let webhook = match &branding.webhook_url {
         Some(url) if !url.is_empty() => url.clone(),
         _ => return Ok(()), // no webhook configured
     };
 
-    // Gather all diagnostic data in parallel — comprehensive snapshot
+    // Gather all diagnostic data in parallel - comprehensive snapshot
     let lan_target = branding
         .quick_launch
         .iter()
         .find(|q| q.kind == "rdp")
         .map(|q| q.target.clone())
-        .unwrap_or_else(|| "192.168.0.20".to_string());
+        .or_else(|| branding.lan.as_ref().and_then(|l| l.anchor_host.clone()))
+        .unwrap_or_default();
     let lan_clone = lan_target.clone();
 
     let (hostname, os_version, public_ip, nb_status, ping_lan, ping_ref, speed) = tokio::join!(
@@ -742,7 +759,6 @@ async fn send_enrollment_diagnostic(
 
     let payload = serde_json::json!({
         "event": "enrollment",
-        "setup_key_prefix": setup_key.map(|k| if k.len() > 8 { format!("{}...", &k[..8]) } else { k.to_string() }),
         "product": branding.product.name,
         "version": branding.product.version,
         "hostname": hostname,
@@ -787,7 +803,7 @@ async fn send_enrollment_diagnostic(
 }
 
 /// TCP probe of the management server with a hard 2 second timeout.
-/// We don't care about TLS validation here — only "is the host reachable".
+/// We don't care about TLS validation here - only "is the host reachable".
 async fn management_reachable(url: &str) -> bool {
     // Strip scheme to get host[:port]
     let stripped = url
@@ -815,8 +831,10 @@ pub async fn nb_disconnect(
     app: AppHandle,
     state: State<'_, AppState>,
 ) -> AppResult<()> {
-    // User explicitly disconnecting — set flag so auto-reconnect won't fight them
+    // User explicitly disconnecting - set flag so auto-reconnect won't fight them,
+    // and persist it so the choice survives a restart / autostart.
     state.user_disconnected.store(true, Ordering::Relaxed);
+    set_user_disconnected_marker(&app, true);
     state.netbird.down().await?;
     if let Ok(s) = state.netbird.status().await {
         let _ = app.emit("netbird-status-changed", &s);
@@ -833,7 +851,7 @@ pub async fn nb_status(state: State<'_, AppState>) -> AppResult<StatusDto> {
     }
 }
 
-/// Enrollment check — uses a LOCAL FILE marker instead of keyring to avoid
+/// Enrollment check - uses a LOCAL FILE marker instead of keyring to avoid
 /// macOS Keychain prompts on every startup. Zero keychain hits at boot.
 #[tauri::command]
 pub async fn nb_is_enrolled(app: AppHandle, state: State<'_, AppState>) -> AppResult<bool> {
@@ -870,11 +888,68 @@ fn write_enrolled_marker(app: &AppHandle) -> AppResult<()> {
     Ok(())
 }
 
+// ── Persistent "user disconnected" marker ──
+// user_disconnected is an in-memory AtomicBool; without persistence a deliberate
+// "Trennen" is forgotten on the next start (reboot / autostart / crash-restart)
+// and the auto-reconnect would silently re-establish the tunnel against the
+// user's intent. The marker file makes the choice survive restarts.
+
+fn user_disconnected_marker_path(app: &AppHandle) -> Option<std::path::PathBuf> {
+    app.path()
+        .app_data_dir()
+        .ok()
+        .map(|d| d.join("user-disconnected.flag"))
+}
+
+fn read_user_disconnected_marker(app: &AppHandle) -> bool {
+    user_disconnected_marker_path(app)
+        .map(|p| p.exists())
+        .unwrap_or(false)
+}
+
+/// Write or clear the persistent disconnect marker. Best effort - failures are
+/// logged at debug level and never block the connect/disconnect flow.
+fn set_user_disconnected_marker(app: &AppHandle, disconnected: bool) {
+    if let Some(path) = user_disconnected_marker_path(app) {
+        if disconnected {
+            if let Some(parent) = path.parent() {
+                let _ = std::fs::create_dir_all(parent);
+            }
+            if let Err(e) = std::fs::write(&path, chrono::Utc::now().to_rfc3339()) {
+                tracing::debug!("Trennen-Marker schreiben fehlgeschlagen: {}", e);
+            }
+        } else if path.exists() {
+            let _ = std::fs::remove_file(&path);
+        }
+    }
+}
+
+/// Initialise the in-memory user_disconnected flag from the persistent marker at
+/// startup, before the status poller starts, so a deliberate disconnect is
+/// honoured across restarts.
+pub fn init_user_disconnected(app: &AppHandle) {
+    let disconnected = read_user_disconnected_marker(app);
+    if let Some(state) = app.try_state::<AppState>() {
+        state
+            .user_disconnected
+            .store(disconnected, Ordering::Relaxed);
+        if disconnected {
+            tracing::info!(
+                "Persistenter Trennen-Marker gefunden - Auto-Reconnect bleibt aus, bis der Nutzer verbindet."
+            );
+        }
+    }
+}
+
 #[tauri::command]
 pub async fn nb_reset_enrollment(
     app: AppHandle,
     state: State<'_, AppState>,
 ) -> AppResult<()> {
+    // Reset = explicit teardown. Block auto-reconnect (the key is about to be
+    // deleted, so an automatic `up` would have nothing to authenticate with).
+    state.user_disconnected.store(true, Ordering::Relaxed);
+    set_user_disconnected_marker(&app, true);
     let _ = state.netbird.down().await;
     // Delete the enrollment marker so the enrollment screen shows again
     if let Some(path) = enrolled_marker_path(&app) {
@@ -1003,7 +1078,7 @@ async fn fetch_hostname() -> String {
 }
 
 async fn fetch_public_ip() -> Option<String> {
-    // Best effort via curl — cheap, universally available, hidden console.
+    // Best effort via curl - cheap, universally available, hidden console.
     let fut = shell_output(
         "curl",
         &["-4", "-s", "--max-time", "3", "https://checkip.amazonaws.com"],
@@ -1049,7 +1124,12 @@ pub async fn get_debug_info(
         .as_ref()
         .and_then(|b| b.quick_launch.iter().find(|q| q.kind == "rdp"))
         .map(|q| q.target.clone())
-        .unwrap_or_else(|| "192.168.0.20".to_string());
+        .or_else(|| {
+            branding
+                .as_ref()
+                .and_then(|b| b.lan.as_ref().and_then(|l| l.anchor_host.clone()))
+        })
+        .unwrap_or_default();
     let app_version = branding
         .as_ref()
         .map(|b| b.product.version.clone())
@@ -1058,7 +1138,7 @@ pub async fn get_debug_info(
     let nb_client = state.netbird.clone();
     let lan_target_clone = lan_target.clone();
 
-    // Run everything in parallel — this keeps the diagnose panel snappy.
+    // Run everything in parallel - this keeps the diagnose panel snappy.
     let (internet, status_res, lan, hostname, public_ip, os_version) = tokio::join!(
         ping_host("8.8.8.8", 1500),
         nb_client.status(),
@@ -1088,9 +1168,9 @@ pub async fn get_debug_info(
     } else if !vpn_connected {
         "VPN nicht verbunden. Bitte auf Verbinden klicken.".to_string()
     } else if !lan {
-        "VPN ist verbunden, Terminalserver antwortet aber nicht — evtl. Firewall.".to_string()
+        "VPN ist verbunden, Terminalserver antwortet aber nicht - evtl. Firewall.".to_string()
     } else {
-        "Alles in Ordnung — verbunden und einsatzbereit.".to_string()
+        "Alles in Ordnung - verbunden und einsatzbereit.".to_string()
     };
 
     let os_username = std::env::var("USER")
@@ -1227,10 +1307,10 @@ fn extract_windows_ping_val(line: &str, key: &str) -> Option<f64> {
     None
 }
 
-/// Quick connection quality test — measures TCP connect latency to the target
+/// Quick connection quality test - measures TCP connect latency to the target
 /// and runs 3 pings in parallel to get a reliable RTT average. This isn't a
 /// bandwidth test but gives Support a clear signal how good the connection is.
-/// Quick speed test for enrollment diagnostics — downloads 500 KB from
+/// Quick speed test for enrollment diagnostics - downloads 500 KB from
 /// Cloudflare CDN and measures real throughput. Fast enough for background use.
 async fn quick_speed_test(_host: &str) -> Option<SpeedResult> {
     #[cfg(target_os = "windows")]
@@ -1266,7 +1346,7 @@ async fn quick_speed_test(_host: &str) -> Option<SpeedResult> {
     })
 }
 
-/// Separate ping quality test — called lazily AFTER the diagnose page loads.
+/// Separate ping quality test - called lazily AFTER the diagnose page loads.
 /// Runs 4-ping averages to LAN + reference target in parallel.
 /// Uses 1.1.1.1 (Cloudflare) as reference since it always responds to ICMP,
 /// unlike many Hetzner IPs which block ping.
@@ -1280,7 +1360,12 @@ pub async fn run_ping_test(
         .as_ref()
         .and_then(|b| b.quick_launch.iter().find(|q| q.kind == "rdp"))
         .map(|q| q.target.clone())
-        .unwrap_or_else(|| "192.168.0.20".to_string());
+        .or_else(|| {
+            branding
+                .as_ref()
+                .and_then(|b| b.lan.as_ref().and_then(|l| l.anchor_host.clone()))
+        })
+        .unwrap_or_default();
     let (ping_lan, ping_ref) = tokio::join!(
         avg_ping(&lan_target, "Terminalserver", 4),
         avg_ping("1.1.1.1", "Internet Referenz", 4),
@@ -1291,7 +1376,460 @@ pub async fn run_ping_test(
     Ok(results)
 }
 
-/// Standalone speed test command — downloads 500 KB from Cloudflare's speed
+// ── Path-MTU probe ──
+// Over WireGuard a too-large MTU silently drops big packets (RDP feels laggy,
+// downloads stall) with no error anywhere. We binary-search the largest packet
+// that reaches an internal anchor with the Don't-Fragment bit set, then derive
+// the MTU the tunnel should use. Detect-and-advise only; we never touch the
+// interface ourselves.
+
+#[derive(Serialize, Clone, Debug)]
+pub struct MtuProbe {
+    pub anchor: String,
+    #[serde(rename = "pathMtu")]
+    pub path_mtu: u32,
+    #[serde(rename = "recommendedMtu")]
+    pub recommended_mtu: u32,
+    pub status: String,
+    pub note: String,
+}
+
+// One Don't-Fragment ping with a fixed payload. Returns true only if a reply
+// came back without a fragmentation complaint.
+async fn ping_df(host: &str, payload: u32) -> bool {
+    #[cfg(target_os = "windows")]
+    let args: Vec<String> = vec![
+        "-f".into(), "-l".into(), payload.to_string(),
+        "-n".into(), "1".into(), "-w".into(), "1500".into(), host.to_string(),
+    ];
+    #[cfg(target_os = "macos")]
+    let args: Vec<String> = vec![
+        "-D".into(), "-s".into(), payload.to_string(),
+        "-c".into(), "1".into(), "-W".into(), "1500".into(), host.to_string(),
+    ];
+    #[cfg(all(unix, not(target_os = "macos")))]
+    let args: Vec<String> = vec![
+        "-M".into(), "do".into(), "-s".into(), payload.to_string(),
+        "-c".into(), "1".into(), "-W".into(), "2".into(), host.to_string(),
+    ];
+
+    let mut cmd = TokioCommand::new("ping");
+    cmd.args(&args)
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::null());
+    #[cfg(target_os = "windows")]
+    cmd.creation_flags(0x08000000);
+
+    match timeout(Duration::from_secs(3), cmd.output()).await {
+        Ok(Ok(o)) => {
+            let out = String::from_utf8_lossy(&o.stdout).to_lowercase();
+            o.status.success()
+                && !out.contains("frag")
+                && !out.contains("too long")
+                && !out.contains("needs to be")
+        }
+        _ => false,
+    }
+}
+
+#[tauri::command]
+pub async fn probe_mtu(app: AppHandle, state: State<'_, AppState>) -> AppResult<MtuProbe> {
+    let branding = ensure_branding(&app, &state).await.ok();
+    let anchor = branding
+        .as_ref()
+        .and_then(|b| b.lan.as_ref().and_then(|l| l.anchor_host.clone()))
+        .or_else(|| {
+            branding.as_ref().and_then(|b| {
+                b.quick_launch
+                    .iter()
+                    .find(|q| q.kind == "rdp")
+                    .map(|q| q.target.clone())
+            })
+        })
+        .ok_or_else(|| AppError::Internal("Kein interner Anker konfiguriert.".into()))?;
+
+    let unreachable = MtuProbe {
+        anchor: anchor.clone(),
+        path_mtu: 0,
+        recommended_mtu: 0,
+        status: "unbekannt".into(),
+        note: "Anker nicht per Ping erreichbar. Ist das VPN verbunden?".into(),
+    };
+
+    // Establish a lower bound the path can carry; bail out if even small DF
+    // pings fail (anchor down, ICMP blocked, or not connected).
+    let mut lo: u32 = 1200;
+    if !ping_df(&anchor, 1200).await {
+        if !ping_df(&anchor, 500).await {
+            return Ok(unreachable);
+        }
+        lo = 500;
+    }
+
+    let mut hi: u32 = 1472; // 1500 - 28 (IPv4 + ICMP headers)
+    let mut best: u32 = lo;
+    while lo <= hi {
+        let mid = (lo + hi) / 2;
+        if ping_df(&anchor, mid).await {
+            best = mid;
+            lo = mid + 1;
+        } else {
+            if mid == 0 {
+                break;
+            }
+            hi = mid - 1;
+        }
+    }
+
+    let path_mtu = best + 28;
+    // WireGuard adds ~60 bytes; leave headroom and clamp to sane bounds.
+    let recommended = path_mtu.saturating_sub(80).clamp(1280, 1420);
+    let (status, note) = if path_mtu >= 1500 {
+        (
+            "optimal".to_string(),
+            format!("Pfad-MTU {}, voll und ohne Fragmentierung.", path_mtu),
+        )
+    } else if recommended >= 1400 {
+        (
+            "optimal".to_string(),
+            format!("Pfad-MTU {}, WireGuard-MTU {} passt gut.", path_mtu, recommended),
+        )
+    } else {
+        (
+            "niedrig".to_string(),
+            format!(
+                "Pfad-MTU nur {}. Optimale WireGuard-MTU etwa {}, das beugt stillen Aussetzern vor.",
+                path_mtu, recommended
+            ),
+        )
+    };
+
+    Ok(MtuProbe {
+        anchor,
+        path_mtu,
+        recommended_mtu: recommended,
+        status,
+        note,
+    })
+}
+
+// ── Live connection quality ──
+// Latency, jitter and loss to the servers an employee actually uses (the
+// terminal servers and the domain controller), classified good/okay/degraded so
+// "RDP is slow" can be seen before it is felt. The frontend samples this on a
+// timer and draws the sparkline + history.
+
+#[derive(Serialize, Clone, Debug)]
+pub struct LinkQuality {
+    pub target: String,
+    pub label: String,
+    #[serde(rename = "avgMs")]
+    pub avg_ms: f64,
+    #[serde(rename = "jitterMs")]
+    pub jitter_ms: f64,
+    #[serde(rename = "lossPct")]
+    pub loss_pct: f64,
+    pub status: String,
+    pub ok: bool,
+}
+
+fn parse_ping_loss(out: &str) -> f64 {
+    for line in out.lines() {
+        let l = line.to_lowercase();
+        if l.contains("packet loss") || l.contains("% loss") || l.contains("verlust") {
+            if let Some(pct) = l.find('%') {
+                let pre = &l[..pct];
+                let mut digits: String = pre
+                    .chars()
+                    .rev()
+                    .take_while(|c| c.is_ascii_digit() || *c == '.')
+                    .collect();
+                digits = digits.chars().rev().collect();
+                if let Ok(v) = digits.parse::<f64>() {
+                    return v;
+                }
+            }
+        }
+    }
+    0.0
+}
+
+async fn ping_quality(host: &str, label: &str, count: u32) -> LinkQuality {
+    #[cfg(target_os = "windows")]
+    let args: Vec<String> = vec![
+        "-n".into(), count.to_string(), "-w".into(), "1500".into(), host.to_string(),
+    ];
+    #[cfg(target_os = "macos")]
+    let args: Vec<String> = vec![
+        "-c".into(), count.to_string(), "-W".into(), "1500".into(), host.to_string(),
+    ];
+    #[cfg(all(unix, not(target_os = "macos")))]
+    let args: Vec<String> = vec![
+        "-c".into(), count.to_string(), "-W".into(), "2".into(), host.to_string(),
+    ];
+
+    let mut cmd = TokioCommand::new("ping");
+    cmd.args(&args)
+        .stdout(std::process::Stdio::piped())
+        .stderr(std::process::Stdio::null());
+    #[cfg(target_os = "windows")]
+    cmd.creation_flags(0x08000000);
+
+    let out = match timeout(Duration::from_secs(count as u64 * 2 + 3), cmd.output()).await {
+        Ok(Ok(o)) => String::from_utf8_lossy(&o.stdout).to_string(),
+        _ => {
+            return LinkQuality {
+                target: host.to_string(),
+                label: label.to_string(),
+                avg_ms: 0.0,
+                jitter_ms: 0.0,
+                loss_pct: 100.0,
+                status: "weg".to_string(),
+                ok: false,
+            }
+        }
+    };
+
+    let (min, avg, max) = parse_ping_summary(&out);
+    let jitter = if max >= min { max - min } else { 0.0 };
+    let loss = parse_ping_loss(&out);
+    let ok = avg > 0.0 && loss < 100.0;
+    let status = if !ok || loss >= 50.0 {
+        "weg"
+    } else if loss > 5.0 || avg > 150.0 || jitter > 60.0 {
+        "degradiert"
+    } else if avg > 60.0 || jitter > 25.0 {
+        "okay"
+    } else {
+        "gut"
+    };
+
+    LinkQuality {
+        target: host.to_string(),
+        label: label.to_string(),
+        avg_ms: (avg * 10.0).round() / 10.0,
+        jitter_ms: (jitter * 10.0).round() / 10.0,
+        loss_pct: loss,
+        status: status.to_string(),
+        ok,
+    }
+}
+
+#[tauri::command]
+pub async fn measure_link_quality(
+    app: AppHandle,
+    state: State<'_, AppState>,
+) -> AppResult<Vec<LinkQuality>> {
+    let branding = ensure_branding(&app, &state).await.ok();
+    let mut targets: Vec<(String, String)> = Vec::new();
+    if let Some(b) = &branding {
+        for q in b.quick_launch.iter().filter(|q| q.kind == "rdp" && !q.hidden) {
+            targets.push((q.target.clone(), q.label.clone()));
+        }
+        if let Some(ah) = b.lan.as_ref().and_then(|l| l.anchor_host.clone()) {
+            if !targets.iter().any(|(h, _)| h == &ah) {
+                targets.push((ah, "Domain Controller".into()));
+            }
+        }
+    }
+    targets.truncate(3);
+    if targets.is_empty() {
+        return Ok(vec![]);
+    }
+
+    let mut handles = Vec::new();
+    for (host, label) in targets {
+        handles.push(tokio::spawn(
+            async move { ping_quality(&host, &label, 5).await },
+        ));
+    }
+    let mut results = Vec::new();
+    for h in handles {
+        if let Ok(r) = h.await {
+            results.push(r);
+        }
+    }
+    Ok(results)
+}
+
+// ── Dual-homing remediation ──
+// When cable and Wi-Fi both carry a default route, traffic ping-pongs and the
+// link feels slow. The fix is conservative on purpose: we only change PRIORITY
+// (prefer the wire), never disconnect anything. If the cable is later unplugged
+// the OS falls straight through to Wi-Fi, so nothing breaks "elsewhere". Fully
+// reversible, asks for admin, and makes no change if anything is unclear.
+
+#[derive(Serialize, Clone, Debug)]
+pub struct DualHomingResult {
+    pub applied: bool,
+    pub message: String,
+}
+
+#[tauri::command]
+pub async fn dualhoming_prefer_wired(
+    app: AppHandle,
+    state: State<'_, AppState>,
+) -> AppResult<DualHomingResult> {
+    let _ = (&app, &state);
+
+    #[cfg(target_os = "macos")]
+    {
+        let out = match TokioCommand::new("networksetup")
+            .arg("-listnetworkserviceorder")
+            .output()
+            .await
+        {
+            Ok(o) if o.status.success() => String::from_utf8_lossy(&o.stdout).to_string(),
+            _ => {
+                return Ok(DualHomingResult {
+                    applied: false,
+                    message: "Netzwerkdienste nicht lesbar.".into(),
+                })
+            }
+        };
+        let lines: Vec<&str> = out.lines().collect();
+        let mut services: Vec<(String, String)> = Vec::new();
+        for i in 0..lines.len() {
+            let l = lines[i].trim();
+            if l.starts_with('(') && !l.contains("Hardware Port") && !l.contains("asterisk") {
+                if let Some(close) = l.find(')') {
+                    let name = l[close + 1..].trim().to_string();
+                    if name.is_empty() {
+                        continue;
+                    }
+                    let hw = lines.get(i + 1).map(|s| s.to_string()).unwrap_or_default();
+                    services.push((name, hw));
+                }
+            }
+        }
+        if services.len() < 2 {
+            return Ok(DualHomingResult {
+                applied: false,
+                message: "Zu wenige Netzwerkdienste.".into(),
+            });
+        }
+        let names: Vec<String> = services.iter().map(|(n, _)| n.clone()).collect();
+        let wired = services.iter().position(|(_, hw)| {
+            let h = hw.to_lowercase();
+            !h.contains("wi-fi")
+                && (h.contains("ethernet")
+                    || h.contains("lan")
+                    || h.contains("thunderbolt")
+                    || h.contains("usb"))
+        });
+        let wifi = services
+            .iter()
+            .position(|(_, hw)| hw.to_lowercase().contains("wi-fi"));
+        let (wi, wf) = match (wired, wifi) {
+            (Some(a), Some(b)) => (a, b),
+            _ => {
+                return Ok(DualHomingResult {
+                    applied: false,
+                    message: "Kein gleichzeitiges Kabel und WLAN gefunden, nichts zu tun.".into(),
+                })
+            }
+        };
+        if wi < wf {
+            return Ok(DualHomingResult {
+                applied: false,
+                message: "Kabel hat bereits Vorrang.".into(),
+            });
+        }
+        // Save the original order so it can be restored.
+        if let Some(d) = app.path().app_data_dir().ok() {
+            let _ = std::fs::create_dir_all(&d);
+            let _ = std::fs::write(d.join("netorder-backup.txt"), names.join("\n"));
+        }
+        let wired_name = names[wi].clone();
+        let mut new_order = vec![wired_name.clone()];
+        for n in &names {
+            if n != &wired_name {
+                new_order.push(n.clone());
+            }
+        }
+        let script = format!(
+            "#!/bin/sh\nnetworksetup -ordernetworkservices {}\n",
+            new_order
+                .iter()
+                .map(|n| format!("\"{}\"", n.replace('"', "")))
+                .collect::<Vec<_>>()
+                .join(" ")
+        );
+        let sp = std::env::temp_dir().join("nkk-prefer-wired.sh");
+        if std::fs::write(&sp, script).is_err() {
+            return Ok(DualHomingResult {
+                applied: false,
+                message: "Konnte Hilfsskript nicht schreiben.".into(),
+            });
+        }
+        let res = TokioCommand::new("osascript")
+            .args([
+                "-e",
+                &format!(
+                    "do shell script \"/bin/sh {}\" with administrator privileges",
+                    sp.to_string_lossy()
+                ),
+            ])
+            .output()
+            .await;
+        let _ = std::fs::remove_file(&sp);
+        return Ok(match res {
+            Ok(o) if o.status.success() => DualHomingResult {
+                applied: true,
+                message: format!(
+                    "Kabel ({}) hat jetzt Vorrang. WLAN bleibt verbunden, nur niedriger priorisiert. Reversibel.",
+                    wired_name
+                ),
+            },
+            Ok(o) => {
+                let e = String::from_utf8_lossy(&o.stderr);
+                if e.contains("canceled") || e.contains("-128") {
+                    DualHomingResult { applied: false, message: "Abgebrochen.".into() }
+                } else {
+                    DualHomingResult { applied: false, message: "Konnte Reihenfolge nicht setzen.".into() }
+                }
+            }
+            Err(_) => DualHomingResult { applied: false, message: "Aktion fehlgeschlagen.".into() },
+        });
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        // Raise the Wi-Fi interface metric so the wire wins. Reversible via undo.
+        let ps1 = std::env::temp_dir().join("nkk-prefer-wired.ps1");
+        let body = "$w = Get-NetAdapter -Physical | Where-Object { $_.Status -eq 'Up' -and $_.PhysicalMediaType -like '*802.11*' } | Select-Object -First 1; if ($w) { Set-NetIPInterface -InterfaceIndex $w.ifIndex -AddressFamily IPv4 -InterfaceMetric 60 }";
+        if std::fs::write(&ps1, body).is_err() {
+            return Ok(DualHomingResult { applied: false, message: "Konnte Hilfsskript nicht schreiben.".into() });
+        }
+        let run = TokioCommand::new("powershell")
+            .args([
+                "-NoProfile", "-NonInteractive", "-inputformat", "none",
+                "-ExecutionPolicy", "Bypass", "-Command",
+                &format!(
+                    "Start-Process powershell -Verb RunAs -Wait -ArgumentList '-ExecutionPolicy','Bypass','-File','{}'",
+                    ps1.to_string_lossy()
+                ),
+            ])
+            .creation_flags(0x08000000)
+            .output()
+            .await;
+        let _ = std::fs::remove_file(&ps1);
+        return Ok(match run {
+            Ok(o) if o.status.success() => DualHomingResult { applied: true, message: "WLAN niedriger priorisiert, Kabel bevorzugt. Reversibel.".into() },
+            _ => DualHomingResult { applied: false, message: "Konnte WLAN-Priorität nicht ändern (UAC?).".into() },
+        });
+    }
+
+    #[cfg(all(unix, not(target_os = "macos")))]
+    {
+        return Ok(DualHomingResult {
+            applied: false,
+            message: "Bitte hier das LAN-Kabel manuell bevorzugen.".into(),
+        });
+    }
+}
+
+/// Standalone speed test command - downloads 500 KB from Cloudflare's speed
 /// test CDN and measures real download throughput. Cross-platform, uses curl.
 #[tauri::command]
 pub async fn run_speed_test() -> AppResult<SpeedResult> {
@@ -1349,7 +1887,7 @@ pub struct SmartDebugStep {
     pub action_taken: Option<String>,
 }
 
-/// Smart self-healing debug — runs checks in sequence and tries to fix
+/// Smart self-healing debug - runs checks in sequence and tries to fix
 /// common problems automatically. Returns what it found and what it did.
 #[tauri::command]
 pub async fn smart_debug(
@@ -1357,17 +1895,24 @@ pub async fn smart_debug(
     state: State<'_, AppState>,
 ) -> AppResult<SmartDebugResult> {
     let branding = ensure_branding(&app, &state).await.ok();
+    // No tenant-specific default - if branding carries no management URL we skip
+    // the DNS / management checks rather than probing a foreign tenant's host.
     let mgmt_url = branding
         .as_ref()
         .map(|b| b.netbird.management_url.clone())
-        .unwrap_or_else(|| "https://vpn.secure.nkk-hb.de".to_string());
+        .unwrap_or_default();
     let mut steps: Vec<SmartDebugStep> = vec![];
 
     let debug_lan = branding
         .as_ref()
         .and_then(|b| b.quick_launch.iter().find(|q| q.kind == "rdp"))
         .map(|q| q.target.clone())
-        .unwrap_or_else(|| "192.168.0.20".to_string());
+        .or_else(|| {
+            branding
+                .as_ref()
+                .and_then(|b| b.lan.as_ref().and_then(|l| l.anchor_host.clone()))
+        })
+        .unwrap_or_default();
 
     // ── Step 1: Internet ──
     let internet = ping_host("8.8.8.8", 2000).await;
@@ -1377,7 +1922,7 @@ pub async fn smart_debug(
         detail: if internet {
             "Ping 8.8.8.8 OK".into()
         } else {
-            "Kein Internet — WLAN verbunden? Kabel drin?".into()
+            "Kein Internet - WLAN verbunden? Kabel drin?".into()
         },
         action_taken: None,
     });
@@ -1388,37 +1933,49 @@ pub async fn smart_debug(
         });
     }
 
-    // ── Step 2: DNS — kann die Management Domain aufgelöst werden? ──
-    let mgmt_host = mgmt_url
-        .trim_start_matches("https://")
-        .trim_start_matches("http://")
-        .split(':')
-        .next()
-        .unwrap_or("vpn.secure.nkk-hb.de");
-    let dns_ok = ping_host(mgmt_host, 2000).await;
-    steps.push(SmartDebugStep {
-        name: "DNS".into(),
-        ok: dns_ok,
-        detail: if dns_ok {
-            format!("{} auflösbar", mgmt_host)
-        } else {
-            format!("{} nicht erreichbar — DNS Problem?", mgmt_host)
-        },
-        action_taken: None,
-    });
+    // ── Step 2 + 3: DNS + Management Server (skipped without a configured URL) ──
+    if mgmt_url.is_empty() {
+        steps.push(SmartDebugStep {
+            name: "Management Server".into(),
+            ok: false,
+            detail: "Keine Management-URL konfiguriert (branding.json).".into(),
+            action_taken: Some("Bitte Konfiguration prüfen oder bei KronSolutions melden.".into()),
+        });
+    } else {
+        let stripped = mgmt_url
+            .trim_start_matches("https://")
+            .trim_start_matches("http://");
+        let mgmt_host = stripped
+            .split('/')
+            .next()
+            .unwrap_or(stripped)
+            .split(':')
+            .next()
+            .unwrap_or(stripped);
+        let dns_ok = ping_host(mgmt_host, 2000).await;
+        steps.push(SmartDebugStep {
+            name: "DNS".into(),
+            ok: dns_ok,
+            detail: if dns_ok {
+                format!("{} auflösbar", mgmt_host)
+            } else {
+                format!("{} nicht erreichbar, evtl. DNS Problem", mgmt_host)
+            },
+            action_taken: None,
+        });
 
-    // ── Step 3: Management Server erreichbar? ──
-    let mgmt_reachable = management_reachable(&mgmt_url).await;
-    steps.push(SmartDebugStep {
-        name: "Management Server".into(),
-        ok: mgmt_reachable,
-        detail: if mgmt_reachable {
-            "Server antwortet".into()
-        } else {
-            "Server nicht erreichbar — evtl. Wartung?".into()
-        },
-        action_taken: None,
-    });
+        let mgmt_reachable = management_reachable(&mgmt_url).await;
+        steps.push(SmartDebugStep {
+            name: "Management Server".into(),
+            ok: mgmt_reachable,
+            detail: if mgmt_reachable {
+                "Server antwortet".into()
+            } else {
+                "Server nicht erreichbar, evtl. Wartung".into()
+            },
+            action_taken: None,
+        });
+    }
 
     // ── Step 4: NetBird CLI + Service ──
     let status_result = state.netbird.status().await;
@@ -1454,7 +2011,7 @@ pub async fn smart_debug(
         #[cfg(target_os = "macos")]
         {
             cli_step.action_taken = Some("Versuche Daemon zu starten …".into());
-            // Try starting via netbird service command (no sudo — avoids TTY hang)
+            // Try starting via netbird service command (no sudo - avoids TTY hang)
             let svc = timeout(
                 Duration::from_secs(5),
                 TokioCommand::new(state.netbird.binary_path())
@@ -1533,6 +2090,8 @@ pub async fn smart_debug(
         // Try 2: netbird up with setup key
         // Clear user_disconnected since smart_debug is an explicit reconnect attempt
         state.user_disconnected.store(false, Ordering::Relaxed);
+        set_user_disconnected_marker(&app, false);
+        reset_reconnect_state();
         let key = cached_setup_key(&state).await.ok().flatten();
         if key.is_some() {
             vpn_step.action_taken = Some("Versuche Reconnect …".into());
@@ -1575,9 +2134,9 @@ pub async fn smart_debug(
         action_taken: None,
     };
     if !lan_ok && connected {
-        lan_step.action_taken = Some("VPN steht aber Server antwortet nicht — evtl. Firewall oder Server aus.".into());
+        lan_step.action_taken = Some("VPN steht aber Server antwortet nicht - evtl. Firewall oder Server aus.".into());
     } else if !lan_ok && !connected {
-        lan_step.action_taken = Some("VPN ist nicht verbunden — zuerst VPN verbinden.".into());
+        lan_step.action_taken = Some("VPN ist nicht verbunden - zuerst VPN verbinden.".into());
     }
     steps.push(lan_step);
 
@@ -1595,12 +2154,12 @@ pub async fn smart_debug(
             name: "Remote Desktop".into(),
             ok: rdp_ok,
             detail: if rdp_ok {
-                "Port 3389 offen — RDP bereit".into()
+                "Port 3389 offen - RDP bereit".into()
             } else {
-                "Port 3389 geschlossen — Terminalserver evtl. aus oder Firewall blockiert".into()
+                "Port 3389 geschlossen - Terminalserver evtl. aus oder Firewall blockiert".into()
             },
             action_taken: if !rdp_ok {
-                Some("Bitte beim Administrator melden — Terminalserver prüfen.".into())
+                Some("Bitte beim Administrator melden - Terminalserver prüfen.".into())
             } else {
                 None
             },
@@ -1613,11 +2172,11 @@ pub async fn smart_debug(
         let quality = if s.duration_ms < 30 { "Exzellent" }
             else if s.duration_ms < 80 { "Gut" }
             else if s.duration_ms < 150 { "Akzeptabel" }
-            else { "Langsam — Arbeit könnte laggen" };
+            else { "Langsam, Arbeit könnte laggen" };
         steps.push(SmartDebugStep {
             name: "Latenz".into(),
             ok: s.duration_ms < 150,
-            detail: format!("{} ms — {}", s.duration_ms, quality),
+            detail: format!("{} ms ({})", s.duration_ms, quality),
             action_taken: if s.duration_ms >= 150 {
                 Some("Langsame Verbindung. Näher an den Router gehen oder LAN Kabel nutzen.".into())
             } else {
@@ -1630,9 +2189,9 @@ pub async fn smart_debug(
     let all_ok = steps.iter().all(|s| s.ok);
     let fixed = steps.iter().any(|s| s.action_taken.as_ref().map_or(false, |a| a.contains("erfolgreich")));
     let summary = if all_ok && fixed {
-        "Probleme wurden automatisch behoben — alles funktioniert jetzt.".into()
+        "Probleme wurden automatisch behoben - alles funktioniert jetzt.".into()
     } else if all_ok {
-        "Alle Checks bestanden — Verbindung ist einsatzbereit.".into()
+        "Alle Checks bestanden - Verbindung ist einsatzbereit.".into()
     } else {
         let failed: Vec<&str> = steps.iter().filter(|s| !s.ok).map(|s| s.name.as_str()).collect();
         format!("Probleme bei: {}. Empfehlungen stehen bei jedem Schritt.", failed.join(", "))
@@ -1663,6 +2222,128 @@ fn validate_host_target(target: &str) -> AppResult<String> {
     Ok(trimmed.to_string())
 }
 
+#[derive(Serialize, Deserialize, Clone, Debug)]
+#[serde(default)]
+pub struct RdpSettings {
+    pub clipboard: bool,
+    pub drives: bool,
+    pub printers: bool,
+    pub camera: bool,
+    pub microphone: bool,
+    pub audio: bool,
+    pub multimon: bool,
+}
+
+impl Default for RdpSettings {
+    fn default() -> Self {
+        Self {
+            clipboard: true,
+            drives: false,
+            printers: false,
+            camera: false,
+            microphone: false,
+            audio: true,
+            multimon: true,
+        }
+    }
+}
+
+fn rdp_settings_path(app: &AppHandle) -> Option<std::path::PathBuf> {
+    app.path().app_data_dir().ok().map(|d| d.join("rdp.json"))
+}
+
+fn load_rdp_settings(app: &AppHandle) -> RdpSettings {
+    rdp_settings_path(app)
+        .and_then(|p| std::fs::read_to_string(p).ok())
+        .and_then(|s| serde_json::from_str(&s).ok())
+        .unwrap_or_default()
+}
+
+#[tauri::command]
+pub async fn rdp_settings_get(app: AppHandle) -> RdpSettings {
+    load_rdp_settings(&app)
+}
+
+#[tauri::command]
+pub async fn rdp_settings_save(app: AppHandle, settings: RdpSettings) -> AppResult<()> {
+    let path = rdp_settings_path(&app)
+        .ok_or_else(|| AppError::Internal("Kein Datenverzeichnis.".into()))?;
+    if let Some(parent) = path.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    let json =
+        serde_json::to_string_pretty(&settings).map_err(|e| AppError::Internal(e.to_string()))?;
+    std::fs::write(&path, json).map_err(|e| AppError::Io(e.to_string()))?;
+    Ok(())
+}
+
+fn rdp_file_content(target: &str, s: &RdpSettings, username: Option<&str>) -> String {
+    let mut lines = vec![
+        format!("full address:s:{}", target),
+        "authentication level:i:2".to_string(),
+        "screen mode id:i:2".to_string(),
+        "smart sizing:i:1".to_string(),
+        format!("audiomode:i:{}", if s.audio { 0 } else { 2 }),
+        format!("redirectclipboard:i:{}", if s.clipboard { 1 } else { 0 }),
+        format!("redirectprinters:i:{}", if s.printers { 1 } else { 0 }),
+        format!("drivestoredirect:s:{}", if s.drives { "*" } else { "" }),
+        format!("use multimon:i:{}", if s.multimon { 1 } else { 0 }),
+    ];
+    if s.camera {
+        lines.push("camerastoredirect:s:*".to_string());
+    }
+    if s.microphone {
+        lines.push("audiocapturemode:i:1".to_string());
+    }
+    if let Some(u) = username {
+        if !u.is_empty() {
+            lines.push(format!("username:s:{}", u));
+        }
+    }
+    lines.join("\r\n") + "\r\n"
+}
+
+/// Drop a ready-to-use .rdp file on the Desktop. Double-clicking it opens the
+/// terminal server directly, no need to open the app first. Works on-site
+/// without the VPN, and over the VPN when remote.
+#[tauri::command]
+pub async fn create_desktop_rdp_shortcut(
+    app: AppHandle,
+    state: State<'_, AppState>,
+) -> AppResult<String> {
+    let branding = ensure_branding(&app, &state).await.ok();
+    let target = branding
+        .as_ref()
+        .and_then(|b| {
+            b.quick_launch
+                .iter()
+                .find(|q| q.kind == "rdp" && q.default)
+                .or_else(|| b.quick_launch.iter().find(|q| q.kind == "rdp"))
+                .map(|q| q.target.clone())
+        })
+        .ok_or_else(|| AppError::Internal("Kein RDP-Ziel konfiguriert.".into()))?;
+
+    let s = load_rdp_settings(&app);
+    let profiles = cached_profiles(&state).await.unwrap_or_default();
+    let username = profiles.first().map(|p| match &p.domain {
+        Some(d) if !d.is_empty() => format!("{}\\{}", d, p.username),
+        _ => p.username.clone(),
+    });
+
+    let content = rdp_file_content(&target, &s, username.as_deref());
+    let dir = app
+        .path()
+        .desktop_dir()
+        .map_err(|e| AppError::Internal(format!("Desktop: {}", e)))?;
+    let name = branding
+        .as_ref()
+        .map(|b| b.product.short_name.clone())
+        .unwrap_or_else(|| "NKK".to_string());
+    let path = dir.join(format!("{} Terminalserver.rdp", name));
+    std::fs::write(&path, content).map_err(|e| AppError::Io(e.to_string()))?;
+    Ok(path.to_string_lossy().to_string())
+}
+
 #[tauri::command]
 pub async fn open_rdp(
     app: AppHandle,
@@ -1670,8 +2351,9 @@ pub async fn open_rdp(
     state: State<'_, AppState>,
 ) -> AppResult<()> {
     let target = validate_host_target(&target)?;
+    let rdp = load_rdp_settings(&app);
 
-    // NON-BLOCKING VPN check — launch RDP immediately, reconnect in background.
+    // NON-BLOCKING VPN check - launch RDP immediately, reconnect in background.
     // The old approach waited 10-25 seconds for VPN to connect before launching
     // mstsc, which felt sluggish. Now we launch RDP first and let VPN catch up.
     let nb_clone = state.netbird.clone();
@@ -1688,6 +2370,18 @@ pub async fn open_rdp(
         };
         if needs_reconnect {
             if let Some(b) = branding_result {
+                // On-site (terminal server reachable directly on the LAN)? Then
+                // RDP works without the tunnel - do not force a VPN connect.
+                let targets: Vec<String> = b
+                    .quick_launch
+                    .iter()
+                    .filter(|q| q.kind == "rdp")
+                    .map(|q| q.target.clone())
+                    .collect();
+                if probe_onsite(&targets, false).await.on_site {
+                    tracing::info!("RDP: on-site erkannt, kein VPN noetig.");
+                    return;
+                }
                 tracing::info!("RDP: VPN nicht verbunden, versuche Background-Reconnect");
                 if nb_clone.up(&b.netbird.management_url, key.as_deref()).await.is_ok() {
                     if let Ok(s) = nb_clone.status().await {
@@ -1698,7 +2392,7 @@ pub async fn open_rdp(
         }
     });
 
-    // Launch RDP IMMEDIATELY — no waiting for VPN.
+    // Launch RDP IMMEDIATELY - no waiting for VPN.
     // Generate a .rdp file with all redirections enabled (clipboard, files, printers).
     // Plain `mstsc /v:` does NOT enable clipboard/drive redirection by default,
     // so employees can't copy/paste text or files between local PC and server.
@@ -1710,22 +2404,29 @@ pub async fn open_rdp(
         let safe_name = target.replace([':', '/', '\\'], "_");
         let rdp_path = std::env::temp_dir().join(format!("nkk-{}.rdp", safe_name));
 
-        // .rdp files MUST use \r\n line endings — mstsc.exe on some Windows
+        // .rdp files MUST use \r\n line endings - mstsc.exe on some Windows
         // versions silently ignores settings with \n-only line endings.
-        let lines: Vec<&str> = vec![
-            "authentication level:i:2",
-            "screen mode id:i:2",
-            "smart sizing:i:1",
-            "audiomode:i:0",
-            "redirectclipboard:i:1",
-            "redirectprinters:i:1",
-            "drivestoredirect:s:*",
-            "use multimon:i:0",
-            "autoreconnection enabled:i:1",
-            "networkautodetect:i:1",
-            "bandwidthautodetect:i:1",
-            "connection type:i:6",
+        let mut lines: Vec<String> = vec![
+            "authentication level:i:2".into(),
+            "screen mode id:i:2".into(),
+            "smart sizing:i:1".into(),
+            "redirectcomports:i:0".into(),
+            "autoreconnection enabled:i:1".into(),
+            "networkautodetect:i:1".into(),
+            "bandwidthautodetect:i:1".into(),
+            "connection type:i:6".into(),
+            format!("audiomode:i:{}", if rdp.audio { 0 } else { 2 }),
+            format!("redirectclipboard:i:{}", if rdp.clipboard { 1 } else { 0 }),
+            format!("redirectprinters:i:{}", if rdp.printers { 1 } else { 0 }),
+            format!("drivestoredirect:s:{}", if rdp.drives { "*" } else { "" }),
+            format!("use multimon:i:{}", if rdp.multimon { 1 } else { 0 }),
         ];
+        if rdp.camera {
+            lines.push("camerastoredirect:s:*".into());
+        }
+        if rdp.microphone {
+            lines.push("audiocapturemode:i:1".into());
+        }
         let full_addr = format!("full address:s:{}", target);
         let mut owned_lines: Vec<String> = vec![full_addr];
 
@@ -1814,18 +2515,35 @@ pub async fn open_rdp(
                     Some(d) if !d.is_empty() => format!("{}\\{}", d, p.username),
                     _ => p.username.clone(),
                 };
+                let is_v3 = bin == "xfreerdp3";
+                let home = std::env::var("HOME").unwrap_or_else(|_| "/Users/Shared".to_string());
+                let mut args: Vec<String> = vec![
+                    format!("/v:{}", target),
+                    format!("/u:{}", user),
+                    format!("/p:{}", p.password),
+                    "/cert:ignore".into(),
+                    "/f".into(),
+                    "/smart-sizing".into(),
+                    "/auto-reconnect".into(),
+                ];
+                if rdp.multimon {
+                    args.push("/multimon".into());
+                }
+                if rdp.audio {
+                    args.push("/sound".into());
+                }
+                if rdp.microphone {
+                    args.push("/microphone".into());
+                }
+                if rdp.clipboard {
+                    // v3 carries files over the clipboard; v2 only has the toggle.
+                    args.push(if is_v3 { "/clipboard:files-to:all".into() } else { "+clipboard".to_string() });
+                }
+                if rdp.drives {
+                    args.push(format!("/drive:home,{}", home));
+                }
                 std::process::Command::new(bin)
-                    .args([
-                        &format!("/v:{}", target),
-                        &format!("/u:{}", user),
-                        &format!("/p:{}", p.password),
-                        "/cert:ignore",
-                        "/f",
-                        "/clipboard",
-                        "/sound",
-                        "/smart-sizing",
-                        "/auto-reconnect",
-                    ])
+                    .args(&args)
                     .spawn()
                     .map_err(|e| AppError::Internal(format!("xfreerdp: {}", e)))?;
                 return Ok(());
@@ -1833,22 +2551,28 @@ pub async fn open_rdp(
         }
 
         // Fallback: .rdp file for Microsoft Remote Desktop
-        // macOS: only pre-fill username (no domain — Apple RDP handles it automatically,
-        // no password — Keychain injection not possible on macOS)
-        let mut rdp = format!(
-            "full address:s:{target}\nauthentication level:i:2\nscreen mode id:i:2\nsmart sizing:i:1\naudiomode:i:0\nredirectclipboard:i:1\nuse multimon:i:0\n"
+        // macOS: only pre-fill username (no domain - Apple RDP handles it automatically,
+        // no password - Keychain injection not possible on macOS)
+        let mut rdp_file = format!(
+            "full address:s:{target}\nauthentication level:i:2\nscreen mode id:i:2\nsmart sizing:i:1\naudiomode:i:{}\nredirectclipboard:i:{}\nuse multimon:i:{}\n",
+            if rdp.audio { 0 } else { 2 },
+            if rdp.clipboard { 1 } else { 0 },
+            if rdp.multimon { 1 } else { 0 },
         );
+        if rdp.camera {
+            rdp_file.push_str("camerastoredirect:s:*\n");
+        }
         if let Some(p) = profiles.first() {
             if !p.username.is_empty() {
-                rdp.push_str(&format!("username:s:{}\n", p.username));
+                rdp_file.push_str(&format!("username:s:{}\n", p.username));
             }
-            rdp.push_str("prompt for credentials:i:0\n");
+            rdp_file.push_str("prompt for credentials:i:0\n");
         } else {
-            rdp.push_str("prompt for credentials:i:1\n");
+            rdp_file.push_str("prompt for credentials:i:1\n");
         }
         let safe_name = target.replace([':', '/', '\\'], "_");
         let path = std::env::temp_dir().join(format!("nkk-{}.rdp", safe_name));
-        std::fs::write(&path, rdp)
+        std::fs::write(&path, rdp_file)
             .map_err(|e| AppError::Internal(format!("rdp file: {}", e)))?;
         std::process::Command::new("open")
             .arg(&path)
@@ -1859,8 +2583,25 @@ pub async fn open_rdp(
 
     #[cfg(all(unix, not(target_os = "macos")))]
     {
+        let mut args: Vec<String> = vec![
+            format!("/v:{}", target),
+            "/cert:ignore".to_string(),
+            "/dynamic-resolution".to_string(),
+        ];
+        if rdp.clipboard {
+            args.push("/clipboard".to_string());
+        }
+        if rdp.multimon {
+            args.push("/multimon".to_string());
+        }
+        if rdp.audio {
+            args.push("/sound".to_string());
+        }
+        if rdp.microphone {
+            args.push("/microphone".to_string());
+        }
         std::process::Command::new("xfreerdp")
-            .arg(format!("/v:{}", target))
+            .args(&args)
             .spawn()
             .map_err(|e| AppError::Internal(format!("xfreerdp: {}", e)))?;
         Ok(())
@@ -1918,7 +2659,7 @@ pub async fn open_url(url: String) -> AppResult<()> {
     if url.is_empty() {
         return Err(AppError::Internal("URL ist leer.".into()));
     }
-    // Only allow well-known safe schemes — blocks file://, javascript:, etc.
+    // Only allow well-known safe schemes - blocks file://, javascript:, etc.
     let lower = url.to_lowercase();
     let allowed = lower.starts_with("https://")
         || lower.starts_with("http://")
@@ -1983,7 +2724,7 @@ pub async fn set_autostart(app: AppHandle, enable: bool) -> AppResult<()> {
         Err(e) => {
             let msg = e.to_string();
             tracing::warn!("Autostart fehlgeschlagen: {}", msg);
-            // Friendlier message — the underlying plugin error is often cryptic
+            // Friendlier message - the underlying plugin error is often cryptic
             Err(AppError::Internal(format!(
                 "Autostart konnte nicht {} werden. ({})",
                 if enable { "aktiviert" } else { "deaktiviert" },
@@ -2106,14 +2847,14 @@ pub async fn install_netbird() -> AppResult<String> {
 pub async fn quit_app(app: AppHandle, state: State<'_, AppState>) -> AppResult<()> {
     // Disconnect VPN before quitting so the tunnel doesn't stay open
     // after the employee thinks they closed everything.
-    tracing::info!("App wird beendet — trenne VPN ...");
+    tracing::info!("App wird beendet - trenne VPN ...");
     match tokio::time::timeout(
         Duration::from_secs(5),
         state.netbird.down(),
     ).await {
         Ok(Ok(())) => tracing::info!("VPN getrennt."),
         Ok(Err(e)) => tracing::warn!("VPN trennen fehlgeschlagen: {}", e),
-        Err(_) => tracing::warn!("VPN trennen Timeout — beende trotzdem."),
+        Err(_) => tracing::warn!("VPN trennen Timeout - beende trotzdem."),
     }
     app.exit(0);
     Ok(())
@@ -2123,33 +2864,98 @@ static MISSING_NOTIFIED: AtomicBool = AtomicBool::new(false);
 static LAST_STATE_ERROR: AtomicBool = AtomicBool::new(false);
 static POLL_IN_FLIGHT: AtomicBool = AtomicBool::new(false);
 
+// ── Auto-reconnect throttling ──
+// Without these, every Disconnected transition spawned an unbounded `netbird up`
+// task. With a flapping or down management server that produced overlapping
+// 30s subprocesses (a reconnect storm). Inflight guard + exponential backoff +
+// escalation keep the corporate VPN up without hammering anything.
+static RECONNECT_IN_FLIGHT: AtomicBool = AtomicBool::new(false);
+static RECONNECT_FAILURES: AtomicU32 = AtomicU32::new(0);
+static LAST_RECONNECT_ATTEMPT_MS: AtomicU64 = AtomicU64::new(0);
+static RECONNECT_PAUSED: AtomicBool = AtomicBool::new(false);
+static NEEDS_LOGIN_NOTIFIED: AtomicBool = AtomicBool::new(false);
+
+const RECONNECT_MAX_FAILURES: u32 = 5;
+
+fn now_ms() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0)
+}
+
+/// Reset the reconnect backoff / pause state. Called on any explicit user
+/// connect or successful (re)connect so the next outage starts fresh.
+fn reset_reconnect_state() {
+    RECONNECT_FAILURES.store(0, Ordering::Relaxed);
+    LAST_RECONNECT_ATTEMPT_MS.store(0, Ordering::Relaxed);
+    RECONNECT_PAUSED.store(false, Ordering::Relaxed);
+}
+
+/// Backoff in seconds keyed on consecutive failures: 0, 15, 30, 60, 120, 300.
+fn reconnect_backoff_secs(failures: u32) -> u64 {
+    match failures {
+        0 => 0,
+        1 => 15,
+        2 => 30,
+        3 => 60,
+        4 => 120,
+        _ => 300,
+    }
+}
+
 /// Tracks the previous connection state so we only fire notifications on
-/// ACTUAL state transitions — not on every 30s poll tick.
+/// ACTUAL state transitions - not on every 30s poll tick.
 use std::sync::Mutex as StdMutex;
 static LAST_KNOWN_STATE: StdMutex<Option<String>> = StdMutex::new(None);
 
 /// Clean up any stale TERMSRV credentials left over from a previous crash.
 /// If the app was killed before the 60s cleanup timer fired, cmdkey entries
 /// for our RDP targets persist in Windows Credential Manager.
-pub fn cleanup_stale_credentials() {
+pub fn cleanup_stale_credentials(targets: &[String]) {
     #[cfg(target_os = "windows")]
     {
         use std::os::windows::process::CommandExt;
-        // Try to delete common NKK RDP targets
-        for target in &["192.168.0.19", "192.168.0.20"] {
+        // Delete leftover TERMSRV credentials for the branded RDP targets.
+        for target in targets {
             let _ = std::process::Command::new("cmdkey")
                 .arg(format!("/delete:TERMSRV/{}", target))
                 .creation_flags(0x08000000)
                 .output();
         }
-        tracing::debug!("Stale TERMSRV Credentials aufgeraeumt.");
+        tracing::debug!(
+            "Stale TERMSRV Credentials aufgeraeumt ({} Ziele).",
+            targets.len()
+        );
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        let _ = targets; // cmdkey is Windows-only
     }
 }
 
 pub fn start_status_polling(app: AppHandle) {
+    // Supervisor: if the poll task ever panics, restart it after a short delay
+    // so 24/7 status updates and auto-reconnect are never permanently lost.
     tauri::async_runtime::spawn(async move {
-        sleep(Duration::from_millis(500)).await;
         loop {
+            let handle = tauri::async_runtime::spawn(poll_loop(app.clone()));
+            match handle.await {
+                Ok(()) => tracing::warn!("Status-Poller beendet - Neustart in 5s."),
+                Err(e) => {
+                    tracing::error!("Status-Poller abgestuerzt ({:?}) - Neustart in 5s.", e)
+                }
+            }
+            sleep(Duration::from_secs(5)).await;
+        }
+    });
+}
+
+async fn poll_loop(app: AppHandle) {
+    sleep(Duration::from_millis(500)).await;
+    // Adaptive interval: fast while unsettled, slow once stably connected.
+    let mut next_secs: u64 = 5;
+    loop {
             if POLL_IN_FLIGHT
                 .compare_exchange(false, true, Ordering::SeqCst, Ordering::Relaxed)
                 .is_ok()
@@ -2175,7 +2981,7 @@ pub fn start_status_polling(app: AppHandle) {
 
                     // Fire a Windows Toast notification on state TRANSITION only.
                     // This gives the user an unobtrusive "VPN verbunden" / "VPN
-                    // getrennt" notification like OpenVPN does — but only when the
+                    // getrennt" notification like OpenVPN does - but only when the
                     // state actually changes, not on every poll cycle.
                     let new_state = format!("{:?}", payload.state);
                     let (changed, should_notify) = {
@@ -2186,77 +2992,172 @@ pub fn start_status_polling(app: AppHandle) {
                             *last = Some(new_state.clone());
                         }
                         (changed, changed && had_prev)
-                    }; // MutexGuard dropped here — safe for async below
+                    }; // MutexGuard dropped here - safe for async below
+
+                    // Branding for notifications + tray tooltip (white-label).
+                    // Cached after first load, so this is cheap per tick.
+                    let brand = ensure_branding_from_state(&app, &state).await;
+                    let product_name = brand
+                        .as_ref()
+                        .map(|b| b.product.name.clone())
+                        .unwrap_or_else(|| "Secure Access".to_string());
+                    let network_name = brand
+                        .as_ref()
+                        .and_then(|b| b.product.network_name.clone());
 
                     if should_notify {
-                        send_status_notification(&app, &payload);
+                        send_status_notification(
+                            &app,
+                            &payload,
+                            &product_name,
+                            network_name.as_deref(),
+                        );
                     }
 
-                    update_tray_tooltip(&app, &payload);
+                    // Re-login required (expired session / revoked key): tell the
+                    // UI once, and do NOT spin the auto-reconnect on a stale key.
+                    if payload.needs_login {
+                        if !NEEDS_LOGIN_NOTIFIED.swap(true, Ordering::Relaxed) {
+                            let _ = app.emit("netbird-needs-login", ());
+                            tracing::warn!(
+                                "NetBird meldet NeedsLogin/SessionExpired - Re-Login erforderlich."
+                            );
+                        }
+                    } else {
+                        NEEDS_LOGIN_NOTIFIED.store(false, Ordering::Relaxed);
+                    }
+
+                    if matches!(payload.state, ConnectionState::Connected) {
+                        reset_reconnect_state();
+                    }
+
+                    // Persist state transitions to the local health history so the
+                    // diagnose panel can show "how often did it drop today".
+                    if changed {
+                        append_health_event(&app, &new_state, payload.local_ip.as_deref());
+                    }
+
+                    update_tray_tooltip(&app, &payload, &product_name);
                     let _ = app.emit("netbird-status-changed", &payload);
 
-                    // Auto-reconnect: if VPN was connected but dropped,
-                    // silently attempt to reconnect. Corporate VPN must stay up.
-                    // But NOT if the user explicitly clicked "Trennen".
-                    // Must be AFTER the mutex lock is dropped (above).
-                    if changed
-                        && matches!(payload.state, ConnectionState::Disconnected)
-                        && payload.cli_available
-                        && !state.user_disconnected.load(Ordering::Relaxed)
-                    {
-                        let reconnect_nb = state.netbird.clone();
-                        let reconnect_branding = state.branding.lock().await.clone();
-                        let reconnect_setup = state.setup_key_cache.lock().await.clone();
-                        let reconnect_app = app.clone();
-                        tauri::async_runtime::spawn(async move {
-                            tracing::info!("Auto-Reconnect: VPN getrennt, versuche Wiederverbindung ...");
-                            let mgmt_url = reconnect_branding
+                    // Auto-reconnect: corporate VPN should stay up, but never at
+                    // the cost of a reconnect storm. Inflight guard + exponential
+                    // backoff + escalation, and never against a stale-login or a
+                    // deliberate user disconnect or an unreachable management server.
+                    let should_try_reconnect =
+                        matches!(payload.state, ConnectionState::Disconnected)
+                            && payload.cli_available
+                            && !payload.needs_login
+                            && !state.user_disconnected.load(Ordering::Relaxed)
+                            && !RECONNECT_PAUSED.load(Ordering::Relaxed);
+
+                    if should_try_reconnect {
+                        let failures = RECONNECT_FAILURES.load(Ordering::Relaxed);
+                        let backoff = reconnect_backoff_secs(failures);
+                        let last = LAST_RECONNECT_ATTEMPT_MS.load(Ordering::Relaxed);
+                        let due = last == 0 || now_ms().saturating_sub(last) >= backoff * 1000;
+                        if due
+                            && RECONNECT_IN_FLIGHT
+                                .compare_exchange(
+                                    false,
+                                    true,
+                                    Ordering::SeqCst,
+                                    Ordering::Relaxed,
+                                )
+                                .is_ok()
+                        {
+                            LAST_RECONNECT_ATTEMPT_MS.store(now_ms(), Ordering::Relaxed);
+                            let reconnect_nb = state.netbird.clone();
+                            let mgmt_url = brand
                                 .as_ref()
                                 .map(|b| b.netbird.management_url.clone());
-                            let key = reconnect_setup.flatten();
-                            if let Some(url) = mgmt_url {
-                                if reconnect_nb.up(&url, key.as_deref()).await.is_ok() {
-                                    if let Ok(s) = reconnect_nb.status().await {
-                                        let _ = reconnect_app.emit("netbird-status-changed", &s);
+                            let key = state.setup_key_cache.lock().await.clone().flatten();
+                            let reconnect_app = app.clone();
+                            tauri::async_runtime::spawn(async move {
+                                let mut ok = false;
+                                if let Some(url) = mgmt_url {
+                                    // Don't hammer an unreachable server with `up`.
+                                    if management_reachable(&url).await {
+                                        tracing::info!("Auto-Reconnect: versuche Wiederverbindung ...");
+                                        match reconnect_nb.up(&url, key.as_deref()).await {
+                                            Ok(_) => {
+                                                ok = true;
+                                                if let Ok(s) = reconnect_nb.status().await {
+                                                    let _ = reconnect_app
+                                                        .emit("netbird-status-changed", &s);
+                                                }
+                                            }
+                                            Err(e) => {
+                                                tracing::warn!("Auto-Reconnect fehlgeschlagen: {}", e);
+                                            }
+                                        }
+                                    } else {
+                                        tracing::warn!(
+                                            "Auto-Reconnect: Management {} nicht erreichbar, ueberspringe up.",
+                                            url
+                                        );
                                     }
                                 }
-                            }
-                        });
+                                if ok {
+                                    reset_reconnect_state();
+                                } else {
+                                    let f = RECONNECT_FAILURES.fetch_add(1, Ordering::Relaxed) + 1;
+                                    if f >= RECONNECT_MAX_FAILURES {
+                                        RECONNECT_PAUSED.store(true, Ordering::Relaxed);
+                                        let _ = reconnect_app.emit(
+                                            "netbird-error",
+                                            "Automatische Wiederverbindung pausiert nach mehreren Fehlversuchen. Bitte Diagnose öffnen oder neu verbinden."
+                                                .to_string(),
+                                        );
+                                        tracing::warn!(
+                                            "Auto-Reconnect nach {} Fehlversuchen pausiert.",
+                                            f
+                                        );
+                                    }
+                                }
+                                RECONNECT_IN_FLIGHT.store(false, Ordering::Relaxed);
+                            });
+                        }
                     }
+
+                    // React fast while unsettled (fresh drop, connecting, error,
+                    // or any transition); settle to 15s once stably connected.
+                    // Gives quick recovery after sleep/wake and network changes
+                    // without OS-specific power hooks.
+                    next_secs = if matches!(payload.state, ConnectionState::Connected) && !changed {
+                        15
+                    } else {
+                        3
+                    };
                 }
                 POLL_IN_FLIGHT.store(false, Ordering::Relaxed);
             }
-            sleep(Duration::from_secs(15)).await;
+            sleep(Duration::from_secs(next_secs)).await;
         }
-    });
 }
 
-/// Send a native OS toast notification for VPN state changes. Non-fatal —
+/// Send a native OS toast notification for VPN state changes. Non-fatal -
 /// if notifications are disabled or unavailable, we just log and move on.
-fn send_status_notification(app: &AppHandle, status: &StatusDto) {
-    let (title, body) = match status.state {
-        ConnectionState::Connected => (
-            "NKK Secure Access",
-            if let Some(ip) = &status.local_ip {
-                format!("VPN verbunden — {}", ip)
-            } else {
-                "VPN verbunden mit dem NKK Netz.".to_string()
-            },
-        ),
-        ConnectionState::Disconnected => (
-            "NKK Secure Access",
-            "VPN Tunnel getrennt.".to_string(),
-        ),
-        ConnectionState::Error => (
-            "NKK Secure Access",
-            "VPN Verbindung gestört — Diagnose prüfen.".to_string(),
-        ),
+fn send_status_notification(
+    app: &AppHandle,
+    status: &StatusDto,
+    product_name: &str,
+    network_name: Option<&str>,
+) {
+    let body = match status.state {
+        ConnectionState::Connected => match (&status.local_ip, network_name) {
+            (Some(ip), _) => format!("VPN verbunden: {}", ip),
+            (None, Some(net)) => format!("VPN verbunden mit dem {}.", net),
+            (None, None) => "VPN verbunden mit dem Firmennetz.".to_string(),
+        },
+        ConnectionState::Disconnected => "VPN Tunnel getrennt.".to_string(),
+        ConnectionState::Error => "VPN Verbindung gestört. Bitte Diagnose prüfen.".to_string(),
         ConnectionState::Connecting => return, // no notification for transient state
     };
 
     if let Err(e) = tauri_plugin_notification::NotificationExt::notification(app)
         .builder()
-        .title(title)
+        .title(product_name)
         .body(&body)
         .show()
     {
@@ -2264,14 +3165,1268 @@ fn send_status_notification(app: &AppHandle, status: &StatusDto) {
     }
 }
 
-fn update_tray_tooltip(app: &AppHandle, status: &StatusDto) {
+fn update_tray_tooltip(app: &AppHandle, status: &StatusDto, product_name: &str) {
     if let Some(tray) = app.tray_by_id("main-tray") {
-        let label = match status.state {
-            ConnectionState::Connected => "NKK Secure Access — Verbunden",
-            ConnectionState::Connecting => "NKK Secure Access — Verbinde …",
-            ConnectionState::Disconnected => "NKK Secure Access — Getrennt",
-            ConnectionState::Error => "NKK Secure Access — Fehler",
+        let suffix = match status.state {
+            ConnectionState::Connected => "Verbunden",
+            ConnectionState::Connecting => "Verbinde …",
+            ConnectionState::Disconnected => "Getrennt",
+            ConnectionState::Error => "Fehler",
         };
-        let _ = tray.set_tooltip(Some(label));
+        let _ = tray.set_tooltip(Some(format!("{} · {}", product_name, suffix)));
+    }
+}
+
+// ── Local health history (RMM foundation, no server) ──
+// A small JSONL ring file of state transitions so the diagnose panel can answer
+// "how often / when did the VPN drop today" without any backend.
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+pub struct HealthEvent {
+    pub timestamp: String,
+    pub state: String,
+    #[serde(rename = "localIp")]
+    pub local_ip: Option<String>,
+}
+
+const HEALTH_MAX_LINES: usize = 500;
+
+fn health_path(app: &AppHandle) -> Option<std::path::PathBuf> {
+    app.path()
+        .app_data_dir()
+        .ok()
+        .map(|d| d.join("health.jsonl"))
+}
+
+/// Append a state-transition event to the capped local health history.
+fn append_health_event(app: &AppHandle, state: &str, local_ip: Option<&str>) {
+    let path = match health_path(app) {
+        Some(p) => p,
+        None => return,
+    };
+    if let Some(parent) = path.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    let ev = HealthEvent {
+        timestamp: chrono::Local::now().to_rfc3339(),
+        state: state.to_string(),
+        local_ip: local_ip.map(|s| s.to_string()),
+    };
+    let line = match serde_json::to_string(&ev) {
+        Ok(l) => l,
+        Err(_) => return,
+    };
+    let mut lines: Vec<String> = std::fs::read_to_string(&path)
+        .map(|c| c.lines().map(|s| s.to_string()).collect())
+        .unwrap_or_default();
+    lines.push(line);
+    if lines.len() > HEALTH_MAX_LINES {
+        let drop = lines.len() - HEALTH_MAX_LINES;
+        lines.drain(0..drop);
+    }
+    let _ = std::fs::write(&path, lines.join("\n") + "\n");
+}
+
+fn read_health_lines(app: &AppHandle, limit: usize) -> Vec<String> {
+    let path = match health_path(app) {
+        Some(p) => p,
+        None => return vec![],
+    };
+    let content = match std::fs::read_to_string(&path) {
+        Ok(c) => c,
+        Err(_) => return vec![],
+    };
+    let all: Vec<String> = content
+        .lines()
+        .filter(|l| !l.trim().is_empty())
+        .map(|s| s.to_string())
+        .collect();
+    let n = limit.min(all.len());
+    all[all.len() - n..].to_vec()
+}
+
+#[tauri::command]
+pub async fn get_health_history(
+    app: AppHandle,
+    limit: Option<usize>,
+) -> AppResult<Vec<HealthEvent>> {
+    let path = match health_path(&app) {
+        Some(p) => p,
+        None => return Ok(vec![]),
+    };
+    let content = match std::fs::read_to_string(&path) {
+        Ok(c) => c,
+        Err(_) => return Ok(vec![]),
+    };
+    let mut events: Vec<HealthEvent> = content
+        .lines()
+        .filter(|l| !l.trim().is_empty())
+        .filter_map(|l| serde_json::from_str(l).ok())
+        .collect();
+    let n = limit.unwrap_or(100).min(events.len());
+    let start = events.len() - n;
+    events.drain(0..start);
+    Ok(events)
+}
+
+/// NetBird client version (`netbird version`), best effort.
+async fn fetch_netbird_version(nb: &NetbirdClient) -> Option<String> {
+    let out = shell_output(nb.binary_path(), &["version"]).await?;
+    Some(out.lines().next().unwrap_or(&out).trim().to_string())
+}
+
+// ── Local inventory / system card (RMM foundation, read-only, no telemetry) ──
+
+#[derive(Serialize, Clone, Debug)]
+pub struct Inventory {
+    pub hostname: String,
+    pub os_name: String,
+    pub os_version: String,
+    pub os_username: String,
+    pub app_version: String,
+    pub netbird_version: Option<String>,
+    pub local_ip: Option<String>,
+    pub management_url: Option<String>,
+    pub autostart_enabled: bool,
+    pub enrolled: bool,
+}
+
+#[tauri::command]
+pub async fn get_inventory(app: AppHandle, state: State<'_, AppState>) -> AppResult<Inventory> {
+    let branding = ensure_branding(&app, &state).await.ok();
+    let app_version = branding
+        .as_ref()
+        .map(|b| b.product.version.clone())
+        .unwrap_or_else(|| env!("CARGO_PKG_VERSION").to_string());
+    let management_url = branding.as_ref().map(|b| b.netbird.management_url.clone());
+
+    let nb = state.netbird.clone();
+    let (hostname, os_version, status_res, nb_version) = tokio::join!(
+        fetch_hostname(),
+        fetch_os_version(),
+        nb.status(),
+        fetch_netbird_version(&nb),
+    );
+    let local_ip = status_res.ok().and_then(|s| s.local_ip);
+
+    let autostart_enabled = {
+        use tauri_plugin_autostart::ManagerExt;
+        app.autolaunch().is_enabled().unwrap_or(false)
+    };
+    let enrolled = enrolled_marker_path(&app)
+        .map(|p| p.exists())
+        .unwrap_or(false);
+
+    Ok(Inventory {
+        hostname,
+        os_name: std::env::consts::OS.to_string(),
+        os_version,
+        os_username: std::env::var("USER")
+            .or_else(|_| std::env::var("USERNAME"))
+            .unwrap_or_default(),
+        app_version,
+        netbird_version: nb_version,
+        local_ip,
+        management_url,
+        autostart_enabled,
+        enrolled,
+    })
+}
+
+// ── One-click support bundle (local file, no auto-upload) ──
+
+fn reveal_in_file_manager(path: &std::path::Path) {
+    #[cfg(target_os = "windows")]
+    {
+        use std::os::windows::process::CommandExt;
+        let _ = std::process::Command::new("explorer.exe")
+            .arg(format!("/select,{}", path.display()))
+            .creation_flags(0x08000000)
+            .spawn();
+    }
+    #[cfg(target_os = "macos")]
+    {
+        let _ = std::process::Command::new("open")
+            .arg("-R")
+            .arg(path)
+            .spawn();
+    }
+    #[cfg(all(unix, not(target_os = "macos")))]
+    {
+        if let Some(parent) = path.parent() {
+            let _ = std::process::Command::new("xdg-open").arg(parent).spawn();
+        }
+    }
+}
+
+#[tauri::command]
+pub async fn export_support_bundle(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    dest_dir: Option<String>,
+) -> AppResult<String> {
+    let branding = ensure_branding(&app, &state).await.ok();
+    let product = branding
+        .as_ref()
+        .map(|b| b.product.name.clone())
+        .unwrap_or_else(|| "Secure Access".to_string());
+    let version = branding
+        .as_ref()
+        .map(|b| b.product.version.clone())
+        .unwrap_or_else(|| env!("CARGO_PKG_VERSION").to_string());
+
+    let nb = state.netbird.clone();
+    let (hostname, os_version, status_res, public_ip, nb_version) = tokio::join!(
+        fetch_hostname(),
+        fetch_os_version(),
+        nb.status(),
+        fetch_public_ip(),
+        fetch_netbird_version(&nb),
+    );
+    let os_user = std::env::var("USER")
+        .or_else(|_| std::env::var("USERNAME"))
+        .unwrap_or_default();
+    let (state_str, local_ip, peers_total, peers_connected) = match &status_res {
+        Ok(s) => (
+            format!("{:?}", s.state),
+            s.local_ip.clone(),
+            s.peers.len(),
+            s.peers.iter().filter(|p| p.connected).count(),
+        ),
+        Err(e) => (format!("Fehler: {}", e), None, 0, 0),
+    };
+
+    let logs = state.netbird.logs.last(300);
+    let health = read_health_lines(&app, 200);
+
+    let mut out = String::new();
+    out.push_str(&format!("{} Support-Bundle\n", product));
+    out.push_str(&format!("Version: {}\n", version));
+    out.push_str(&format!("Erstellt: {}\n", chrono::Local::now().to_rfc3339()));
+    out.push_str("\n== System ==\n");
+    out.push_str(&format!("Hostname: {}\n", hostname));
+    out.push_str(&format!("Benutzer: {}\n", os_user));
+    out.push_str(&format!("OS: {} ({})\n", os_version, std::env::consts::OS));
+    out.push_str(&format!(
+        "NetBird: {}\n",
+        nb_version.unwrap_or_else(|| "unbekannt".to_string())
+    ));
+    out.push_str("\n== VPN ==\n");
+    out.push_str(&format!("Status: {}\n", state_str));
+    out.push_str(&format!(
+        "WireGuard IP: {}\n",
+        local_ip.unwrap_or_else(|| "-".to_string())
+    ));
+    out.push_str(&format!(
+        "Public IP: {}\n",
+        public_ip.unwrap_or_else(|| "-".to_string())
+    ));
+    out.push_str(&format!(
+        "Peers: {} verbunden / {} gesamt\n",
+        peers_connected, peers_total
+    ));
+    out.push_str("\n== Verbindungs-Historie ==\n");
+    for l in &health {
+        out.push_str(l);
+        out.push('\n');
+    }
+    out.push_str("\n== Logs ==\n");
+    for l in &logs {
+        out.push_str(l);
+        out.push('\n');
+    }
+
+    // Use the folder the user picked, else fall back to Downloads.
+    let dir = match dest_dir {
+        Some(d) if !d.trim().is_empty() => std::path::PathBuf::from(d),
+        _ => app
+            .path()
+            .download_dir()
+            .unwrap_or_else(|_| std::env::temp_dir()),
+    };
+    let fname = format!(
+        "{}-support-{}.txt",
+        product.replace(' ', "-"),
+        chrono::Local::now().format("%Y%m%d-%H%M%S")
+    );
+    let path = dir.join(fname);
+    std::fs::write(&path, out)
+        .map_err(|e| AppError::Io(format!("Support-Bundle schreiben: {}", e)))?;
+
+    reveal_in_file_manager(&path);
+    Ok(path.to_string_lossy().to_string())
+}
+
+// ── Connectivity / captive-portal probe ──
+
+#[derive(Serialize, Clone, Debug)]
+pub struct ConnectivityResult {
+    pub online: bool,
+    #[serde(rename = "captivePortal")]
+    pub captive_portal: bool,
+    #[serde(rename = "httpCode")]
+    pub http_code: u32,
+}
+
+#[tauri::command]
+pub async fn check_connectivity() -> AppResult<ConnectivityResult> {
+    // Probe a well-known "204 No Content" endpoint. 204 => clean internet;
+    // any other 2xx/3xx => a captive portal intercepted the request (login page);
+    // 000/timeout => offline. We deliberately do NOT follow redirects.
+    #[cfg(target_os = "windows")]
+    let null_dev = "NUL";
+    #[cfg(not(target_os = "windows"))]
+    let null_dev = "/dev/null";
+
+    let url = "http://connectivitycheck.gstatic.com/generate_204";
+    let out = shell_output(
+        "curl",
+        &[
+            "-s", "-o", null_dev, "-w", "%{http_code}", "--max-time", "4", url,
+        ],
+    )
+    .await;
+    let code: u32 = out
+        .as_deref()
+        .and_then(|s| s.trim().parse().ok())
+        .unwrap_or(0);
+
+    let (online, captive_portal) = match code {
+        204 => (true, false),
+        // A 200/redirect on a 204-only endpoint means a portal intercepted us.
+        200 | 301 | 302 | 307 | 308 => (false, true),
+        // 000 (timeout), 4xx, 5xx: no usable internet, not a portal.
+        _ => (false, false),
+    };
+    Ok(ConnectivityResult {
+        online,
+        captive_portal,
+        http_code: code,
+    })
+}
+
+// ── On-site detection (comfort routing, NOT access control) ──
+// If the employee is in the office LAN, the terminal servers are reachable
+// directly and no VPN is needed. The truth-near signal is a direct TCP connect
+// to the RDP target without the tunnel. SSID/gateway are spoofable and are not
+// used as deciders. This must never gate security - that stays with RDP/NetBird.
+
+/// Reveal which local source IP the OS would use to reach a host. A UDP
+/// "connect" sends no packets, it only resolves the route.
+fn local_source_ip(host: &str, port: u16) -> Option<std::net::IpAddr> {
+    // Parse as a literal IP so we never trigger a blocking DNS lookup on the
+    // async worker thread. On-site detection is a hint, so None is acceptable
+    // for a hostname target.
+    let ip: std::net::IpAddr = host.parse().ok()?;
+    let sock = std::net::UdpSocket::bind("0.0.0.0:0").ok()?;
+    sock.connect(std::net::SocketAddr::new(ip, port)).ok()?;
+    sock.local_addr().ok().map(|a| a.ip())
+}
+
+/// True if the IP is in the NetBird CGNAT range 100.64.0.0/10 (i.e. the tunnel).
+fn is_netbird_ip(ip: &std::net::IpAddr) -> bool {
+    match ip {
+        std::net::IpAddr::V4(v4) => {
+            let o = v4.octets();
+            o[0] == 100 && (64..=127).contains(&o[1])
+        }
+        _ => false,
+    }
+}
+
+#[derive(Serialize, Clone, Debug)]
+pub struct OnSiteResult {
+    #[serde(rename = "onSite")]
+    pub on_site: bool,
+    #[serde(rename = "viaTarget")]
+    pub via_target: Option<String>,
+    #[serde(rename = "vpnActive")]
+    pub vpn_active: bool,
+}
+
+/// Probe whether any RDP target is reachable directly (LAN), not via the tunnel.
+async fn probe_onsite(targets: &[String], vpn_active: bool) -> OnSiteResult {
+    for t in targets {
+        let addr = format!("{}:3389", t);
+        let reachable = matches!(
+            timeout(
+                Duration::from_millis(350),
+                tokio::net::TcpStream::connect(&addr),
+            )
+            .await,
+            Ok(Ok(_))
+        );
+        if reachable {
+            // Reachable - but is it via the VPN route? If so it is not on-site.
+            let via_vpn = local_source_ip(t, 3389)
+                .map(|ip| is_netbird_ip(&ip))
+                .unwrap_or(false);
+            if !vpn_active || !via_vpn {
+                return OnSiteResult {
+                    on_site: true,
+                    via_target: Some(t.clone()),
+                    vpn_active,
+                };
+            }
+        }
+    }
+    OnSiteResult {
+        on_site: false,
+        via_target: None,
+        vpn_active,
+    }
+}
+
+#[tauri::command]
+pub async fn detect_onsite(app: AppHandle, state: State<'_, AppState>) -> AppResult<OnSiteResult> {
+    let branding = ensure_branding(&app, &state).await.ok();
+    let targets: Vec<String> = branding
+        .as_ref()
+        .map(|b| {
+            b.quick_launch
+                .iter()
+                .filter(|q| q.kind == "rdp")
+                .map(|q| q.target.clone())
+                .collect()
+        })
+        .unwrap_or_default();
+    if targets.is_empty() {
+        return Ok(OnSiteResult {
+            on_site: false,
+            via_target: None,
+            vpn_active: false,
+        });
+    }
+    let vpn_active = matches!(
+        state.netbird.status().await,
+        Ok(s) if matches!(s.state, ConnectionState::Connected)
+    );
+    Ok(probe_onsite(&targets, vpn_active).await)
+}
+
+// ── Smart network / path arbiter ──
+// Conservative by design: it DETECTS the network context and WARNS about
+// conflicting multi-path (dual-homing) situations, but does not change routes
+// or interfaces (that needs elevation and is gated to a later, reviewed phase).
+
+#[cfg(target_os = "macos")]
+fn parse_default_routes(out: &str) -> Vec<String> {
+    out.lines()
+        .filter(|l| l.split_whitespace().next() == Some("default"))
+        .filter_map(|l| {
+            let c: Vec<&str> = l.split_whitespace().collect();
+            if c.len() >= 3 {
+                Some(format!("{} ({})", c[1], c[c.len() - 1]))
+            } else {
+                None
+            }
+        })
+        .collect()
+}
+
+#[cfg(all(unix, not(target_os = "macos")))]
+fn parse_default_routes(out: &str) -> Vec<String> {
+    out.lines()
+        .filter(|l| l.trim_start().starts_with("default"))
+        .filter_map(|l| {
+            let t: Vec<&str> = l.split_whitespace().collect();
+            let via = t.iter().position(|x| *x == "via").and_then(|i| t.get(i + 1));
+            let dev = t.iter().position(|x| *x == "dev").and_then(|i| t.get(i + 1));
+            match (via, dev) {
+                (Some(g), Some(d)) => Some(format!("{} ({})", g, d)),
+                _ => None,
+            }
+        })
+        .collect()
+}
+
+#[cfg(target_os = "windows")]
+fn parse_default_routes(out: &str) -> Vec<String> {
+    out.lines()
+        .filter_map(|l| {
+            let t: Vec<&str> = l.split_whitespace().collect();
+            if t.len() >= 4 && t[0] == "0.0.0.0" && t[1] == "0.0.0.0" {
+                Some(format!("{} (if {})", t[2], t[3]))
+            } else {
+                None
+            }
+        })
+        .collect()
+}
+
+async fn enumerate_default_routes() -> Vec<String> {
+    #[cfg(target_os = "macos")]
+    let out = shell_output("netstat", &["-rn", "-f", "inet"]).await;
+    #[cfg(all(unix, not(target_os = "macos")))]
+    let out = shell_output("ip", &["-4", "route", "show", "default"]).await;
+    #[cfg(target_os = "windows")]
+    let out = shell_output("route", &["print", "-4"]).await;
+    out.map(|s| parse_default_routes(&s)).unwrap_or_default()
+}
+
+#[derive(Serialize, Clone, Debug)]
+pub struct NetworkContext {
+    pub context: String,
+    #[serde(rename = "chosenPath")]
+    pub chosen_path: String,
+    #[serde(rename = "serverReachableDirect")]
+    pub server_reachable_direct: bool,
+    #[serde(rename = "vpnConnected")]
+    pub vpn_connected: bool,
+    #[serde(rename = "dualHoming")]
+    pub dual_homing: bool,
+    #[serde(rename = "defaultRoutes")]
+    pub default_routes: Vec<String>,
+    pub reason: String,
+    pub warning: Option<String>,
+}
+
+#[tauri::command]
+pub async fn detect_network_context(
+    app: AppHandle,
+    state: State<'_, AppState>,
+) -> AppResult<NetworkContext> {
+    let branding = ensure_branding(&app, &state).await.ok();
+    let targets: Vec<String> = branding
+        .as_ref()
+        .map(|b| {
+            b.quick_launch
+                .iter()
+                .filter(|q| q.kind == "rdp")
+                .map(|q| q.target.clone())
+                .collect()
+        })
+        .unwrap_or_default();
+
+    let vpn_connected = matches!(
+        state.netbird.status().await,
+        Ok(s) if matches!(s.state, ConnectionState::Connected)
+    );
+    let onsite = probe_onsite(&targets, vpn_connected).await;
+    let routes = enumerate_default_routes().await;
+    let dual_homing = routes.len() >= 2;
+    let server_reachable_direct = onsite.on_site;
+
+    let (context, chosen_path, reason) = if server_reachable_direct {
+        (
+            "office".to_string(),
+            "lan".to_string(),
+            format!(
+                "Server direkt im Firmennetz erreichbar ({}).",
+                onsite.via_target.clone().unwrap_or_else(|| "LAN".into())
+            ),
+        )
+    } else if vpn_connected {
+        (
+            "remote".to_string(),
+            "vpn".to_string(),
+            "Server über das VPN erreichbar.".to_string(),
+        )
+    } else {
+        (
+            "unknown".to_string(),
+            "none".to_string(),
+            "Kein direkter Server-Pfad und VPN getrennt.".to_string(),
+        )
+    };
+
+    let warning = if dual_homing {
+        Some(format!(
+            "Mehrere aktive Default-Routen erkannt ({}). Zwei gleichzeitige Netzwerkpfade können Routing- und DNS-Konflikte und langsame Verbindungen verursachen. Empfehlung: nur einen Pfad aktiv lassen, Kabel bevorzugen.",
+            routes.join(", ")
+        ))
+    } else {
+        None
+    };
+
+    Ok(NetworkContext {
+        context,
+        chosen_path,
+        server_reachable_direct,
+        vpn_connected,
+        dual_homing,
+        default_routes: routes,
+        reason,
+        warning,
+    })
+}
+
+// ── Hidden admin / service menu ──
+// Gate = SHA-256(salt + ":" + password) from branding.json, compared in
+// constant time. This is an accident-prevention gate for employees, NOT
+// authentication against an attacker with the binary. Service actions are a
+// fixed whitelist of named commands - never a free command string (no RCE).
+
+fn open_dir(path: &std::path::Path) {
+    #[cfg(target_os = "windows")]
+    {
+        use std::os::windows::process::CommandExt;
+        let _ = std::process::Command::new("explorer.exe")
+            .arg(path)
+            .creation_flags(0x08000000)
+            .spawn();
+    }
+    #[cfg(target_os = "macos")]
+    {
+        let _ = std::process::Command::new("open").arg(path).spawn();
+    }
+    #[cfg(all(unix, not(target_os = "macos")))]
+    {
+        let _ = std::process::Command::new("xdg-open").arg(path).spawn();
+    }
+}
+
+/// Lowercase hex SHA-256 of `salt + ":" + password`. Must stay byte-for-byte
+/// identical to how branding.json hashes are generated. Pure + testable.
+fn admin_password_hash(salt: &str, password: &str) -> String {
+    use sha2::{Digest, Sha256};
+    let mut hasher = Sha256::new();
+    hasher.update(salt.as_bytes());
+    hasher.update(b":");
+    hasher.update(password.as_bytes());
+    hasher
+        .finalize()
+        .iter()
+        .map(|b| format!("{:02x}", b))
+        .collect()
+}
+
+#[tauri::command]
+pub async fn admin_unlock(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    password: String,
+) -> AppResult<bool> {
+    let branding = ensure_branding(&app, &state).await.ok();
+    let admin = match branding.as_ref().and_then(|b| b.admin.as_ref()) {
+        Some(a) if !a.password_sha256.is_empty() => a.clone(),
+        _ => {
+            // No admin configured: blunt timing, deny.
+            sleep(Duration::from_millis(400)).await;
+            return Ok(false);
+        }
+    };
+
+    let computed = admin_password_hash(&admin.salt, &password);
+
+    let ok = computed.len() == admin.password_sha256.len()
+        && constant_time_eq::constant_time_eq(
+            computed.as_bytes(),
+            admin.password_sha256.as_bytes(),
+        );
+
+    // Small constant delay to blunt rapid guessing; same on success and failure.
+    sleep(Duration::from_millis(400)).await;
+    if ok {
+        state.admin_unlocked.store(true, Ordering::Relaxed);
+        tracing::info!("Service-Menue freigeschaltet.");
+    }
+    Ok(ok)
+}
+
+#[tauri::command]
+pub fn admin_is_unlocked(state: State<'_, AppState>) -> bool {
+    state.admin_unlocked.load(Ordering::Relaxed)
+}
+
+#[tauri::command]
+pub async fn admin_open_log_folder(state: State<'_, AppState>) -> AppResult<()> {
+    if !state.admin_unlocked.load(Ordering::Relaxed) {
+        return Err(AppError::Internal("Service-Menue nicht freigeschaltet.".into()));
+    }
+    let dir = crate::logging::log_dir();
+    let _ = std::fs::create_dir_all(&dir);
+    open_dir(&dir);
+    Ok(())
+}
+
+#[tauri::command]
+pub async fn admin_restart_service(state: State<'_, AppState>) -> AppResult<String> {
+    if !state.admin_unlocked.load(Ordering::Relaxed) {
+        return Err(AppError::Internal("Service-Menue nicht freigeschaltet.".into()));
+    }
+    tracing::info!("Admin: NetBird Dienst Neustart angefordert.");
+    #[cfg(target_os = "windows")]
+    {
+        let mut stop = TokioCommand::new("sc.exe");
+        stop.args(["stop", "netbird"]);
+        stop.creation_flags(0x08000000);
+        let _ = timeout(Duration::from_secs(6), stop.output()).await;
+        sleep(Duration::from_secs(1)).await;
+        let mut start = TokioCommand::new("sc.exe");
+        start.args(["start", "netbird"]);
+        start.creation_flags(0x08000000);
+        let _ = timeout(Duration::from_secs(6), start.output()).await;
+        return Ok("NetBird Dienst neu gestartet.".into());
+    }
+    #[cfg(target_os = "macos")]
+    {
+        let bin = state.netbird.binary_path().to_string();
+        let _ = timeout(
+            Duration::from_secs(6),
+            TokioCommand::new(&bin).args(["service", "stop"]).output(),
+        )
+        .await;
+        sleep(Duration::from_secs(1)).await;
+        let _ = timeout(
+            Duration::from_secs(6),
+            TokioCommand::new(&bin).args(["service", "start"]).output(),
+        )
+        .await;
+        return Ok("NetBird Dienst neu gestartet.".into());
+    }
+    #[cfg(all(unix, not(target_os = "macos")))]
+    {
+        let bin = state.netbird.binary_path().to_string();
+        let _ = timeout(
+            Duration::from_secs(6),
+            TokioCommand::new(&bin).args(["service", "restart"]).output(),
+        )
+        .await;
+        Ok("NetBird Dienst neu gestartet.".into())
+    }
+}
+
+// ── NetBird version checker (admin) ──
+
+/// Extract a leading x.y.z from a version string ("v0.73.2", "0.68.1 ...").
+fn parse_semver(s: &str) -> Option<(u32, u32, u32)> {
+    let core: String = s
+        .trim()
+        .trim_start_matches('v')
+        .chars()
+        .take_while(|c| c.is_ascii_digit() || *c == '.')
+        .collect();
+    let mut it = core.split('.');
+    let a = it.next()?.parse().ok()?;
+    let b = it.next().unwrap_or("0").parse().unwrap_or(0);
+    let c = it.next().unwrap_or("0").parse().unwrap_or(0);
+    Some((a, b, c))
+}
+
+fn version_lt(local: &str, remote: &str) -> bool {
+    match (parse_semver(local), parse_semver(remote)) {
+        (Some(l), Some(r)) => l < r,
+        _ => false,
+    }
+}
+
+/// Latest stable NetBird version from the GitHub releases API (best effort).
+async fn fetch_latest_netbird_version() -> Option<String> {
+    let out = shell_output(
+        "curl",
+        &[
+            "-s",
+            "--max-time",
+            "6",
+            "-H",
+            "User-Agent: nkk-secure-access",
+            "https://api.github.com/repos/netbirdio/netbird/releases/latest",
+        ],
+    )
+    .await?;
+    let v: serde_json::Value = serde_json::from_str(&out).ok()?;
+    let tag = v.get("tag_name")?.as_str()?;
+    Some(tag.trim_start_matches('v').to_string())
+}
+
+#[derive(Serialize, Clone, Debug)]
+pub struct NetbirdVersionCheck {
+    pub local: Option<String>,
+    pub latest: Option<String>,
+    #[serde(rename = "updateAvailable")]
+    pub update_available: bool,
+    #[serde(rename = "managementUrl")]
+    pub management_url: Option<String>,
+    pub note: String,
+}
+
+#[tauri::command]
+pub async fn admin_check_netbird_version(
+    app: AppHandle,
+    state: State<'_, AppState>,
+) -> AppResult<NetbirdVersionCheck> {
+    if !state.admin_unlocked.load(Ordering::Relaxed) {
+        return Err(AppError::Internal("Service-Menue nicht freigeschaltet.".into()));
+    }
+    let branding = ensure_branding(&app, &state).await.ok();
+    let management_url = branding.as_ref().map(|b| b.netbird.management_url.clone());
+
+    let nb = state.netbird.clone();
+    let (local, latest) = tokio::join!(fetch_netbird_version(&nb), fetch_latest_netbird_version());
+
+    let update_available = match (&local, &latest) {
+        (Some(l), Some(r)) => version_lt(l, r),
+        _ => false,
+    };
+
+    let note = match (&local, &latest) {
+        (Some(l), Some(r)) if update_available => {
+            format!("Update verfügbar: lokal {} -> neueste {}.", l, r)
+        }
+        (Some(l), Some(_)) => format!("NetBird {} ist aktuell.", l),
+        (Some(l), None) => format!("Lokal {}; neueste Version nicht abrufbar (offline?).", l),
+        (None, _) => "NetBird-Version lokal nicht ermittelbar.".to_string(),
+    };
+
+    Ok(NetbirdVersionCheck {
+        local,
+        latest,
+        update_available,
+        management_url,
+        note,
+    })
+}
+
+/// Update NetBird everywhere, judging success by the resulting VERSION rather
+/// than a process exit code. That is the key to reliability across versions:
+/// installers return noisy codes (reboot-required, "already current", UAC
+/// quirks), so we read what NetBird reports before and after and only call it
+/// an error when the version genuinely did not move and we have a reason.
+#[tauri::command]
+pub async fn admin_update_netbird(
+    app: AppHandle,
+    state: State<'_, AppState>,
+) -> AppResult<String> {
+    if !state.admin_unlocked.load(Ordering::Relaxed) {
+        return Err(AppError::Internal("Service-Menue nicht freigeschaltet.".into()));
+    }
+    let _ = &app;
+    let nb = state.netbird.clone();
+
+    // Pre-check: never run an installer if NetBird is already current.
+    let before = fetch_netbird_version(&nb).await;
+    let latest = fetch_latest_netbird_version().await;
+    if let (Some(b), Some(l)) = (&before, &latest) {
+        if !version_lt(b, l) {
+            return Ok(format!("NetBird ist bereits aktuell (Version {}).", b));
+        }
+    }
+
+    // Best-effort platform update. The hint carries a human reason only if the
+    // command itself failed; it is used only when the version did not advance.
+    let hint = run_netbird_update().await;
+
+    // Give the daemon a moment to report the new version, then decide by version.
+    sleep(Duration::from_secs(3)).await;
+    let after = fetch_netbird_version(&nb).await;
+
+    match (&before, &after) {
+        (Some(b), Some(a)) if version_lt(b, a) => {
+            Ok(format!("NetBird aktualisiert: {} auf {}.", b, a))
+        }
+        (_, Some(a)) => {
+            if let Some(l) = &latest {
+                if !version_lt(a, l) {
+                    return Ok(format!("NetBird ist aktuell (Version {}).", a));
+                }
+            }
+            match hint {
+                Some(h) => Err(AppError::Internal(h)),
+                None => Ok(format!(
+                    "Kein Update durchgeführt, NetBird ist weiterhin Version {}.",
+                    a
+                )),
+            }
+        }
+        _ => match hint {
+            Some(h) => Err(AppError::Internal(h)),
+            None => Err(AppError::Internal(
+                "NetBird-Version nach dem Update nicht ermittelbar.".into(),
+            )),
+        },
+    }
+}
+
+// Runs the platform-appropriate NetBird update. Returns Some(reason) only if the
+// command itself failed in a way worth reporting; success is judged by version
+// in the caller, so a noisy exit code alone is never treated as a failure.
+#[allow(unreachable_code)]
+async fn run_netbird_update() -> Option<String> {
+    #[cfg(target_os = "macos")]
+    {
+        // Homebrew install needs no admin prompt, so prefer it when present.
+        let brew_managed = TokioCommand::new("brew")
+            .args(["list", "netbird"])
+            .output()
+            .await
+            .map(|o| o.status.success())
+            .unwrap_or(false);
+        if brew_managed {
+            let res = timeout(
+                Duration::from_secs(180),
+                TokioCommand::new("brew").args(["upgrade", "netbird"]).output(),
+            )
+            .await;
+            return update_hint_from(res);
+        }
+        // The official install.sh refuses when NetBird is already present, so
+        // upgrade with the .pkg directly: macOS `installer` replaces it in
+        // place. Download as the user, then run installer once with admin.
+        let arch = if std::env::consts::ARCH == "aarch64" {
+            "arm64"
+        } else {
+            "amd64"
+        };
+        let pkg = "/tmp/netbird-update.pkg";
+        let url = format!("https://pkgs.netbird.io/macos/{}", arch);
+        let dl = timeout(
+            Duration::from_secs(120),
+            TokioCommand::new("curl")
+                .args(["-fsSL", "-o", pkg, &url])
+                .output(),
+        )
+        .await;
+        if !matches!(dl, Ok(Ok(ref o)) if o.status.success()) {
+            return Some("NetBird-Download fehlgeschlagen, keine Verbindung?".into());
+        }
+        let res = timeout(
+            Duration::from_secs(180),
+            TokioCommand::new("osascript")
+                .args([
+                    "-e",
+                    &format!(
+                        "do shell script \"installer -pkg {} -target /\" with administrator privileges",
+                        pkg
+                    ),
+                ])
+                .output(),
+        )
+        .await;
+        let hint = update_hint_from(res);
+        let _ = std::fs::remove_file(pkg);
+        return hint;
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        // winget is the most reliable path: it knows the package, is idempotent,
+        // and handles elevation itself. Fall back to a downloaded silent
+        // installer only when winget is unavailable (older Windows).
+        let has_winget = TokioCommand::new("where")
+            .arg("winget")
+            .creation_flags(0x08000000)
+            .output()
+            .await
+            .map(|o| o.status.success())
+            .unwrap_or(false);
+        if has_winget {
+            let res = timeout(
+                Duration::from_secs(240),
+                TokioCommand::new("winget")
+                    .args([
+                        "upgrade",
+                        "--id",
+                        "NetBird.NetBird",
+                        "--silent",
+                        "--accept-package-agreements",
+                        "--accept-source-agreements",
+                        "--disable-interactivity",
+                    ])
+                    .creation_flags(0x08000000)
+                    .output(),
+            )
+            .await;
+            // winget exits non-zero for "no applicable upgrade"; the version
+            // check covers that, so only a real launch failure is a hint.
+            return match res {
+                Ok(Ok(_)) => None,
+                Ok(Err(e)) => Some(format!("winget konnte nicht gestartet werden: {}", e)),
+                Err(_) => Some("Update-Timeout (winget).".into()),
+            };
+        }
+
+        let tmp = std::env::temp_dir().join("netbird-update.exe");
+        let tmp_str = tmp.to_string_lossy().to_string();
+        let dl = timeout(
+            Duration::from_secs(120),
+            TokioCommand::new("curl")
+                .args(["-fsSL", "-o", &tmp_str, "https://pkgs.netbird.io/windows/x64"])
+                .creation_flags(0x08000000)
+                .output(),
+        )
+        .await;
+        if !matches!(dl, Ok(Ok(ref o)) if o.status.success()) {
+            return Some("NetBird-Download fehlgeschlagen, keine Verbindung?".into());
+        }
+        // Start-Process -Verb RunAs elevates via UAC from our non-admin process.
+        let ps = format!(
+            "Start-Process -FilePath '{}' -ArgumentList '/S' -Verb RunAs -Wait",
+            tmp_str
+        );
+        let run = timeout(
+            Duration::from_secs(240),
+            TokioCommand::new("powershell")
+                .args([
+                    "-NoProfile", "-NonInteractive", "-inputformat", "none",
+                    "-ExecutionPolicy", "Bypass", "-Command", &ps,
+                ])
+                .creation_flags(0x08000000)
+                .output(),
+        )
+        .await;
+        let hint = match run {
+            Ok(Ok(o)) if o.status.success() => None,
+            Ok(Ok(o)) => {
+                let e = String::from_utf8_lossy(&o.stderr);
+                if e.contains("canceled") || e.contains("abgebrochen") {
+                    Some("Update vom Benutzer abgebrochen (UAC).".into())
+                } else {
+                    Some("Der Installer meldete einen Fehler.".into())
+                }
+            }
+            _ => Some("Installer konnte nicht gestartet werden.".into()),
+        };
+        // Make sure the service runs again regardless of the installer's mood.
+        let mut sc = TokioCommand::new("sc.exe");
+        sc.args(["start", "netbird"]).creation_flags(0x08000000);
+        let _ = timeout(Duration::from_secs(6), sc.output()).await;
+        return hint;
+    }
+
+    #[cfg(all(unix, not(target_os = "macos")))]
+    {
+        // Without a desktop session pkexec cannot prompt, so guide instead.
+        if std::env::var("DISPLAY").is_err() && std::env::var("WAYLAND_DISPLAY").is_err() {
+            return Some(
+                "Bitte als Administrator ausführen: curl -fsSL https://pkgs.netbird.io/install.sh | sudo sh".into(),
+            );
+        }
+        let res = timeout(
+            Duration::from_secs(180),
+            TokioCommand::new("pkexec")
+                .args(["sh", "-c", "curl -fsSL https://pkgs.netbird.io/install.sh | sh"])
+                .output(),
+        )
+        .await;
+        return update_hint_from(res);
+    }
+
+    None
+}
+
+// Turn a finished (or timed-out) update command into an optional human reason.
+// Used on the Unix paths; Windows classifies inline because it has more cases.
+#[cfg(unix)]
+fn update_hint_from(
+    res: Result<std::io::Result<std::process::Output>, tokio::time::error::Elapsed>,
+) -> Option<String> {
+    match res {
+        Ok(Ok(o)) if o.status.success() => None,
+        Ok(Ok(o)) => {
+            let e = String::from_utf8_lossy(&o.stderr);
+            if e.contains("canceled") || e.contains("cancelled") || e.contains("-128") {
+                Some("Update vom Benutzer abgebrochen.".into())
+            } else if e.contains("resolve") || e.contains("timed out") || e.contains("Could not") {
+                Some("Keine Verbindung zum Update-Server.".into())
+            } else if e.trim().is_empty() {
+                None
+            } else {
+                Some(format!("Update meldete: {}", e.trim()))
+            }
+        }
+        _ => Some("Update abgebrochen oder Timeout.".into()),
+    }
+}
+
+// ── Installable "levels" (command bundles, admin-gated) ──
+// Steps come from the trusted, bundled branding.json (same trust as the signed
+// app), never from the network or user input. Executed behind the admin unlock.
+
+#[derive(Serialize, Clone, Debug)]
+pub struct LevelMeta {
+    pub id: String,
+    pub label: String,
+    pub description: Option<String>,
+    pub steps: usize,
+}
+
+#[tauri::command]
+pub async fn admin_list_levels(
+    app: AppHandle,
+    state: State<'_, AppState>,
+) -> AppResult<Vec<LevelMeta>> {
+    if !state.admin_unlocked.load(Ordering::Relaxed) {
+        return Err(AppError::Internal("Service-Menue nicht freigeschaltet.".into()));
+    }
+    let levels = ensure_branding(&app, &state)
+        .await
+        .ok()
+        .map(|b| b.levels)
+        .unwrap_or_default();
+    Ok(levels
+        .iter()
+        .map(|l| LevelMeta {
+            id: l.id.clone(),
+            label: l.label.clone(),
+            description: l.description.clone(),
+            steps: l.steps.len(),
+        })
+        .collect())
+}
+
+#[derive(Serialize, Clone, Debug)]
+pub struct LevelStepResult {
+    pub label: String,
+    pub ok: bool,
+    #[serde(rename = "exitCode")]
+    pub exit_code: i32,
+    pub output: String,
+}
+
+#[derive(Serialize, Clone, Debug)]
+pub struct LevelRunResult {
+    pub level: String,
+    pub steps: Vec<LevelStepResult>,
+    pub ok: bool,
+}
+
+#[tauri::command]
+pub async fn admin_run_level(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    level_id: String,
+) -> AppResult<LevelRunResult> {
+    if !state.admin_unlocked.load(Ordering::Relaxed) {
+        return Err(AppError::Internal("Service-Menue nicht freigeschaltet.".into()));
+    }
+    let branding = ensure_branding(&app, &state)
+        .await
+        .map_err(|_| AppError::Internal("Branding nicht ladbar.".into()))?;
+    let level = branding
+        .levels
+        .iter()
+        .find(|l| l.id == level_id)
+        .ok_or_else(|| AppError::Internal(format!("Level '{}' nicht gefunden.", level_id)))?
+        .clone();
+
+    tracing::info!(
+        "Admin: Level '{}' wird ausgefuehrt ({} Schritte).",
+        level.id,
+        level.steps.len()
+    );
+
+    let mut results: Vec<LevelStepResult> = Vec::new();
+    let mut all_ok = true;
+    for (i, step) in level.steps.iter().enumerate() {
+        let label = step
+            .label
+            .clone()
+            .unwrap_or_else(|| format!("Schritt {}", i + 1));
+
+        let mut cmd;
+        if let Some(sh) = &step.shell {
+            #[cfg(target_os = "windows")]
+            {
+                cmd = TokioCommand::new("cmd");
+                cmd.args(["/c", sh.as_str()]);
+            }
+            #[cfg(not(target_os = "windows"))]
+            {
+                cmd = TokioCommand::new("sh");
+                cmd.args(["-c", sh.as_str()]);
+            }
+        } else if let Some(program) = &step.program {
+            cmd = TokioCommand::new(program);
+            if let Some(a) = &step.args {
+                cmd.args(a);
+            }
+        } else {
+            results.push(LevelStepResult {
+                label,
+                ok: false,
+                exit_code: -1,
+                output: "Schritt ohne program/shell".into(),
+            });
+            all_ok = false;
+            break;
+        }
+        cmd.stdout(std::process::Stdio::piped())
+            .stderr(std::process::Stdio::piped());
+        #[cfg(target_os = "windows")]
+        cmd.creation_flags(0x08000000);
+
+        let (ok, exit_code, output) = match timeout(Duration::from_secs(180), cmd.output()).await {
+            Ok(Ok(out)) => {
+                let mut s = String::from_utf8_lossy(&out.stdout).to_string();
+                let err = String::from_utf8_lossy(&out.stderr);
+                if !err.trim().is_empty() {
+                    s.push('\n');
+                    s.push_str(&err);
+                }
+                if s.len() > 4000 {
+                    s.truncate(4000);
+                    s.push_str("\n…");
+                }
+                (
+                    out.status.success(),
+                    out.status.code().unwrap_or(-1),
+                    s,
+                )
+            }
+            Ok(Err(e)) => (false, -1, format!("Start fehlgeschlagen: {}", e)),
+            Err(_) => (false, -1, "Timeout (180s)".into()),
+        };
+        if !ok {
+            all_ok = false;
+        }
+        results.push(LevelStepResult {
+            label,
+            ok,
+            exit_code,
+            output,
+        });
+        if !ok {
+            break; // stop the level on first failure
+        }
+    }
+
+    Ok(LevelRunResult {
+        level: level_id,
+        steps: results,
+        ok: all_ok,
+    })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn admin_password_hash_is_sha256_of_salt_colon_password() {
+        // Neutral vector (NOT the real password): sha256("abc:test"). Locks the
+        // formula so the Rust gate can never drift from branding.json hashes.
+        assert_eq!(
+            admin_password_hash("abc", "test"),
+            "a716f9e610d30cb1a2c3f013cce01080c088cc8ff3c6d95621b2f5c85fcaafe2"
+        );
+    }
+
+    #[test]
+    fn netbird_cgnat_range_detection() {
+        use std::net::IpAddr;
+        assert!(is_netbird_ip(&"100.64.0.1".parse::<IpAddr>().unwrap()));
+        assert!(is_netbird_ip(&"100.127.255.255".parse::<IpAddr>().unwrap()));
+        assert!(!is_netbird_ip(&"100.63.0.1".parse::<IpAddr>().unwrap()));
+        assert!(!is_netbird_ip(&"192.168.0.20".parse::<IpAddr>().unwrap()));
+    }
+
+    #[test]
+    fn semver_compare() {
+        assert_eq!(parse_semver("v0.73.2"), Some((0, 73, 2)));
+        assert!(version_lt("0.68.1", "0.73.2"));
+        assert!(version_lt("v0.68.0", "0.68.1"));
+        assert!(!version_lt("0.73.2", "0.73.2"));
+        assert!(!version_lt("0.73.2", "0.73.1"));
+    }
+
+    #[cfg(target_os = "macos")]
+    #[test]
+    fn parses_macos_default_routes_dual_homing() {
+        let out = "Routing tables\n\nInternet:\nDestination        Gateway            Flags        Netif\ndefault            192.168.0.1        UGScg          en0\ndefault            192.168.60.1       UGScg          en1\n127                127.0.0.1          UCS            lo0";
+        let r = parse_default_routes(out);
+        assert_eq!(r.len(), 2);
+        assert!(r[0].contains("192.168.0.1") && r[0].contains("en0"));
+        assert!(r[1].contains("192.168.60.1") && r[1].contains("en1"));
     }
 }

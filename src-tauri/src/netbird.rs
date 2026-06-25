@@ -18,6 +18,9 @@ fn find_netbird_binary() -> String {
             "/usr/local/bin/netbird",
             "/opt/homebrew/bin/netbird",
             "/opt/netbird/bin/netbird",
+            // Official .app bundle (installer / cask) - no shell PATH inheritance
+            "/Applications/NetBird.app/Contents/MacOS/netbird",
+            "/usr/bin/netbird",
         ];
         for path in candidates {
             if std::path::Path::new(path).exists() {
@@ -73,6 +76,11 @@ pub struct StatusDto {
     pub updated_at: String,
     #[serde(rename = "cli_available")]
     pub cli_available: bool,
+    /// True when the NetBird daemon reports it needs interactive (re-)login -
+    /// `daemonStatus` of NeedsLogin / SessionExpired / LoginFailed (0.7x+).
+    /// The UI surfaces a re-login prompt instead of spinning the auto-reconnect.
+    #[serde(rename = "needs_login")]
+    pub needs_login: bool,
 }
 
 impl StatusDto {
@@ -84,6 +92,7 @@ impl StatusDto {
             local_ip: None,
             updated_at: chrono::Utc::now().to_rfc3339(),
             cli_available,
+            needs_login: false,
         }
     }
 
@@ -95,6 +104,7 @@ impl StatusDto {
             local_ip: None,
             updated_at: chrono::Utc::now().to_rfc3339(),
             cli_available: false,
+            needs_login: false,
         }
     }
 }
@@ -242,7 +252,7 @@ impl NetbirdClient {
         self.log(format!(
             "Status: {:?} | IP: {} | Management: {}",
             result.state,
-            result.local_ip.as_deref().unwrap_or("–"),
+            result.local_ip.as_deref().unwrap_or("-"),
             if result.management_connected { "OK" } else { "getrennt" },
         ));
         Ok(result)
@@ -253,9 +263,18 @@ fn parse_status(raw: &str) -> AppResult<StatusDto> {
     let v: serde_json::Value = serde_json::from_str(raw)
         .map_err(|e| AppError::NetbirdParse(format!("invalid JSON: {}", e)))?;
 
-    // Management connection state — covers multiple netbird versions:
+    // Management connection state - covers multiple netbird versions:
     // v0.68+: { "management": { "connected": true } } and { "daemonStatus": "Connected" }
     // older:  { "managementState": { "Connected": true } } or { "managementConnState": "Connected" }
+    let daemon_status = first_str(
+        &v,
+        &[
+            &["daemonStatus"],
+            &["managementConnState"],
+            &["ManagementConnState"],
+        ],
+    );
+
     let management_connected = first_bool(
         &v,
         &[
@@ -266,18 +285,24 @@ fn parse_status(raw: &str) -> AppResult<StatusDto> {
         ],
     )
     .unwrap_or(false)
-        || first_str(
-            &v,
-            &[
-                &["daemonStatus"],
-                &["managementConnState"],
-                &["ManagementConnState"],
-            ],
-        )
-        .map(|s| s.eq_ignore_ascii_case("connected"))
+        || daemon_status
+            .as_deref()
+            .map(|s| s.eq_ignore_ascii_case("connected"))
+            .unwrap_or(false);
+
+    // Re-login needed - NetBird 0.7x signals expired/invalid auth via daemonStatus.
+    // These must NOT be treated as a plain "disconnected" that the auto-reconnect
+    // can fix by replaying the setup key; the user has to authenticate again.
+    let needs_login = daemon_status
+        .as_deref()
+        .map(|s| {
+            s.eq_ignore_ascii_case("NeedsLogin")
+                || s.eq_ignore_ascii_case("SessionExpired")
+                || s.eq_ignore_ascii_case("LoginFailed")
+        })
         .unwrap_or(false);
 
-    // Local wireguard IP — v0.68+ uses "netbirdIp", older uses "wireguardIp"
+    // Local wireguard IP - v0.68+ uses "netbirdIp", older uses "wireguardIp"
     let local_ip = first_str(
         &v,
         &[
@@ -291,13 +316,16 @@ fn parse_status(raw: &str) -> AppResult<StatusDto> {
     // Strip CIDR suffix (e.g. "100.102.159.205/16" → "100.102.159.205")
     .map(|s| s.split('/').next().unwrap_or(&s).to_string());
 
-    // Peers
+    // Peers - staged fallback so a schema change can't silently parse 0 peers:
+    // 1) peers.details[] (current), 2) peers[] (peers as a bare array),
+    // 3) Peers[] (PascalCase). Each step actually checks as_array().
     let mut peers = Vec::new();
     let peer_array = v
         .get("peers")
-        .and_then(|p| p.get("details").or_else(|| Some(p)))
-        .or_else(|| v.get("Peers"))
-        .and_then(|x| x.as_array())
+        .and_then(|p| p.get("details"))
+        .and_then(|d| d.as_array())
+        .or_else(|| v.get("peers").and_then(|p| p.as_array()))
+        .or_else(|| v.get("Peers").and_then(|p| p.as_array()))
         .cloned()
         .unwrap_or_default();
 
@@ -318,9 +346,14 @@ fn parse_status(raw: &str) -> AppResult<StatusDto> {
         let latency_ms = first_str(&p, &[&["latency"], &["Latency"]])
             .and_then(|s| parse_latency(&s))
             .or_else(|| {
+                // NetBird 0.7x serialises `latency` as a Go time.Duration: an
+                // integer in NANOSECONDS (15 ms => 15_000_000), not a "15ms"
+                // string. Treating it as ms would be off by a factor of 1e6.
                 p.get("latency")
-                    .and_then(|x| x.as_u64())
-                    .map(|x| x as u32)
+                    .or_else(|| p.get("Latency"))
+                    .and_then(|x| x.as_i64())
+                    .filter(|ns| *ns > 0)
+                    .map(nanos_to_ms)
             });
         let relay = first_str(&p, &[&["connectionType"], &["ConnectionType"]])
             .or_else(|| {
@@ -338,7 +371,13 @@ fn parse_status(raw: &str) -> AppResult<StatusDto> {
     }
 
     let any_peer_connected = peers.iter().any(|p| p.connected);
-    let state = if management_connected && any_peer_connected {
+    // "Connected" once management is up AND the tunnel is actually carrying:
+    // either a peer is connected, OR the client has a WireGuard IP but no peers
+    // in its ACL (routing-only / fresh policy). Without the latter branch a
+    // correctly enrolled client that only reaches the terminal server via a
+    // NetBird route (no visible peer) would hang on "Connecting" forever.
+    let tunnel_up = any_peer_connected || (peers.is_empty() && local_ip.is_some());
+    let state = if management_connected && tunnel_up {
         ConnectionState::Connected
     } else if management_connected || !peers.is_empty() {
         ConnectionState::Connecting
@@ -353,7 +392,22 @@ fn parse_status(raw: &str) -> AppResult<StatusDto> {
         local_ip,
         updated_at: chrono::Utc::now().to_rfc3339(),
         cli_available: true,
+        needs_login,
     })
+}
+
+/// Convert a NetBird latency (Go time.Duration, nanoseconds) to whole
+/// milliseconds. Sub-millisecond but non-zero latencies are reported as 1 ms so
+/// "measured, very fast" stays distinguishable from "no measurement" (None).
+fn nanos_to_ms(ns: i64) -> u32 {
+    let ms = ns as f64 / 1_000_000.0;
+    if ms <= 0.0 {
+        0
+    } else if ms < 1.0 {
+        1
+    } else {
+        ms.round().min(u32::MAX as f64) as u32
+    }
 }
 
 fn first_str(v: &serde_json::Value, paths: &[&[&str]]) -> Option<String> {
@@ -474,5 +528,59 @@ mod tests {
         assert_eq!(s.peers.len(), 1);
         assert_eq!(s.peers[0].name, "ts1.netbird.cloud");
         assert_eq!(s.peers[0].latency_ms, Some(18));
+    }
+
+    #[test]
+    fn parses_latency_nanoseconds_from_integer() {
+        // NetBird 0.7x: latency as Go time.Duration in nanoseconds.
+        let raw = r#"{
+            "management": { "connected": true },
+            "netbirdIp": "100.64.0.1/16",
+            "peers": { "details": [
+                { "fqdn": "ts2", "netbirdIp": "100.64.0.2", "status": "Connected", "latency": 15000000 }
+            ]}
+        }"#;
+        let s = parse_status(raw).unwrap();
+        assert_eq!(s.peers[0].latency_ms, Some(15));
+    }
+
+    #[test]
+    fn nanos_to_ms_handles_sub_millisecond() {
+        assert_eq!(nanos_to_ms(500_000), 1); // 0.5 ms -> at least 1
+        assert_eq!(nanos_to_ms(0), 0);
+        assert_eq!(nanos_to_ms(18_000_000), 18);
+    }
+
+    #[test]
+    fn parses_peers_as_bare_array() {
+        let raw = r#"{
+            "management": { "connected": true },
+            "netbirdIp": "100.64.0.1",
+            "peers": [ { "fqdn": "ts2", "ip": "100.64.0.2", "status": "Connected" } ]
+        }"#;
+        let s = parse_status(raw).unwrap();
+        assert_eq!(s.peers.len(), 1);
+        assert_eq!(s.peers[0].name, "ts2");
+    }
+
+    #[test]
+    fn detects_needs_login() {
+        let raw = r#"{ "daemonStatus": "SessionExpired", "peers": { "details": [] } }"#;
+        let s = parse_status(raw).unwrap();
+        assert!(s.needs_login);
+        assert!(!s.management_connected);
+    }
+
+    #[test]
+    fn connected_with_zero_peers_but_local_ip() {
+        // Routing-only client: management up, has a WireGuard IP, no peers.
+        let raw = r#"{
+            "daemonStatus": "Connected",
+            "management": { "connected": true },
+            "netbirdIp": "100.64.0.5/16",
+            "peers": { "details": [] }
+        }"#;
+        let s = parse_status(raw).unwrap();
+        assert_eq!(s.state, ConnectionState::Connected);
     }
 }

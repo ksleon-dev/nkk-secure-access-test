@@ -17,6 +17,7 @@ import { de } from "../i18n/de";
 import { italicAccent, timeOfDayGreeting } from "../lib/greeting";
 import type { BrandingDto, QuickLaunchEntry } from "../types/branding";
 import { displayName, type CredentialProfileMeta } from "../types/credentials";
+import type { NetworkContext } from "../types/debug";
 import type { ConnectionState, StatusDto } from "../types/netbird";
 
 interface Props {
@@ -47,6 +48,59 @@ export function MainScreen({
   const isConnected = state === "Connected";
   const isBusy = busy || state === "Connecting";
 
+  // On-site detection: when the terminal server is reachable directly on the
+  // office LAN, RDP works without the VPN, so we enable the launch cards and
+  // tell the employee no VPN is needed. Re-checked whenever the VPN state moves.
+  const [netCtx, setNetCtx] = useState<NetworkContext | null>(null);
+  useEffect(() => {
+    let alive = true;
+    invoke<NetworkContext>("detect_network_context")
+      .then((r) => alive && setNetCtx(r))
+      .catch(() => alive && setNetCtx(null));
+    return () => {
+      alive = false;
+    };
+  }, [state]);
+  const onSiteActive = netCtx?.serverReachableDirect ?? false;
+  const canLaunch = isConnected || onSiteActive;
+
+  const [fixingDh, setFixingDh] = useState(false);
+  async function fixDualHoming() {
+    setFixingDh(true);
+    try {
+      const r = await invoke<{ applied: boolean; message: string }>(
+        "dualhoming_prefer_wired"
+      );
+      if (r.applied) toast.success(r.message);
+      else toast.info(r.message);
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : String(e));
+    } finally {
+      setFixingDh(false);
+    }
+  }
+
+  // Shift+<digit> hotkeys for quick-launch entries, including hidden ones
+  // (e.g. Shift+1 launches the hidden Terminalserver 1). Plain Shift only, so it
+  // never collides with the admin shortcut (Cmd/Ctrl+Shift+0), and never fires
+  // while typing in a field.
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (!e.shiftKey || e.ctrlKey || e.metaKey || e.altKey) return;
+      const t = e.target as HTMLElement | null;
+      if (t && (t.tagName === "INPUT" || t.tagName === "TEXTAREA")) return;
+      const m = e.code.match(/^Digit([1-9])$/);
+      if (!m) return;
+      const item = branding.quickLaunch.find((q) => q.hotkey === m[1]);
+      if (item) {
+        e.preventDefault();
+        onRequestLaunch(item);
+      }
+    };
+    window.addEventListener("keydown", onKey);
+    return () => window.removeEventListener("keydown", onKey);
+  }, [branding.quickLaunch, onRequestLaunch]);
+
   const greetingName = displayName(profile);
   const greeting = timeOfDayGreeting();
   const accent = italicAccent(state);
@@ -62,7 +116,7 @@ export function MainScreen({
     return "none";
   }, [state]);
 
-  // Live clock + date — updates every 30s
+  // Live clock + date - updates every 30s
   function formatDateTime() {
     const now = new Date();
     const time = now.toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" });
@@ -75,9 +129,11 @@ export function MainScreen({
     return () => clearInterval(id);
   }, []);
 
-  const launches = [...branding.quickLaunch].sort(
-    (a, b) => Number(!!b.default) - Number(!!a.default)
-  );
+  // Hidden entries (e.g. the outdated Terminalserver 1) are not shown as cards;
+  // they are only reachable via their Shift+<digit> hotkey.
+  const launches = [...branding.quickLaunch]
+    .filter((q) => !q.hidden)
+    .sort((a, b) => Number(!!b.default) - Number(!!a.default));
 
   async function toggle() {
     if (pendingToggle.current) return;
@@ -151,15 +207,15 @@ export function MainScreen({
         </button>
       </header>
 
-      {/* Centered hero — content sits directly on the cream background */}
+      {/* Centered hero - content sits directly on the cream background */}
       <main className="relative z-10 flex-1 flex flex-col items-center justify-center px-6 gap-3 py-2 text-center">
         <div className="fade-in-1 flex flex-col items-center">
           <div
             className="relative flex items-center justify-center cursor-pointer"
             style={{ width: 120, height: 120 }}
-            onClick={() => { /* logo tap — no action */ }}
+            onClick={() => { /* logo tap - no action */ }}
           >
-            {/* Professional particles — cherry red dots + subtle BIO labels */}
+            {/* Professional particles - cherry red dots + subtle BIO labels */}
             {isBusy && (
               <>
                 {[
@@ -237,27 +293,48 @@ export function MainScreen({
           </div>
         </div>
 
+        {netCtx?.dualHoming && (
+          <div className="fade-in-3 w-full rounded-lg px-3 py-2 bg-amber-500/15 text-amber-800 border border-amber-500/40 flex flex-col gap-1.5">
+            <div className="flex items-start gap-1.5 text-[10.5px] leading-snug">
+              <span aria-hidden>⚠</span>
+              <span>
+                Mehrere Netzwerke gleichzeitig aktiv. Das kann die Verbindung
+                langsam machen. Am besten nur ein Netz nutzen, LAN-Kabel
+                bevorzugen.
+              </span>
+            </div>
+            <button
+              onClick={fixDualHoming}
+              disabled={fixingDh}
+              className="self-start text-[10px] font-bold rounded-md px-2.5 py-1 bg-amber-600 text-white hover:bg-amber-700 transition disabled:opacity-50"
+            >
+              {fixingDh ? "wird gesetzt …" : "Kabel automatisch bevorzugen"}
+            </button>
+          </div>
+        )}
         <div className="fade-in-3 w-full flex flex-col gap-2 mt-1">
           {launches.map((item, i) => (
             <LaunchCard
               key={item.target}
               item={item}
               primary={i === 0}
-              disabled={!isConnected }
+              disabled={!canLaunch}
               onClick={() => onRequestLaunch(item)}
             />
           ))}
-          {!isConnected  && launches.length > 0 && (
+          {launches.length > 0 && !isConnected && (
             <div className="text-[11px] text-center mt-0.5 italic text-[color:var(--brand-fg)]/70">
               {status && !status.cli_available
-                ? "Kein VPN Client installiert — bitte Administrator kontaktieren."
+                ? "Kein VPN Client installiert, bitte Administrator kontaktieren."
+                : onSiteActive
+                ? "Du bist im Firmennetz, kein VPN nötig."
                 : "Erst VPN verbinden um Server zu öffnen."}
             </div>
           )}
         </div>
       </main>
 
-      {/* VPN Status Bar — clearly distinct between connected / disconnected */}
+      {/* VPN Status Bar - clearly distinct between connected / disconnected */}
       <div
         className={clsx(
           "fade-in-5 relative z-10 px-4 shrink-0 transition-colors duration-300",
@@ -279,7 +356,7 @@ export function MainScreen({
         )}
 
         <div className="relative flex items-center gap-2">
-          {/* Status dot — always same size to prevent layout jump */}
+          {/* Status dot - always same size to prevent layout jump */}
           <div
             className={clsx(
               "w-2.5 h-2.5 rounded-full shrink-0 transition-colors",
@@ -289,18 +366,20 @@ export function MainScreen({
             )}
           />
 
-          {/* Status text — fixed min-width so layout doesn't jump on state change */}
+          {/* Status text - fixed min-width so layout doesn't jump on state change */}
           <span className="flex-1 text-[12px] font-bold text-white truncate min-h-[18px]">
             {isConnected
-              ? `Verbunden${status?.local_ip ? ` — ${status.local_ip}` : ""}`
+              ? `Verbunden${status?.local_ip ? `: ${status.local_ip}` : ""}`
               : state === "Connecting"
               ? "Verbinde …"
               : state === "Error"
               ? "Verbindung gestört"
+              : onSiteActive
+              ? "Im Firmennetz (kein VPN nötig)"
               : "Nicht verbunden"}
           </span>
 
-          {/* Toggle button — single element, changes style not structure */}
+          {/* Toggle button - single element, changes style not structure */}
           <button
             onClick={toggle}
             disabled={isBusy || (!isConnected && status ? !status.cli_available : false)}
@@ -344,6 +423,10 @@ function LaunchCard({
   onClick: () => void | Promise<void>;
 }) {
   const [busy, setBusy] = useState(false);
+  const actionLabel =
+    item.type === "rdp"
+      ? `Mit ${item.label} verbinden`
+      : `${item.label} öffnen`;
 
   async function handle() {
     setBusy(true);
@@ -365,7 +448,7 @@ function LaunchCard({
           : "surface hover:border-[color:var(--brand-primary)]/50 hover:-translate-y-0.5",
         (disabled || busy) && "opacity-50 cursor-not-allowed hover:translate-y-0"
       )}
-      title={`${item.label} (${item.target})`}
+      title={actionLabel}
     >
       <div
         className={clsx(
@@ -387,11 +470,11 @@ function LaunchCard({
       <div className="flex-1 min-w-0">
         <div
           className={clsx(
-            "text-[15px] font-bold leading-tight truncate",
+            "text-[14.5px] font-bold leading-tight",
             primary ? "text-white" : ""
           )}
         >
-          {item.label}
+          {actionLabel}
         </div>
         {item.description && (
           <div

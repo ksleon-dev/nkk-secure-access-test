@@ -17,53 +17,70 @@ interface NewsItem {
   version?: string;
 }
 
-// Fallback news — used when remote fetch fails or no URL configured.
+// Fallback news - used when remote fetch fails or no URL configured.
+// Versions match CHANGELOG.md so nothing in the history looks skipped.
 const FALLBACK_NEWS: NewsItem[] = [
+  {
+    id: "v031",
+    date: "25. Juni 2026",
+    type: "update",
+    version: "0.3.1",
+    title: "Schlauer im Netz, bequemer im Alltag",
+    body: "Die App erkennt jetzt selbst, ob du im Büro oder unterwegs bist, und warnt, wenn zwei Netze gleichzeitig laufen und die Verbindung ausbremsen. In den Einstellungen stellst du ein, was im Remote Desktop mitgeht (Zwischenablage, Drucker, Kamera). Und du kannst dir eine Desktop-Verknüpfung zum Terminalserver anlegen.",
+  },
+  {
+    id: "v030",
+    date: "18. Juni 2026",
+    type: "update",
+    version: "0.3.0",
+    title: "Mehrere Bildschirme und bessere Diagnose",
+    body: "Remote Desktop nutzt jetzt alle deine Monitore, Text und Dateien lassen sich zuverlässig kopieren. Im Büro gehen die Server-Buttons sogar ohne VPN. Und wenn mal etwas klemmt, zeigt das Diagnose-Fenster einen Verlauf und erkennt WLAN-Anmeldeseiten.",
+  },
+  {
+    id: "v028",
+    date: "12. Mai 2026",
+    type: "update",
+    version: "0.2.8",
+    title: "Stabiler im Dauerbetrieb",
+    body: "Trennen bleibt jetzt auch nach Neustart getrennt, und die App verbindet sich nach dem Aufklappen des Laptops schneller wieder. Viele kleine Stabilitätsverbesserungen unter der Haube.",
+  },
+  {
+    id: "v027",
+    date: "2. Mai 2026",
+    type: "update",
+    version: "0.2.7",
+    title: "Updates kommen jetzt zuverlässig an",
+    body: "Die automatische Aktualisierung wurde repariert, neue Versionen landen jetzt sauber bei dir. Eine abgelaufene Sitzung wird klar als neu anmelden angezeigt, statt still zu hängen.",
+  },
   {
     id: "v026",
     date: "28. April 2026",
     type: "update",
     version: "0.2.6",
-    title: "Audit Fixes + sauberer Disconnect",
-    body: "Trennen Knopf trennt jetzt wirklich und der Auto-Reconnect respektiert das. Setup Key wird beim Update sauber übernommen. RDP läuft mit besserer Bildqualität. Installer räumt alte Per-User Installationen vor dem Upgrade auf.",
-  },
-  {
-    id: "v025",
-    date: "15. April 2026",
-    type: "update",
-    version: "0.2.5",
-    title: "Copy/Paste, Dateien, Stabilität",
-    body: "Copy/Paste und Dateien kopieren zwischen PC und Terminalserver funktioniert jetzt zuverlässig. VPN trennt sich sauber beim Beenden. Fehlende Windows Komponenten werden automatisch mitinstalliert. Viele Stabilitätsverbesserungen unter der Haube.",
-  },
-  {
-    id: "v020",
-    date: "11. April 2026",
-    type: "update",
-    version: "0.2.0",
-    title: "Schneller, stabiler, schöner",
-    body: "Terminalserver öffnet sich jetzt sofort. Auto Updater eingebaut. Speedtest + Smart Debug in der Diagnose. Logo Animation beim Verbinden. Verbindung läuft den ganzen Arbeitstag stabil durch.",
+    title: "Sauberes Trennen und Copy/Paste",
+    body: "Der Trennen-Knopf trennt jetzt wirklich, und der Auto-Reconnect respektiert das. Text und Dateien kopieren zwischen PC und Terminalserver klappt zuverlässig. Der Installer räumt alte Installationen vor dem Upgrade auf.",
   },
   {
     id: "welcome-1",
     date: "11. April 2026",
     type: "announcement",
     title: "Willkommen bei NKK Secure Access!",
-    body: "Wir haben euren alten VPN Client durch eine neue, sichere Lösung ersetzt. Alles was ihr tun müsst: Terminalserver Button klicken und arbeiten. Bei Fragen oder Problemen meldet euch bei support@ticket.kronsolutions.de — wir helfen sofort.",
+    body: "Wir haben euren alten VPN Client durch eine neue, sichere Lösung ersetzt. Alles was ihr tun müsst: Terminalserver-Button klicken und arbeiten. Bei Fragen oder Problemen meldet euch bei support@ticket.kronsolutions.de, wir helfen sofort.",
   },
   {
     id: "feedback-1",
     date: "11. April 2026",
     type: "feedback",
     title: "Euer Feedback ist Gold wert",
-    body: "Wir bauen diese App für euch. Wenn etwas nervt, fehlt oder besser sein könnte — sagt Bescheid. Jedes Feedback hilft uns, NKK Secure Access noch besser zu machen. Einfach im Diagnose Panel auf 'Diagnose kopieren' klicken und per Mail schicken.",
+    body: "Wir bauen diese App für euch. Wenn etwas nervt, fehlt oder besser sein könnte, sagt Bescheid. Einfach im Diagnose Panel auf 'Diagnose kopieren' klicken und per Mail schicken.",
   },
   {
     id: "v010",
-    date: "7. April 2026",
+    date: "9. April 2026",
     type: "update",
     version: "0.1.0",
     title: "Erster Release",
-    body: "Terminalserver 1 + 2 Quick Launch, automatische NetBird Installation, VPN Status Anzeige, Diagnose Panel für Support, Anmeldedaten Speicher im System Tresor.",
+    body: "Terminalserver-Schnellstart, automatische NetBird-Installation, VPN-Status-Anzeige, Diagnose-Panel für den Support, Anmeldedaten sicher im System-Tresor.",
   },
 ];
 
@@ -98,15 +115,36 @@ export function NewsScreen({ branding, onBack }: Props) {
   useEffect(() => {
     if (!branding.newsUrl) return;
     setLoading(true);
-    fetch(branding.newsUrl)
+    const validTypes = new Set(["announcement", "update", "feedback"]);
+    // Feature-detect: AbortSignal.timeout is unavailable on older WebViews
+    // (macOS < 13 / old WebKit). Evaluating it inline would throw synchronously
+    // before the promise chain exists, so .finally() never runs and the loading
+    // spinner would hang forever. Build the init object defensively.
+    const signal =
+      typeof AbortSignal !== "undefined" && "timeout" in AbortSignal
+        ? AbortSignal.timeout(8000)
+        : undefined;
+    fetch(branding.newsUrl, signal ? { signal } : undefined)
       .then((r) => r.json())
       .then((data: unknown) => {
         if (Array.isArray(data) && data.length > 0) {
-          const valid = data.filter((d: Record<string, unknown>) => d && d.id && d.type && d.body);
-          if (valid.length > 0) setNews(valid as NewsItem[]);
+          const items = data.filter((d): d is NewsItem => {
+            if (!d || typeof d !== "object") return false;
+            const o = d as Record<string, unknown>;
+            return (
+              typeof o.id === "string" &&
+              typeof o.type === "string" &&
+              validTypes.has(o.type) && // guards against typeConfig[type] crash
+              typeof o.body === "string"
+            );
+          });
+          if (items.length > 0) setNews(items);
         }
       })
-      .catch(() => {}) // silent fallback to hardcoded
+      .catch((e) => {
+        // Fall back to bundled news; log so a broken feed is visible.
+        console.warn("News laden fehlgeschlagen:", e);
+      })
       .finally(() => setLoading(false));
   }, [branding.newsUrl]);
 
@@ -133,7 +171,7 @@ export function NewsScreen({ branding, onBack }: Props) {
             </div>
           )}
           {news.map((item, i) => {
-            const cfg = typeConfig[item.type];
+            const cfg = typeConfig[item.type] ?? typeConfig.update;
             const Icon = cfg.icon;
             return (
               <article
@@ -177,7 +215,7 @@ export function NewsScreen({ branding, onBack }: Props) {
 
         <div className="mt-4 text-center">
           <p className="text-[10px] text-[color:var(--brand-fg)]/40 italic">
-            Mehr Updates folgen — stay tuned.
+            Mehr Updates folgen - stay tuned.
           </p>
         </div>
       </div>

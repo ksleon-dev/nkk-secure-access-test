@@ -4,12 +4,13 @@ import type { UpdateState } from "../hooks/useUpdater";
 
 interface Props {
   state: UpdateState;
+  footer: string;
   onInstall: () => void;
   onRestart: () => void;
   onDismiss: () => void;
 }
 
-export function UpdateBanner({ state, onInstall, onRestart, onDismiss }: Props) {
+export function UpdateBanner({ state, footer, onInstall, onRestart, onDismiss }: Props) {
   if (!state.available) return null;
 
   return (
@@ -78,11 +79,18 @@ export function UpdateBanner({ state, onInstall, onRestart, onDismiss }: Props) 
             {state.ready
               ? `v${state.version} ist installiert und wartet.`
               : state.downloading
-              ? `v${state.version} — ${state.progress}% heruntergeladen`
+              ? `v${state.version}, ${state.progress}% heruntergeladen`
               : state.error
               ? state.error
-              : `v${state.version} steht bereit — schneller, stabiler, besser.`}
+              : `v${state.version} steht bereit.`}
           </div>
+
+          {/* Changelog / "Was ist neu" for the pending version */}
+          {state.notes && !state.downloading && !state.ready && !state.error && (
+            <div className="mt-3 max-h-28 overflow-y-auto text-left text-[12px] leading-snug text-white/85 bg-white/10 rounded-xl px-3 py-2 whitespace-pre-wrap">
+              {state.notes}
+            </div>
+          )}
 
           {/* Progress bar for download */}
           {state.downloading && (
@@ -135,7 +143,7 @@ export function UpdateBanner({ state, onInstall, onRestart, onDismiss }: Props) 
 
         {/* Footer */}
         <div className="text-center text-[9px] text-white/40 pb-3 font-semibold uppercase tracking-widest">
-          Powered by KronSolutions
+          {footer}
         </div>
       </div>
     </div>

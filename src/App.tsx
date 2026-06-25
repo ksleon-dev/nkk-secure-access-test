@@ -1,9 +1,11 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { ErrorBoundary } from "./components/ErrorBoundary";
 import { ToastProvider, useToast } from "./components/Toast";
 import { UpdateBanner } from "./components/UpdateBanner";
 import { useUpdater } from "./hooks/useUpdater";
+import { AdminScreen } from "./screens/AdminScreen";
 import { CredentialsModal } from "./screens/CredentialsModal";
 import { DiagnosePanel } from "./screens/DiagnosePanel";
 import { EnrollmentScreen } from "./screens/EnrollmentScreen";
@@ -15,7 +17,7 @@ import type { BrandingDto, QuickLaunchEntry } from "./types/branding";
 import type { CredentialProfileMeta } from "./types/credentials";
 import type { StatusDto } from "./types/netbird";
 
-type Screen = "setup" | "enrollment" | "main" | "settings" | "news" | "diagnose";
+type Screen = "setup" | "enrollment" | "main" | "settings" | "news" | "diagnose" | "admin";
 
 interface SetupCheckResult {
   netbird_installed: boolean;
@@ -29,6 +31,11 @@ function applyTheme(b: BrandingDto) {
   root.style.setProperty("--brand-primary", b.theme.primary);
   root.style.setProperty("--brand-primary-hover", b.theme.primaryHover);
   root.style.setProperty("--brand-accent", b.theme.accent);
+  // Background / foreground are also brandable; without this a second tenant
+  // keeps the NKK cream palette from index.css. Required theme fields (the
+  // branding load fails earlier if they are absent), so set them directly.
+  root.style.setProperty("--brand-bg", b.theme.background);
+  root.style.setProperty("--brand-fg", b.theme.foreground);
   document.title = b.product.name;
 }
 
@@ -36,7 +43,7 @@ function AppInner() {
   const [branding, setBranding] = useState<BrandingDto | null>(null);
   const [screen, setScreen] = useState<Screen>("main");
   const [status, setStatus] = useState<StatusDto | null>(null);
-  // diagnoseOpen state removed — diagnose is now a full screen
+  // diagnoseOpen state removed - diagnose is now a full screen
   const [bootstrapping, setBootstrapping] = useState(true);
   const [bootError, setBootError] = useState<string | null>(null);
   const [profiles, setProfiles] = useState<CredentialProfileMeta[]>([]);
@@ -133,7 +140,7 @@ function AppInner() {
         setBranding(b);
         applyTheme(b);
 
-        // Check if NetBird is installed — if not, show setup screen
+        // Check if NetBird is installed - if not, show setup screen
         const setupCheck = await invoke<SetupCheckResult>("check_netbird_setup").catch(() => null);
         if (!mounted) return;
 
@@ -202,7 +209,12 @@ function AppInner() {
         const u7 = await listen("tray-open-settings", () => {
           setScreen("settings");
         });
-        unlisteners = [u1, u2, u3, u4, u5, u6, u7];
+        const u8 = await listen("netbird-needs-login", () => {
+          toast.error(
+            "Sitzung abgelaufen. Bitte neu anmelden über Einstellungen, Neu einrichten."
+          );
+        });
+        unlisteners = [u1, u2, u3, u4, u5, u6, u7, u8];
       } catch (e: unknown) {
         if (mounted) setBootError(e instanceof Error ? e.message : String(e));
       } finally {
@@ -221,6 +233,20 @@ function AppInner() {
       });
     };
   }, [refreshProfiles, requestLaunch, toast]);
+
+  // Hidden KronSolutions service menu - Ctrl/Cmd+Shift+0. In-app keydown in the
+  // capture phase so it is not swallowed by other handlers. Not discoverable to
+  // employees; the password gate lives in AdminScreen (verified in Rust).
+  useEffect(() => {
+    const onKey = (e: KeyboardEvent) => {
+      if (e.shiftKey && (e.ctrlKey || e.metaKey) && e.code === "Digit0") {
+        e.preventDefault();
+        setScreen("admin");
+      }
+    };
+    window.addEventListener("keydown", onKey, true);
+    return () => window.removeEventListener("keydown", onKey, true);
+  }, []);
 
   if (bootstrapping || !branding) {
     return (
@@ -255,10 +281,12 @@ function AppInner() {
     <div className="h-full flex flex-col relative">
       <UpdateBanner
         state={updater}
+        footer={branding.vendor.footer}
         onInstall={updater.install}
         onRestart={updater.restart}
         onDismiss={updater.dismiss}
       />
+      <div key={screen} className="screen-anim flex-1 flex flex-col min-h-0">
       {screen === "setup" && (
         <SetupScreen
           branding={branding}
@@ -311,9 +339,14 @@ function AppInner() {
           onClose={() => setScreen("main")}
         />
       )}
+      {screen === "admin" && (
+        <AdminScreen branding={branding} onClose={() => setScreen("main")} />
+      )}
+      </div>
       {credModalOpen && (
         <CredentialsModal
           initial={editingProfile}
+          defaultDomain={branding.netbird.defaultDomain}
           onSaved={handleProfileSaved}
           onClose={handleProfileModalClose}
         />
@@ -324,8 +357,10 @@ function AppInner() {
 
 export default function App() {
   return (
-    <ToastProvider>
-      <AppInner />
-    </ToastProvider>
+    <ErrorBoundary>
+      <ToastProvider>
+        <AppInner />
+      </ToastProvider>
+    </ErrorBoundary>
   );
 }

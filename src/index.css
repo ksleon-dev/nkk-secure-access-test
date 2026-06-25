@@ -2,7 +2,7 @@
 @tailwind components;
 @tailwind utilities;
 
-/* Brand colors are FIXED — no dark mode override. NKK is always
+/* Brand colors are FIXED - no dark mode override. NKK is always
    cream + tan + cherry red regardless of the operating system theme. */
 :root {
   color-scheme: light;
@@ -27,13 +27,14 @@ body,
   font-family:
     -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial,
     sans-serif;
-  background: var(--brand-bg);
+  background:
+    radial-gradient(135% 110% at 50% -8%, #fbf4e3 0%, var(--brand-bg) 52%, #efe1c4 100%);
   color: var(--brand-fg);
   overflow: hidden;
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
 
-  /* Native app feel — no text selection / drag on UI chrome */
+  /* Native app feel - no text selection / drag on UI chrome */
   user-select: none;
   -webkit-user-select: none;
   -webkit-user-drag: none;
@@ -65,7 +66,7 @@ button:disabled {
   cursor: not-allowed;
 }
 
-/* Keyboard focus ring — visible only when navigating with Tab, not on click */
+/* Keyboard focus ring - visible only when navigating with Tab, not on click */
 :focus-visible {
   outline: 2px solid var(--brand-primary);
   outline-offset: 2px;
@@ -116,21 +117,30 @@ button:disabled {
   .surface {
     background: var(--brand-surface);
     border: 1px solid var(--brand-border);
+    box-shadow:
+      0 3px 12px -7px rgba(80, 50, 20, 0.22),
+      inset 0 1px 0 rgba(255, 252, 244, 0.55);
+    transition:
+      border-color 150ms ease,
+      box-shadow 200ms ease,
+      transform 200ms ease;
   }
   .text-muted {
     color: var(--brand-muted);
   }
   .btn-primary {
-    background: var(--brand-primary);
+    background: linear-gradient(180deg, #bf2530, var(--brand-primary));
     color: white;
     transition:
-      background-color 150ms ease,
-      transform 50ms ease,
-      box-shadow 150ms ease;
+      transform 60ms ease,
+      box-shadow 160ms ease,
+      filter 160ms ease;
     box-shadow: var(--brand-shadow);
   }
   .btn-primary:hover:not(:disabled) {
-    background: var(--brand-primary-hover);
+    filter: brightness(0.96);
+    transform: translateY(-1px);
+    box-shadow: 0 18px 38px -14px rgba(140, 20, 31, 0.6);
   }
   .btn-primary:active:not(:disabled) {
     transform: scale(0.98);
@@ -180,6 +190,20 @@ button:disabled {
 .brand-loading-bar {
   animation: brand-bar 1.8s ease-in-out infinite;
   transform-origin: left;
+}
+
+/* One consistent entrance for every screen, so navigating feels like one
+   calm motion instead of each section popping in on its own timing. */
+@keyframes screen-in {
+  from { opacity: 0; transform: translateY(8px); }
+  to { opacity: 1; transform: translateY(0); }
+}
+.screen-anim {
+  animation: screen-in 280ms cubic-bezier(0.22, 0.61, 0.36, 1) both;
+  will-change: opacity, transform;
+}
+@media (prefers-reduced-motion: reduce) {
+  .screen-anim { animation: none; }
 }
 
 @keyframes vpn-connect-pulse {
@@ -253,7 +277,7 @@ button:disabled {
   animation: dot-green-glow 2s ease-in-out infinite;
 }
 
-/* Logo particles — burst outward from logo edges in all directions */
+/* Logo particles - burst outward from logo edges in all directions */
 @keyframes particle-burst {
   0% {
     transform: rotate(var(--angle)) translateX(0px) scale(0.5);

@@ -1,5 +1,5 @@
 ; ===========================================================================
-;  NKK Secure Access — Tauri NSIS hooks
+;  NKK Secure Access - Tauri NSIS hooks
 ;  KronSolutions GmbH · IT Partner für Naturkost Kontor Bremen GmbH
 ; ===========================================================================
 ;
@@ -19,7 +19,7 @@
 ;      9. Resume ESET Network Protection
 ;
 ;    PRE-UNINSTALL:
-;      10. netbird down — close the active tunnel
+;      10. netbird down - close the active tunnel
 ;
 ;    POST-UNINSTALL:
 ;      11. Stop and delete netbird service
@@ -42,8 +42,21 @@
 Var NkkSetupKey
 Var NkkNetbirdInstaller
 Var NkkExitCode
+; Collects non-fatal problems with an ID each; shown as one photographable
+; MessageBox at the end so KronSolutions sees instantly what went wrong.
+Var NkkErrors
 
 !macro NSIS_HOOK_PREINSTALL
+  StrCpy $NkkErrors ""
+
+  ; --- Require admin rights (perMachine). Clearest message if UAC was declined.
+  UserInfo::GetAccountType
+  Pop $0
+  ${If} $0 != "Admin"
+    MessageBox MB_ICONSTOP|MB_OK "Bitte den Installer mit Administratorrechten ausfuehren.$\r$\nRechtsklick auf die Datei, dann 'Als Administrator ausfuehren'.$\r$\n$\r$\nCode: ELEV$\r$\nSupport: support@ticket.kronsolutions.de"
+    Abort
+  ${EndIf}
+
   ; --- Kill any running instance first ----------------------------------------
   nsExec::ExecToLog 'taskkill /f /im "NKK Secure Access.exe"'
   Pop $NkkExitCode
@@ -52,7 +65,7 @@ Var NkkExitCode
   ; Without this, old versions in $LOCALAPPDATA stay around forever and the
   ; Start Menu shortcut / autostart keeps launching the OLD version even after
   ; the new per-machine version is installed.
-  ; IMPORTANT: Do NOT run the old uninstaller — it would delete the setup key
+  ; IMPORTANT: Do NOT run the old uninstaller - it would delete the setup key
   ; from Windows Credential Manager. Only remove the files and registry entries.
   DetailPrint "NKK: Raeume alte per-User Installation auf ..."
   RMDir /r "$LOCALAPPDATA\NKK Secure Access"
@@ -85,7 +98,7 @@ Var NkkExitCode
   ${EndIf}
 
   ; NOTE: Baked-in setup.conf is read in POSTINSTALL (after file extraction),
-  ; not here — $INSTDIR\resources\ does not exist yet during PREINSTALL.
+  ; not here - $INSTDIR\resources\ does not exist yet during PREINSTALL.
 
   ; Strip trailing whitespace / CR / LF / tabs from the key
   ${If} $NkkSetupKey != ""
@@ -97,7 +110,7 @@ Var NkkExitCode
   ; --- Add Defender exclusions for NetBird directories ----------------------
   ; Wintun driver registration triggers Defender real-time scanning which can
   ; block the NetBird MSI from finishing. Adding the install path as exclusion
-  ; before triggering the install prevents that. Best effort — silent on fail.
+  ; before triggering the install prevents that. Best effort - silent on fail.
   ; --- OS Version Check with detailed error message ----------------------------
   ; Show exact OS version so the employee can just screenshot the error.
   ${IfNot} ${AtLeastWin10}
@@ -110,15 +123,15 @@ Var NkkExitCode
   ${EndIf}
 
   DetailPrint "NKK: Defender Exclusion fuer NetBird ..."
-  nsExec::ExecToLog 'powershell -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -Command "try { Add-MpPreference -ExclusionPath $\"$PROGRAMFILES64\NetBird$\" -ErrorAction SilentlyContinue; Add-MpPreference -ExclusionProcess $\"netbird.exe$\" -ErrorAction SilentlyContinue; Add-MpPreference -ExclusionProcess $\"netbird-ui.exe$\" -ErrorAction SilentlyContinue } catch {}"'
+  nsExec::ExecToLog 'powershell -NoProfile -NonInteractive -inputformat none -ExecutionPolicy Bypass -WindowStyle Hidden -Command "try { Add-MpPreference -ExclusionPath $\"$PROGRAMFILES64\NetBird$\" -ErrorAction SilentlyContinue; Add-MpPreference -ExclusionProcess $\"netbird.exe$\" -ErrorAction SilentlyContinue; Add-MpPreference -ExclusionProcess $\"netbird-ui.exe$\" -ErrorAction SilentlyContinue } catch {}"'
   Pop $NkkExitCode
 
   ; --- Pause ESET (best effort, two strategies) -----------------------------
-  ; Strategy 1: official ESET ecmd CLI — works in managed environments
+  ; Strategy 1: official ESET ecmd CLI - works in managed environments
   ;             where the service can't be stopped manually.
-  ; Strategy 2: Stop-Service ekrn — fallback for unmanaged installs.
+  ; Strategy 2: Stop-Service ekrn - fallback for unmanaged installs.
   DetailPrint "NKK: Pausiere ESET Network Protection (falls installiert) ..."
-  nsExec::ExecToLog 'powershell -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -Command "try { $ecmd = Get-ChildItem -Path $\"$PROGRAMFILES\ESET$\" -Recurse -Filter $\"ecmd.exe$\" -ErrorAction SilentlyContinue | Select-Object -First 1; if ($ecmd) { & $ecmd.FullName -pauseprotection 5 } else { $svc = Get-Service -Name $\"ekrn$\" -ErrorAction SilentlyContinue; if ($svc) { Stop-Service -Name $\"ekrn$\" -Force -ErrorAction SilentlyContinue } } } catch {}"'
+  nsExec::ExecToLog 'powershell -NoProfile -NonInteractive -inputformat none -ExecutionPolicy Bypass -WindowStyle Hidden -Command "try { $ecmd = Get-ChildItem -Path $\"$PROGRAMFILES\ESET$\" -Recurse -Filter $\"ecmd.exe$\" -ErrorAction SilentlyContinue | Select-Object -First 1; if ($ecmd) { & $ecmd.FullName -pauseprotection 5 } else { $svc = Get-Service -Name $\"ekrn$\" -ErrorAction SilentlyContinue; if ($svc) { Stop-Service -Name $\"ekrn$\" -Force -ErrorAction SilentlyContinue } } } catch {}"'
   Pop $NkkExitCode
 !macroend
 
@@ -126,39 +139,80 @@ Var NkkExitCode
   StrCpy $NkkNetbirdInstaller "$INSTDIR\resources\bin\netbird-installer.exe"
 
   ; --- Install VC++ Runtime if missing (VCRUNTIME140.dll) -------------------
-  ; Bundled in the installer — no internet needed at customer site.
+  ; Bundled in the installer - no internet needed at customer site.
   IfFileExists "$SYSDIR\vcruntime140.dll" nkk_vcpp_ok nkk_vcpp_install
 nkk_vcpp_install:
-  DetailPrint "NKK: Visual C++ Runtime fehlt — installiere aus Bundle ..."
+  DetailPrint "NKK: Visual C++ Runtime fehlt - installiere aus Bundle ..."
   IfFileExists "$INSTDIR\resources\bin\vc_redist.x64.exe" nkk_vcpp_run nkk_vcpp_missing
 nkk_vcpp_run:
+  ; Guard against a 0-byte placeholder bundle (would just error out).
+  ClearErrors
+  FileOpen $2 "$INSTDIR\resources\bin\vc_redist.x64.exe" r
+  ${IfNot} ${Errors}
+    FileSeek $2 0 END $3
+    FileClose $2
+  ${Else}
+    StrCpy $3 0
+  ${EndIf}
+  ${If} $3 < 100000
+    DetailPrint "NKK: vc_redist im Bundle leer/zu klein - ueberspringe."
+    StrCpy $NkkErrors "$NkkErrors[VCPP] vc_redist im Bundle fehlerhaft (leer)$\r$\n"
+    Goto nkk_vcpp_ok
+  ${EndIf}
   nsExec::ExecToLog '"$INSTDIR\resources\bin\vc_redist.x64.exe" /install /quiet /norestart'
   Pop $NkkExitCode
-  DetailPrint "NKK: VC++ Runtime Exit Code: $NkkExitCode"
+  ; 0 = OK, 1638 = newer version already present, 3010 = OK but reboot needed.
+  ${If} $NkkExitCode == 0
+  ${OrIf} $NkkExitCode == 1638
+  ${OrIf} $NkkExitCode == 3010
+    DetailPrint "NKK: VC++ Runtime OK (Exit $NkkExitCode)."
+    ${If} $NkkExitCode == 3010
+      SetRebootFlag true
+    ${EndIf}
+  ${Else}
+    DetailPrint "NKK: VC++ Runtime Exit $NkkExitCode."
+    StrCpy $NkkErrors "$NkkErrors[VCPP] VC++ Runtime Exit $NkkExitCode$\r$\n"
+  ${EndIf}
   Goto nkk_vcpp_ok
 nkk_vcpp_missing:
-  DetailPrint "NKK: WARNUNG — vc_redist.x64.exe nicht im Bundle gefunden."
+  DetailPrint "NKK: WARNUNG - vc_redist.x64.exe nicht im Bundle gefunden."
+  StrCpy $NkkErrors "$NkkErrors[VCPP] vc_redist nicht im Bundle$\r$\n"
 nkk_vcpp_ok:
 
   ; --- Install wintun.dll if missing ----------------------------------------
-  ; Bundled in the installer — no internet needed at customer site.
+  ; Bundled in the installer - no internet needed at customer site.
   IfFileExists "$SYSDIR\wintun.dll" nkk_wintun_ok nkk_wintun_install
 nkk_wintun_install:
-  DetailPrint "NKK: wintun.dll fehlt — kopiere aus Bundle ..."
+  DetailPrint "NKK: wintun.dll fehlt - kopiere aus Bundle ..."
   IfFileExists "$INSTDIR\resources\bin\wintun.dll" nkk_wintun_copy nkk_wintun_missing
 nkk_wintun_copy:
+  ; Guard: never drop a 0-byte placeholder into System32 - an empty wintun.dll
+  ; is unloadable and would silently break the WireGuard adapter (no tunnel).
+  ClearErrors
+  FileOpen $2 "$INSTDIR\resources\bin\wintun.dll" r
+  ${IfNot} ${Errors}
+    FileSeek $2 0 END $3
+    FileClose $2
+  ${Else}
+    StrCpy $3 0
+  ${EndIf}
+  ${If} $3 < 50000
+    DetailPrint "NKK: wintun.dll im Bundle leer/zu klein - kopiere NICHT."
+    StrCpy $NkkErrors "$NkkErrors[WTUN] wintun.dll im Bundle fehlerhaft (leer)$\r$\n"
+    Goto nkk_wintun_ok
+  ${EndIf}
   CopyFiles /SILENT "$INSTDIR\resources\bin\wintun.dll" "$SYSDIR\wintun.dll"
   DetailPrint "NKK: wintun.dll nach System32 kopiert."
   Goto nkk_wintun_ok
 nkk_wintun_missing:
-  DetailPrint "NKK: WARNUNG — wintun.dll nicht im Bundle gefunden."
+  DetailPrint "NKK: WARNUNG - wintun.dll nicht im Bundle gefunden."
 nkk_wintun_ok:
 
   ; --- Detect existing NetBird install --------------------------------------
   IfFileExists "${NKK_NETBIRD_BIN}" nkk_netbird_already nkk_netbird_install
 
 nkk_netbird_already:
-  DetailPrint "NKK: NetBird ist bereits installiert — ueberspringe MSI."
+  DetailPrint "NKK: NetBird ist bereits installiert - ueberspringe MSI."
   Goto nkk_netbird_done
 
 nkk_netbird_install:
@@ -169,7 +223,7 @@ nkk_netbird_run:
   nsExec::ExecToLog '"$NkkNetbirdInstaller" /S'
   Pop $NkkExitCode
   ${If} $NkkExitCode != 0
-    DetailPrint "NKK: NetBird Installer Exit Code $NkkExitCode — versuche Retry ..."
+    DetailPrint "NKK: NetBird Installer Exit Code $NkkExitCode - versuche Retry ..."
     Sleep 2000
     nsExec::ExecToLog '"$NkkNetbirdInstaller" /S'
     Pop $NkkExitCode
@@ -178,11 +232,13 @@ nkk_netbird_run:
     DetailPrint "NKK: NetBird Client erfolgreich installiert."
   ${Else}
     DetailPrint "NKK: NetBird Installer Exit Code $NkkExitCode (nicht blockierend)."
+    StrCpy $NkkErrors "$NkkErrors[NB-INST] NetBird Installation Exit $NkkExitCode$\r$\n"
   ${EndIf}
   Goto nkk_netbird_done
 
 nkk_netbird_missing:
-  DetailPrint "NKK: WARNUNG — kein NetBird Bundle gefunden, bitte separat installieren!"
+  DetailPrint "NKK: WARNUNG - kein NetBird Bundle gefunden, bitte separat installieren!"
+  StrCpy $NkkErrors "$NkkErrors[NB-BUNDLE] NetBird Bundle fehlt im Installer$\r$\n"
   Goto nkk_netbird_done
 
 nkk_netbird_done:
@@ -191,14 +247,17 @@ nkk_netbird_done:
   DetailPrint "NKK: Warte auf NetBird Service ..."
   StrCpy $0 0
 nkk_svc_wait:
-  nsExec::ExecToStack 'sc.exe query netbird'
+  ; nsExec::Exec pushes only the exit code (one Pop). sc query returns 0 when
+  ; the service exists. (ExecToStack would push code + output = two items.)
+  nsExec::Exec 'sc.exe query netbird'
   Pop $1
   ${If} $1 == 0
     Goto nkk_svc_ready
   ${EndIf}
   IntOp $0 $0 + 1
   ${If} $0 > 10
-    DetailPrint "NKK: NetBird Service nicht gefunden nach 30s — fahre trotzdem fort."
+    DetailPrint "NKK: NetBird Service nicht gefunden nach 30s - fahre trotzdem fort."
+    StrCpy $NkkErrors "$NkkErrors[NB-SVC] NetBird Dienst nach 30s nicht gefunden$\r$\n"
     Goto nkk_svc_ready
   ${EndIf}
   Sleep 3000
@@ -241,24 +300,72 @@ nkk_svc_ready:
       DetailPrint "NKK: NetBird Enrollment erfolgreich."
     ${Else}
       DetailPrint "NKK: NetBird Enrollment Exit Code $NkkExitCode (nicht blockierend)."
+      StrCpy $NkkErrors "$NkkErrors[NB-UP] NetBird Enrollment Exit $NkkExitCode$\r$\n"
     ${EndIf}
   ${Else}
-    DetailPrint "NKK: Kein /SETUPKEY= uebergeben — User aktiviert spaeter aus der App."
+    DetailPrint "NKK: Kein /SETUPKEY= uebergeben - User aktiviert spaeter aus der App."
   ${EndIf}
+
+  ; --- Hide the bundled NetBird UI: employees use the NKK app, not NetBird ----
+  ; The NetBird SERVICE (the tunnel) stays. Only NetBird's own Start Menu /
+  ; Desktop shortcuts and autostart are removed, so no NetBird icon appears and
+  ; the NetBird tray UI does not launch alongside ours.
+  DetailPrint "NKK: Entferne NetBird UI Verknuepfungen (Mitarbeiter nutzen NKK)."
+  RMDir /r "$SMPROGRAMS\NetBird"
+  RMDir /r "$SMPROGRAMS\Netbird"
+  Delete "$DESKTOP\NetBird.lnk"
+  Delete "$DESKTOP\Netbird.lnk"
+  Delete "$SMSTARTUP\NetBird.lnk"
+  Delete "$SMSTARTUP\Netbird.lnk"
+  DeleteRegValue HKCU "Software\Microsoft\Windows\CurrentVersion\Run" "Netbird"
+  DeleteRegValue HKCU "Software\Microsoft\Windows\CurrentVersion\Run" "NetBird"
+  DeleteRegValue HKLM "Software\Microsoft\Windows\CurrentVersion\Run" "Netbird"
+  DeleteRegValue HKLM "Software\Microsoft\Windows\CurrentVersion\Run" "NetBird"
+  nsExec::Exec 'taskkill /f /im netbird-ui.exe'
+  Pop $NkkExitCode
 
   ; --- Resume ESET ----------------------------------------------------------
   ; ecmd -pauseprotection auto-resumes after the timeout, but we explicitly
   ; resume too in case the install finished faster than the pause window.
   DetailPrint "NKK: Reaktiviere ESET Network Protection ..."
-  nsExec::ExecToLog 'powershell -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -Command "try { $ecmd = Get-ChildItem -Path $\"$PROGRAMFILES\ESET$\" -Recurse -Filter $\"ecmd.exe$\" -ErrorAction SilentlyContinue | Select-Object -First 1; if ($ecmd) { & $ecmd.FullName -resumeprotection } else { $svc = Get-Service -Name $\"ekrn$\" -ErrorAction SilentlyContinue; if ($svc -and $svc.Status -ne $\"Running$\") { Start-Service -Name $\"ekrn$\" -ErrorAction SilentlyContinue } } } catch {}"'
+  nsExec::ExecToLog 'powershell -NoProfile -NonInteractive -inputformat none -ExecutionPolicy Bypass -WindowStyle Hidden -Command "try { $ecmd = Get-ChildItem -Path $\"$PROGRAMFILES\ESET$\" -Recurse -Filter $\"ecmd.exe$\" -ErrorAction SilentlyContinue | Select-Object -First 1; if ($ecmd) { & $ecmd.FullName -resumeprotection } else { $svc = Get-Service -Name $\"ekrn$\" -ErrorAction SilentlyContinue; if ($svc -and $svc.Status -ne $\"Running$\") { Start-Service -Name $\"ekrn$\" -ErrorAction SilentlyContinue } } } catch {}"'
   Pop $NkkExitCode
+
+  ; --- Verify WebView2 runtime (the app cannot render without it) -----------
+  ; Check both the per-machine and per-user EdgeUpdate client keys.
+  ReadRegStr $0 HKLM "SOFTWARE\WOW6432Node\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}" "pv"
+  ${If} $0 == ""
+    ReadRegStr $0 HKCU "Software\Microsoft\EdgeUpdate\Clients\{F3017226-FE2A-4295-8BDF-00C3A9A7E4C5}" "pv"
+  ${EndIf}
+  ${If} $0 == ""
+  ${OrIf} $0 == "0.0.0.0"
+    DetailPrint "NKK: WebView2 Runtime fehlt."
+    StrCpy $NkkErrors "$NkkErrors[WV2] WebView2 Runtime fehlt (App startet nicht)$\r$\n"
+  ${Else}
+    DetailPrint "NKK: WebView2 Runtime OK ($0)."
+  ${EndIf}
 
   DetailPrint ""
   DetailPrint "================================================================"
-  DetailPrint "  NKK Secure Access — Setup abgeschlossen."
+  DetailPrint "  NKK Secure Access - Setup abgeschlossen."
   DetailPrint "  Logs: ${NKK_LOG_DIR}"
   DetailPrint "  Support: support@ticket.kronsolutions.de"
   DetailPrint "================================================================"
+
+  ; --- Desktop-Verknuepfung zur App, damit Mitarbeiter sie direkt finden ----
+  CreateShortcut "$DESKTOP\${PRODUCTNAME}.lnk" "$INSTDIR\${MAINBINARYNAME}.exe"
+
+  ; --- One photographable summary if anything went wrong --------------------
+  ; (NSIS standard build has no LogSet, so we mirror to a file + a MessageBox.)
+  ${If} $NkkErrors != ""
+    ClearErrors
+    FileOpen $9 "${NKK_LOG_DIR}\install-status.log" w
+    ${IfNot} ${Errors}
+      FileWrite $9 "NKK Secure Access Setup Hinweise$\r$\n$NkkErrors"
+      FileClose $9
+    ${EndIf}
+    MessageBox MB_ICONEXCLAMATION|MB_OK "NKK Secure Access wurde installiert, aber mit Hinweisen:$\r$\n$\r$\n$NkkErrors$\r$\nLog: ${NKK_LOG_DIR}$\r$\n$\r$\nBitte ein Foto dieser Meldung an support@ticket.kronsolutions.de"
+  ${EndIf}
 !macroend
 
 !macro NSIS_HOOK_PREUNINSTALL
@@ -295,7 +402,7 @@ nkk_unb_skip:
 
   ; Remove the Defender exclusions we added during install
   DetailPrint "NKK: Entferne Defender Exclusions ..."
-  nsExec::ExecToLog 'powershell -NoProfile -ExecutionPolicy Bypass -WindowStyle Hidden -Command "try { Remove-MpPreference -ExclusionPath $\"$PROGRAMFILES64\NetBird$\" -ErrorAction SilentlyContinue; Remove-MpPreference -ExclusionProcess $\"netbird.exe$\" -ErrorAction SilentlyContinue; Remove-MpPreference -ExclusionProcess $\"netbird-ui.exe$\" -ErrorAction SilentlyContinue } catch {}"'
+  nsExec::ExecToLog 'powershell -NoProfile -NonInteractive -inputformat none -ExecutionPolicy Bypass -WindowStyle Hidden -Command "try { Remove-MpPreference -ExclusionPath $\"$PROGRAMFILES64\NetBird$\" -ErrorAction SilentlyContinue; Remove-MpPreference -ExclusionProcess $\"netbird.exe$\" -ErrorAction SilentlyContinue; Remove-MpPreference -ExclusionProcess $\"netbird-ui.exe$\" -ErrorAction SilentlyContinue } catch {}"'
   Pop $NkkExitCode
 
   ; Remove NKK app data (enrolled marker, logs, cached data)
@@ -307,6 +414,7 @@ nkk_unb_skip:
   DetailPrint "NKK: Entferne Startmenu Eintraege ..."
   RMDir /r "$SMPROGRAMS\KronSolutions"
   RMDir /r "$SMPROGRAMS\NKK Secure Access"
+  Delete "$DESKTOP\${PRODUCTNAME}.lnk"
 
   ; Remove old per-user install leftovers
   RMDir /r "$LOCALAPPDATA\NKK Secure Access"

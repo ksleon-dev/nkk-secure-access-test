@@ -4,7 +4,8 @@
     "shortName": "NKK",
     "tagline": "Dein Bio-Großhandel",
     "logoText": ["Naturkost", "Kontor", "BREMEN"],
-    "version": "0.2.6"
+    "networkName": "NKK Netz",
+    "version": "0.3.1"
   },
   "vendor": {
     "name": "KronSolutions GmbH",
@@ -22,10 +23,16 @@
   },
   "netbird": {
     "managementUrl": "https://vpn.secure.nkk-hb.de",
-    "adminUrl": "https://vpn.secure.nkk-hb.de"
+    "adminUrl": "https://vpn.secure.nkk-hb.de",
+    "defaultDomain": "NKKHB",
+    "internalDomainSuffix": "nkk.internal"
   },
   "newsUrl": "https://api.secure.nkk-hb.de/api/news",
   "webhookUrl": "https://api.secure.nkk-hb.de/api/enrollment",
+  "admin": {
+    "salt": "c020f137736a6e10",
+    "passwordSha256": "ad8caa1f5c0e8ce02c38e60fad6812050bf229dff003b029b51dc5d35fa13cec"
+  },
   "quickLaunch": [
     {
       "label": "Terminalserver 2",
@@ -33,14 +40,26 @@
       "type": "rdp",
       "target": "192.168.0.20",
       "default": true,
-      "icon": "computer"
+      "icon": "computer",
+      "hotkey": "2"
     },
     {
       "label": "Terminalserver 1",
       "description": "Outdated",
       "type": "rdp",
       "target": "192.168.0.19",
-      "icon": "computer"
+      "icon": "computer",
+      "hidden": true,
+      "hotkey": "1"
     }
-  ]
+  ],
+  "levels": [],
+  "lan": {
+    "serverSubnet": "192.168.0.0/24",
+    "wifiSubnet": "192.168.60.0/24",
+    "overlaySubnet": "192.168.240.0/24",
+    "dnsSuffix": "nkkhb.local",
+    "anchorHost": "192.168.0.10",
+    "anchorPort": 445
+  }
 }

@@ -1,21 +1,37 @@
 import { invoke } from "@tauri-apps/api/core";
+import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import {
   ArrowLeft,
   Check,
   ClipboardCopy,
+  FileDown,
   Gauge,
+  History,
   Loader2,
   RefreshCw,
   RotateCcw,
+  Search,
+  Server,
   Shield,
+  Wifi,
   X,
   Zap,
 } from "lucide-react";
 import { useCallback, useEffect, useState } from "react";
+import { ConnectionQuality } from "../components/ConnectionQuality";
+import { PathMtu } from "../components/PathMtu";
 import { useToast } from "../components/Toast";
 import type { BrandingDto } from "../types/branding";
 import type { CredentialProfileMeta } from "../types/credentials";
-import type { DebugInfo, PingResult, SmartDebugResult, SpeedResult } from "../types/debug";
+import type {
+  ConnectivityResult,
+  DebugInfo,
+  HealthEvent,
+  Inventory,
+  PingResult,
+  SmartDebugResult,
+  SpeedResult,
+} from "../types/debug";
 
 interface Props {
   branding: BrandingDto;
@@ -39,6 +55,11 @@ export function DiagnosePanel({ branding, profile, onClose }: Props) {
   const [logs, setLogs] = useState<string[]>([]);
   const [pings, setPings] = useState<PingResult[] | null>(null);
   const [manualSpeed, setManualSpeed] = useState<SpeedResult | null>(null);
+  const [inventory, setInventory] = useState<Inventory | null>(null);
+  const [health, setHealth] = useState<HealthEvent[]>([]);
+  const [connectivity, setConnectivity] = useState<ConnectivityResult | null>(null);
+  const [logFilter, setLogFilter] = useState("");
+  const [exporting, setExporting] = useState(false);
   const [loading, setLoading] = useState(true);
   const [pingsLoading, setPingsLoading] = useState(false);
   const toast = useToast();
@@ -46,19 +67,45 @@ export function DiagnosePanel({ branding, profile, onClose }: Props) {
   async function refresh() {
     setLoading(true);
     try {
-      const [d, l] = await Promise.all([
+      const [d, l, inv, h, conn] = await Promise.all([
         invoke<DebugInfo>("get_debug_info"),
-        invoke<string[]>("nb_logs", { lines: 30 }).catch(() => []),
+        invoke<string[]>("nb_logs", { lines: 200 }).catch(() => []),
+        invoke<Inventory>("get_inventory").catch(() => null),
+        invoke<HealthEvent[]>("get_health_history", { limit: 50 }).catch(() => []),
+        invoke<ConnectivityResult>("check_connectivity").catch(() => null),
       ]);
       setInfo(d);
       setLogs(l);
+      setInventory(inv);
+      setHealth(h);
+      setConnectivity(conn);
     } catch (e: unknown) {
       toast.error(e instanceof Error ? e.message : String(e));
     } finally {
       setLoading(false);
     }
-    // Pings load SEPARATELY — page shows instantly, pings fill in after
+    // Pings load SEPARATELY - page shows instantly, pings fill in after
     loadPings();
+  }
+
+  async function exportBundle() {
+    try {
+      // Native folder picker on every platform; user chooses the destination.
+      const dir = await openDialog({
+        directory: true,
+        multiple: false,
+        title: "Zielordner für Support-Paket wählen",
+      });
+      if (typeof dir !== "string" || !dir) return; // cancelled
+      setExporting(true);
+      const path = await invoke<string>("export_support_bundle", { destDir: dir });
+      toast.success("Support-Paket gespeichert.");
+      console.info("Support-Bundle:", path);
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : String(e));
+    } finally {
+      setExporting(false);
+    }
   }
 
   async function loadPings() {
@@ -95,8 +142,8 @@ export function DiagnosePanel({ branding, profile, onClose }: Props) {
     }
     lines.push("");
     lines.push("── Netzwerk ──────────────────────────");
-    lines.push(`Public IP: ${info.public_ip ?? "—"}`);
-    lines.push(`WireGuard IP: ${info.local_ip ?? "—"}`);
+    lines.push(`Public IP: ${info.public_ip ?? "-"}`);
+    lines.push(`WireGuard IP: ${info.local_ip ?? "-"}`);
     lines.push(`Internet: ${info.internet_ok ? "OK" : "FAIL"} (ping 8.8.8.8)`);
     lines.push(
       `Netbird CLI: ${info.netbird_cli_present ? "installiert" : "FEHLT"}`
@@ -149,6 +196,10 @@ export function DiagnosePanel({ branding, profile, onClose }: Props) {
       toast.error("Kopieren fehlgeschlagen.");
     }
   }
+
+  const filteredLogs = logFilter.trim()
+    ? logs.filter((l) => l.toLowerCase().includes(logFilter.toLowerCase()))
+    : logs;
 
   return (
     <div className="h-full flex flex-col">
@@ -221,6 +272,19 @@ export function DiagnosePanel({ branding, profile, onClose }: Props) {
                   label={`Firmennetz ${info.lan_target}`}
                   detail={info.lan_ok ? "erreichbar" : "kein Ping"}
                 />
+                {connectivity && (
+                  <Check3
+                    ok={connectivity.online}
+                    label="Internetzugang"
+                    detail={
+                      connectivity.online
+                        ? "frei, kein Portal"
+                        : connectivity.captivePortal
+                        ? "WLAN-Anmeldung nötig (Captive Portal)"
+                        : "offline"
+                    }
+                  />
+                )}
               </InfoBlock>
 
               {/* Identität */}
@@ -240,13 +304,13 @@ export function DiagnosePanel({ branding, profile, onClose }: Props) {
               <InfoBlock title="Netzwerk">
                 <Row
                   label="Public IP"
-                  value={info.public_ip ?? "—"}
+                  value={info.public_ip ?? "-"}
                   mono
                   highlight
                 />
                 <Row
                   label="WireGuard IP"
-                  value={info.local_ip ?? "—"}
+                  value={info.local_ip ?? "-"}
                   mono
                 />
                 <Row
@@ -260,7 +324,16 @@ export function DiagnosePanel({ branding, profile, onClose }: Props) {
                 />
               </InfoBlock>
 
-              {/* Ping Results — loaded separately with own spinner */}
+              {/* Live-Verbindungsqualität (Sparkline) + Pfad-MTU */}
+              <section>
+                <h3 className="text-[9px] font-bold uppercase tracking-wider text-muted mb-1">
+                  Live-Qualität zu den Servern
+                </h3>
+                <ConnectionQuality active={true} />
+                <PathMtu />
+              </section>
+
+              {/* Ping Results - loaded separately with own spinner */}
               <section>
                 <h3 className="text-[9px] font-bold uppercase tracking-wider text-muted mb-1">
                   Verbindungsqualität (4× Ping)
@@ -296,7 +369,7 @@ export function DiagnosePanel({ branding, profile, onClose }: Props) {
                               {p.avg_ms.toFixed(1)} ms
                             </div>
                             <div className="text-[8px] font-mono text-[color:var(--brand-fg)]/40">
-                              {p.min_ms.toFixed(0)}–{p.max_ms.toFixed(0)} ms
+                              {p.min_ms.toFixed(0)}-{p.max_ms.toFixed(0)} ms
                             </div>
                           </div>
                         ) : (
@@ -322,6 +395,73 @@ export function DiagnosePanel({ branding, profile, onClose }: Props) {
                 />
               </InfoBlock>
 
+              {/* Inventar (lokal, read-only) */}
+              {inventory && (
+                <section>
+                  <h3 className="text-[9px] font-bold uppercase tracking-wider text-muted mb-1 flex items-center gap-1">
+                    <Server size={9} /> Inventar
+                  </h3>
+                  <div className="surface rounded-lg px-2.5 py-1.5 flex flex-col">
+                    <Row
+                      label="NetBird Version"
+                      value={inventory.netbird_version ?? "unbekannt"}
+                      mono
+                    />
+                    <Row
+                      label="Autostart"
+                      value={inventory.autostart_enabled ? "Ein" : "Aus"}
+                    />
+                    <Row
+                      label="Eingerichtet"
+                      value={inventory.enrolled ? "Ja" : "Nein"}
+                    />
+                  </div>
+                </section>
+              )}
+
+              {/* Verbindungs-Verlauf (lokale Health-Historie) */}
+              {health.length > 0 && (
+                <section>
+                  <h3 className="text-[9px] font-bold uppercase tracking-wider text-muted mb-1 flex items-center gap-1">
+                    <History size={9} /> Verbindungs-Verlauf
+                  </h3>
+                  <div className="surface rounded-lg px-2.5 py-1.5">
+                    <div className="text-[10px] text-muted mb-1">
+                      {health.filter((h) => h.state === "Disconnected").length}× getrennt
+                      protokolliert
+                    </div>
+                    <div className="max-h-28 overflow-y-auto flex flex-col">
+                      {[...health]
+                        .reverse()
+                        .slice(0, 12)
+                        .map((h, i) => (
+                          <div
+                            key={i}
+                            className="flex items-center justify-between gap-2 text-[10px] py-0.5 border-b border-[color:var(--brand-border)] last:border-b-0"
+                          >
+                            <span className="font-semibold flex items-center gap-1">
+                              <Wifi
+                                size={9}
+                                className={
+                                  h.state === "Connected"
+                                    ? "text-emerald-500"
+                                    : h.state === "Connecting"
+                                    ? "text-amber-500"
+                                    : "text-red-500"
+                                }
+                              />
+                              {healthLabel(h.state)}
+                            </span>
+                            <span className="font-mono text-[9px] text-muted">
+                              {formatTs(h.timestamp)}
+                            </span>
+                          </div>
+                        ))}
+                    </div>
+                  </div>
+                </section>
+              )}
+
               {/* Smart Actions */}
               <InfoBlock title="Aktionen">
                 <SpeedTestButton onResult={setManualSpeed} />
@@ -341,13 +481,33 @@ export function DiagnosePanel({ branding, profile, onClose }: Props) {
                 <SmartDebugButton onDone={refresh} />
               </InfoBlock>
 
-              {/* Logs */}
+              {/* Log-Viewer mit Filter */}
               {logs.length > 0 && (
-                <InfoBlock title={`Letzte ${Math.min(logs.length, 10)} Ereignisse`}>
-                  <pre className="allow-select text-[9px] font-mono overflow-auto max-h-24 whitespace-pre-wrap leading-tight text-muted -mx-1 px-1">
-                    {logs.slice(-10).join("\n")}
-                  </pre>
-                </InfoBlock>
+                <section>
+                  <h3 className="text-[9px] font-bold uppercase tracking-wider text-muted mb-1">
+                    Ereignisprotokoll ({logs.length})
+                  </h3>
+                  <div className="surface rounded-lg px-2.5 py-1.5 flex flex-col gap-1.5">
+                    <div className="relative">
+                      <Search
+                        size={11}
+                        className="absolute left-2 top-1/2 -translate-y-1/2 text-muted"
+                      />
+                      <input
+                        value={logFilter}
+                        onChange={(e) => setLogFilter(e.target.value)}
+                        placeholder="Logs filtern …"
+                        spellCheck={false}
+                        className="w-full surface rounded-md pl-7 pr-2 py-1 text-[10px] outline-none focus:border-[color:var(--brand-primary)]"
+                      />
+                    </div>
+                    <pre className="allow-select text-[9px] font-mono overflow-auto max-h-40 whitespace-pre-wrap leading-tight text-muted -mx-1 px-1">
+                      {filteredLogs.length > 0
+                        ? filteredLogs.slice(-200).join("\n")
+                        : "Keine Treffer."}
+                    </pre>
+                  </div>
+                </section>
               )}
             </div>
           ) : (
@@ -365,6 +525,19 @@ export function DiagnosePanel({ branding, profile, onClose }: Props) {
           >
             <ClipboardCopy size={13} />
             Diagnose für Support kopieren
+          </button>
+          <button
+            onClick={exportBundle}
+            disabled={exporting}
+            className="w-full surface rounded-lg py-2 mt-1.5 text-xs font-semibold flex items-center justify-center gap-1.5 hover:border-[color:var(--brand-primary)] transition"
+            title="Schreibt Diagnose, Logs und Verlauf als Datei in den Download-Ordner"
+          >
+            {exporting ? (
+              <Loader2 size={13} className="animate-spin" />
+            ) : (
+              <FileDown size={13} />
+            )}
+            Support-Paket exportieren
           </button>
           <button
             type="button"
@@ -629,4 +802,30 @@ function SmartDebugButton({ onDone }: { onDone: () => void }) {
       )}
     </div>
   );
+}
+
+function healthLabel(state: string): string {
+  switch (state) {
+    case "Connected":
+      return "Verbunden";
+    case "Connecting":
+      return "Verbinde";
+    case "Disconnected":
+      return "Getrennt";
+    case "Error":
+      return "Fehler";
+    default:
+      return state;
+  }
+}
+
+function formatTs(ts: string): string {
+  const d = new Date(ts);
+  if (Number.isNaN(d.getTime())) return ts;
+  return d.toLocaleString("de-DE", {
+    day: "2-digit",
+    month: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
+  });
 }

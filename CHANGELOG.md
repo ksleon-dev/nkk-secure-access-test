@@ -6,17 +6,52 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), [SemVer](https
 
 ## [Unreleased]
 
-## [0.2.6] — 2026-04-28
+## [0.3.1] - 2026-06-25
+
+Komfort und Netz-Intelligenz.
+
+- Smart Network: erkennt Büro-LAN, WLAN und Remote und warnt, wenn zwei Netze gleichzeitig laufen. Genau das macht eine Verbindung sonst still langsam.
+- Terminalserver 1 ist aus der Hauptansicht raus und liegt jetzt auf Shift+1.
+- Support-Paket fragt vor dem Export, in welchen Ordner es soll.
+- RDP-Einstellungen direkt in den Einstellungen: Zwischenablage, Laufwerke, Drucker, Kamera, Mikrofon und mehrere Bildschirme an- und abschaltbar. Laufwerke sind aus Sicherheitsgründen standardmäßig aus.
+- Optionale Desktop-Verknüpfung zum Terminalserver, auch nutzbar ohne die App vorher zu öffnen.
+- NetBird lässt sich aus dem Service-Menü auf jeder Plattform sauber aktualisieren, mit Versionsprüfung.
+- Sicherheits-Update (Tauri 2.11.3) und ein Wächter um den Status-Poller, damit die Verbindung im Dauerbetrieb stabil bleibt.
+
+## [0.3.0] - 2026-06-18
+
+Das große Komfort- und Diagnose-Release.
+
+- Remote Desktop nutzt jetzt alle Bildschirme, und Copy/Paste samt Dateien klappt zuverlässig (Windows, macOS, Linux).
+- Vor-Ort-Erkennung: im Firmennetz gehen die Server-Buttons ohne VPN, die App sagt klar Bescheid. Remote verbindet das VPN automatisch.
+- Diagnose-Panel kräftig ausgebaut: Verbindungs-Verlauf, Geräte-Übersicht, durchsuchbarer Log-Viewer, Ein-Klick-Support-Paket.
+- Captive-Portal-Erkennung (WLAN-Anmeldeseite) statt blindem Reconnect.
+- Verstecktes Service-Menü für KronSolutions: NetBird reparieren und neu starten, Inventar, Reset.
+- Installer überarbeitet: WebView2 als Offline-Variante, klare Fehlercodes zum Abfotografieren, kein NetBird-Icon mehr im Startmenü.
+
+## [0.2.8] - 2026-05-12
+
+- Trennen bleibt jetzt auch nach Neustart getrennt, und der Auto-Reconnect dreht bei Wartung nicht mehr durch (Backoff statt Dauerversuch).
+- Latenz-Anzeige korrigiert (NetBird 0.7x liefert Nanosekunden), robusteres Status-Parsing.
+- White-Label sauber gezogen: Tray, Meldungen, Domäne und Farben kommen aus der Konfiguration.
+
+## [0.2.7] - 2026-05-02
+
+- Auto-Update repariert: der Build signiert die Artefakte jetzt richtig, eine einzige Versionsquelle. Vorher kam bei installierten Clients nie ein Update an.
+- Abgelaufene Sitzung wird als "neu anmelden" angezeigt, statt still zu hängen.
+- "Was ist neu" wird vor dem Update gezeigt.
+
+## [0.2.6] - 2026-04-28
 
 ### Fixed
-- VPN Disconnect — Trennen Knopf setzt `user_disconnected` Flag, Auto-Reconnect respektiert es
+- VPN Disconnect - Trennen Knopf setzt `user_disconnected` Flag, Auto-Reconnect respektiert es
 - Alle Exit Pfade (Quit, Tray Beenden, Window Close) rufen `netbird down` mit 5s Timeout
 - RDP Clipboard + Files: `.rdp` mit `\r\n` Line Endings, `redirectclipboard`/`drivestoredirect`/`redirectprinters` aktiv
 - Old Install Cleanup: Setup Key bleibt im Credential Manager beim Upgrade
 - Installer entfernt alte Per-User Installationen vor Upgrade
 
 ### Hardening Pass
-- Rust Panic Audit — `expect()` durch `tracing::warn!` + graceful fallback ersetzt in `lib.rs` und `tray.rs`
+- Rust Panic Audit - `expect()` durch `tracing::warn!` + graceful fallback ersetzt in `lib.rs` und `tray.rs`
 - Setup Key Validierung (8-128 Zeichen, alphanumerisch + `-_`)
 - RDP Target Whitelist (alphanumerisch + `.`/`-`/`:`)
 - SMB Target Whitelist (UNC + alphanumerisch)
@@ -25,7 +60,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), [SemVer](https
 - Tauri Runtime Crash → strukturiertes Logging + sauberer Exit Code 1
 
 ### NSIS Installer Hardening
-- Reinstall Detection — überspringt NetBird MSI wenn bereits installiert
+- Reinstall Detection - überspringt NetBird MSI wenn bereits installiert
 - NetBird Install Retry (1× Retry bei Exit Code != 0)
 - Defender Exclusion für `NetBird` Programmpfad und Prozesse (verhindert Wintun Driver Block)
 - ESET Network Protection Pause/Resume via `Stop-Service ekrn` (best effort)
@@ -39,12 +74,12 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), [SemVer](https
 - GitHub Release auf Tag `v*.*.*` mit deutscher Release Note
 
 ### Dokumentation
-- README.md — komplette Projekt Übersicht
-- docs/ROLLOUT.md — Distribution für NKK Admins
-- docs/TROUBLESHOOTING.md — häufige Probleme + Diagnose
+- README.md - komplette Projekt Übersicht
+- docs/ROLLOUT.md - Distribution für NKK Admins
+- docs/TROUBLESHOOTING.md - häufige Probleme + Diagnose
 - CHANGELOG.md (diese Datei)
 
-## [0.1.0] — 2026-04-09
+## [0.1.0] - 2026-04-09
 
 ### Added
 - Initiales MVP für NKK Pilot
@@ -61,6 +96,6 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), [SemVer](https
 - KronSolutions Footer Branding
 
 ### Known Issues
-- Code Signing fehlt — SmartScreen warnt einmalig bei Browser Downloads
+- Code Signing fehlt - SmartScreen warnt einmalig bei Browser Downloads
 - Auto-Updater ist Phase 2
 - ESET Pause ist best-effort, funktioniert nur wenn Service `ekrn` steht

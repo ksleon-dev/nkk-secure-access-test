@@ -127,7 +127,8 @@ Alle Brand-spezifischen Werte stehen in `src-tauri/resources/branding.json`. Bei
     "shortName": "ACME",
     "version": "0.1.0",
     "tagline": "Dein Großhandel",
-    "logoText": ["Acme", "Inc"]
+    "logoText": ["Acme", "Inc"],
+    "networkName": "Acme Netz"
   },
   "vendor": {
     "name": "KronSolutions GmbH",
@@ -144,7 +145,9 @@ Alle Brand-spezifischen Werte stehen in `src-tauri/resources/branding.json`. Bei
   },
   "netbird": {
     "managementUrl": "https://vpn.acme.example",
-    "adminUrl": "https://vpn.acme.example"
+    "adminUrl": "https://vpn.acme.example",
+    "defaultDomain": "ACME",
+    "internalDomainSuffix": "acme.internal"
   },
   "quickLaunch": [
     { "label": "Terminalserver", "type": "rdp", "target": "ts.acme.internal", "default": true }
@@ -152,7 +155,15 @@ Alle Brand-spezifischen Werte stehen in `src-tauri/resources/branding.json`. Bei
 }
 ```
 
-Logo SVG (`src-tauri/resources/assets/nkk-logo.svg`) und die Tray/Bundle Icons in `src-tauri/icons/` müssen für ein neues Branding ebenfalls ausgetauscht werden.
+Die Laufzeit-Texte (Produktname, Netzname, Tagline-Text, Domäne, Farben) kommen aus `branding.json`. Folgende Dinge sind **Build-Zeit-Identität** und müssen pro Mandant beim Build getauscht werden, nicht nur in der JSON:
+
+- Logo SVG (`src-tauri/resources/assets/nkk-logo.svg` und `src/assets/nkk-logo.svg`)
+- Tagline-Wortmarke (`src/assets/dein-grosshandel.svg`)
+- Tray/Bundle Icons in `src-tauri/icons/`
+- `tauri.conf.json`: `productName`, `identifier`, `plugins.updater.endpoints`
+- `package.json` / `Cargo.toml`: `name`
+
+Damit bekommt jeder Mandant eine eigene App-Identität, eigenen Keystore-Namespace und einen eigenen Update-Kanal (so gewollt).
 
 ## Projektstruktur
 
@@ -220,7 +231,9 @@ nkk-secure-access/
 ├── docs/
 │   ├── ROLLOUT.md                         NKK Admin Distribution Anleitung
 │   ├── TROUBLESHOOTING.md                 Häufige Probleme + Fixes
-│   └── DESIGN_DECISIONS.md                Architecture rationale
+│   ├── HOW-TO-UPDATE.md                   Release + Auto-Updater Checkliste
+│   ├── CLIENT-OVERVIEW.md                 Funktionsüberblick
+│   └── MAIL-VORLAGE.md                    Rollout Mail Vorlage
 ├── CHANGELOG.md
 ├── README.md
 ├── package.json
@@ -252,6 +265,14 @@ nkk-secure-access/
 | `creds_test()` | Keyring Roundtrip Diagnostic |
 | `creds_default_username()` | OS User Name |
 | `get_debug_info()` | Vollständiger Diagnose Snapshot (parallel checks) |
+| `run_ping_test()` | 4× Ping LAN + Referenz |
+| `run_speed_test()` | Cloudflare CDN Durchsatz |
+| `smart_debug()` | Self-Healing Diagnose (prüft und repariert) |
+| `check_netbird_setup()` / `install_netbird()` | NetBird Setup, macOS Auto-Install |
+| `get_inventory()` | Lokale Geräte-/System-Karte (RMM-Fundament) |
+| `get_health_history(limit)` | Lokale Verbindungs-Historie |
+| `export_support_bundle()` | Support-Paket als Datei, zeigt es im Dateimanager |
+| `check_connectivity()` | Online / Captive Portal / Offline |
 
 ## Rollout / Distribution
 

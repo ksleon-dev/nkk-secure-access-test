@@ -21,7 +21,9 @@ Write-Host "NKK: NetBird Installer OK ($([math]::Round($nbSize / 1MB, 2)) MB)"
 
 # --- 2. Visual C++ Redistributable (x64) ------------------------------------
 $vcTarget = Join-Path $scriptDir "vc_redist.x64.exe"
-if (-not (Test-Path $vcTarget)) {
+# Size-aware: the repo ships a 0-byte git placeholder, so Test-Path alone would
+# skip the download and bundle an empty file. Re-download if missing OR too small.
+if (-not (Test-Path $vcTarget) -or (Get-Item $vcTarget).Length -lt 1000000) {
     Write-Host "NKK: Lade Visual C++ Redistributable ..."
     Invoke-WebRequest -Uri "https://aka.ms/vs/17/release/vc_redist.x64.exe" -OutFile $vcTarget -UseBasicParsing
     $vcSize = (Get-Item $vcTarget).Length
@@ -36,7 +38,9 @@ if (-not (Test-Path $vcTarget)) {
 
 # --- 3. Wintun driver (amd64) -----------------------------------------------
 $wintunDll = Join-Path $scriptDir "wintun.dll"
-if (-not (Test-Path $wintunDll)) {
+# Size-aware (see VC++ note): a 0-byte wintun.dll copied to System32 would
+# silently break the WireGuard adapter. Re-download if missing OR too small.
+if (-not (Test-Path $wintunDll) -or (Get-Item $wintunDll).Length -lt 100000) {
     $wintunZip = Join-Path $scriptDir "wintun.zip"
     Write-Host "NKK: Lade Wintun Treiber ..."
     Invoke-WebRequest -Uri "https://www.wintun.net/builds/wintun-0.14.1.zip" -OutFile $wintunZip -UseBasicParsing

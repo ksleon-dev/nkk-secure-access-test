@@ -4,6 +4,10 @@ export interface ProductInfo {
   version: string;
   tagline?: string;
   logoText?: string[];
+  /** Friendly name of the network, e.g. "NKK Netz". Used in notifications. */
+  networkName?: string;
+  /** Optional brand footnotes shown on the main screen. Empty = none. */
+  footnotes?: string[];
 }
 
 export interface VendorInfo {
@@ -25,6 +29,10 @@ export interface ThemeInfo {
 export interface NetbirdInfo {
   managementUrl: string;
   adminUrl: string;
+  /** Windows/AD domain pre-filled in the credential dialog, e.g. "NKKHB". */
+  defaultDomain?: string;
+  /** Internal DNS suffix stripped from peer FQDNs in the UI, e.g. "nkk.internal". */
+  internalDomainSuffix?: string;
 }
 
 export type QuickLaunchType = "rdp" | "smb" | "url";
@@ -36,6 +44,10 @@ export interface QuickLaunchEntry {
   description?: string | null;
   default?: boolean;
   icon?: string | null;
+  /** Hidden from the launch list; only reachable via its hotkey. */
+  hidden?: boolean;
+  /** Optional Shift+<digit> hotkey (e.g. "1") that launches this entry. */
+  hotkey?: string;
 }
 
 export interface BrandingDto {
