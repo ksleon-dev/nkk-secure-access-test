@@ -1,9 +1,11 @@
-mod branding;
 mod commands;
-mod error;
-mod logging;
-mod netbird;
 mod tray;
+
+// The Tauri-free core now lives in the nkk-core crate. Re-export its modules at
+// the crate root so the rest of the app keeps referring to crate::netbird,
+// crate::branding, crate::error and crate::logging unchanged - no drift, one
+// implementation shared with the headless CLI.
+pub use nkk_core::{branding, error, logging, netbird};
 
 use tauri::{Emitter, Manager};
 

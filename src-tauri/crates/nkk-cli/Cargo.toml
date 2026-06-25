@@ -1,0 +1,17 @@
+[package]
+name = "nkk-cli"
+version.workspace = true
+edition = "2021"
+rust-version = "1.77.2"
+description = "NKK Secure Access — headless CLI (NetBird), shares nkk-core with the desktop app"
+authors = ["KronSolutions GmbH"]
+
+[[bin]]
+name = "nkk-secure-access-cli"
+path = "src/main.rs"
+
+[dependencies]
+nkk-core = { path = "../nkk-core" }
+tokio = { workspace = true }
+serde_json = { workspace = true }
+clap = { version = "4", features = ["derive"] }

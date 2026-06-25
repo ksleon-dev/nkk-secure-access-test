@@ -1,24 +1,16 @@
-[package]
-name = "nkk-secure-access"
+# This package is also the workspace root. The crates live under crates/ so the
+# target dir, tauri build and CI paths all stay exactly where they were.
+[workspace]
+members = ["crates/nkk-core", "crates/nkk-cli"]
+
+# Single source of truth for the version. branding.rs reads CARGO_PKG_VERSION,
+# so bumping here updates the app AND the CLI AND the displayed version at once.
+[workspace.package]
 version = "0.3.1"
-description = "NKK Secure Access — Netbird VPN Client (white-label fähig)"
-authors = ["KronSolutions GmbH"]
-edition = "2021"
-rust-version = "1.77.2"
 
-[lib]
-name = "nkk_secure_access_lib"
-crate-type = ["staticlib", "cdylib", "rlib"]
-
-[build-dependencies]
-tauri-build = { version = "2", features = [] }
-
-[dependencies]
-tauri = { version = "2", features = ["tray-icon", "image-png"] }
-tauri-plugin-autostart = "2"
-tauri-plugin-notification = "2"
-tauri-plugin-dialog = "2"
-tauri-plugin-shell = "2"
+# Shared dependency versions, so every crate resolves the exact same version and
+# Cargo.lock cannot drift between the GUI and the CLI.
+[workspace.dependencies]
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
 tokio = { version = "1", features = ["process", "rt-multi-thread", "macros", "sync", "time", "net"] }
@@ -32,6 +24,42 @@ chrono = { version = "0.4", features = ["serde"] }
 parking_lot = "0.12"
 sha2 = "0.10"
 constant_time_eq = "0.3"
+
+[package]
+name = "nkk-secure-access"
+version.workspace = true
+description = "NKK Secure Access — Netbird VPN Client (white-label fähig)"
+authors = ["KronSolutions GmbH"]
+edition = "2021"
+rust-version = "1.77.2"
+
+[lib]
+name = "nkk_secure_access_lib"
+crate-type = ["staticlib", "cdylib", "rlib"]
+
+[build-dependencies]
+tauri-build = { version = "2", features = [] }
+
+[dependencies]
+nkk-core = { path = "crates/nkk-core" }
+tauri = { version = "2", features = ["tray-icon", "image-png"] }
+tauri-plugin-autostart = "2"
+tauri-plugin-notification = "2"
+tauri-plugin-dialog = "2"
+tauri-plugin-shell = "2"
+serde = { workspace = true }
+serde_json = { workspace = true }
+tokio = { workspace = true }
+keyring = { workspace = true }
+anyhow = { workspace = true }
+thiserror = { workspace = true }
+tracing = { workspace = true }
+tracing-subscriber = { workspace = true }
+tracing-appender = { workspace = true }
+chrono = { workspace = true }
+parking_lot = { workspace = true }
+sha2 = { workspace = true }
+constant_time_eq = { workspace = true }
 tauri-plugin-updater = "2.10.1"
 tauri-plugin-single-instance = "2"
 
