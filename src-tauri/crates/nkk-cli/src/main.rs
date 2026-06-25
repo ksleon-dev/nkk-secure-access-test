@@ -1,4 +1,4 @@
-//! NKK Secure Access — headless CLI.
+//! NKK Secure Access - headless CLI.
 //!
 //! A no-GUI client for Linux servers and automation/RMM. It drives the VPN
 //! through the very same `nkk-core` (NetbirdClient, branding) the desktop app
@@ -14,7 +14,7 @@ use std::path::PathBuf;
 #[command(
     name = "nkk-secure-access-cli",
     version,
-    about = "NKK Secure Access — headless VPN client (NetBird)"
+    about = "NKK Secure Access - headless VPN client (NetBird)"
 )]
 struct Cli {
     /// Machine-readable JSON output where supported (status, version).

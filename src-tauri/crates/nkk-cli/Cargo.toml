@@ -3,7 +3,7 @@ name = "nkk-cli"
 version.workspace = true
 edition = "2021"
 rust-version = "1.77.2"
-description = "NKK Secure Access — headless CLI (NetBird), shares nkk-core with the desktop app"
+description = "NKK Secure Access - headless CLI (NetBird), shares nkk-core with the desktop app"
 authors = ["KronSolutions GmbH"]
 
 [[bin]]
