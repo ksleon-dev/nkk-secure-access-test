@@ -29,7 +29,11 @@ import { copyText } from "../lib/clipboard";
 import { italicAccent, timeOfDayGreeting } from "../lib/greeting";
 import type { BrandingDto, QuickLaunchEntry } from "../types/branding";
 import { displayName, type CredentialProfileMeta } from "../types/credentials";
-import type { ConnectivityResult, NetworkContext } from "../types/debug";
+import type {
+  ConnectivityResult,
+  NetworkContext,
+  SmartDebugResult,
+} from "../types/debug";
 import type { ConnectionState, StatusDto } from "../types/netbird";
 
 interface Props {
@@ -67,11 +71,18 @@ export function MainScreen({
   const [netCtx, setNetCtx] = useState<NetworkContext | null>(null);
   useEffect(() => {
     let alive = true;
-    invoke<NetworkContext>("detect_network_context")
-      .then((r) => alive && setNetCtx(r))
-      .catch(() => alive && setNetCtx(null));
+    const probe = () =>
+      invoke<NetworkContext>("detect_network_context")
+        .then((r) => alive && setNetCtx(r))
+        .catch(() => {});
+    probe();
+    // Re-probe once the routes have settled. A reading taken the instant the
+    // tunnel flips (before routes are ready) can never stick, so the on-site
+    // read is bulletproof and never a false positive from probing too early.
+    const settle = setTimeout(probe, 1600);
     return () => {
       alive = false;
+      clearTimeout(settle);
     };
   }, [state]);
   const onSiteActive = netCtx?.serverReachableDirect ?? false;
@@ -79,13 +90,36 @@ export function MainScreen({
 
   const [connectivity, setConnectivity] = useState<ConnectivityResult | null>(null);
   const [helpOpen, setHelpOpen] = useState(false);
+  const [fixing, setFixing] = useState(false);
+  const [fixResult, setFixResult] = useState<SmartDebugResult | null>(null);
+  // One-tap auto-fix. Same smart_debug command the Diagnose uses, so there is
+  // no second implementation to drift. Surfaces a clear OK / not-OK and never
+  // throws at the user.
+  const runSmartFix = async () => {
+    setFixing(true);
+    setFixResult(null);
+    try {
+      setFixResult(await invoke<SmartDebugResult>("smart_debug"));
+    } catch {
+      setFixResult({
+        steps: [],
+        summary: "Konnte nicht automatisch geprüft werden. Bitte Diagnose öffnen.",
+      });
+    } finally {
+      setFixing(false);
+    }
+  };
   useEffect(() => {
     let alive = true;
-    invoke<ConnectivityResult>("check_connectivity")
-      .then((r) => alive && setConnectivity(r))
-      .catch(() => alive && setConnectivity(null));
+    const probe = () =>
+      invoke<ConnectivityResult>("check_connectivity")
+        .then((r) => alive && setConnectivity(r))
+        .catch(() => {});
+    probe();
+    const settle = setTimeout(probe, 1600);
     return () => {
       alive = false;
+      clearTimeout(settle);
     };
   }, [state]);
 
@@ -307,7 +341,8 @@ export function MainScreen({
 
       {/* Hero - vertically centred so there is equal space above and below the
           content block. */}
-      <main className="relative z-10 flex-1 flex flex-col items-center justify-center px-6 gap-2.5 py-3 text-center">
+      <main className="relative z-10 flex-1 overflow-y-auto">
+        <div className="min-h-full flex flex-col items-center justify-center px-6 gap-2.5 py-3 text-center">
         <div className="fade-in-1 flex flex-col items-center">
           <div
             className="relative flex items-center justify-center cursor-pointer"
@@ -501,16 +536,44 @@ export function MainScreen({
                 </span>
               </div>
               <button
+                onClick={runSmartFix}
+                disabled={fixing}
+                className="w-full mt-0.5 text-[11px] font-bold rounded-lg py-2 btn-primary active:scale-[0.98] disabled:opacity-60 flex items-center justify-center gap-1.5"
+              >
+                {fixing ? (
+                  <>
+                    <Loader2 size={13} className="animate-spin" /> Prüfe und
+                    repariere …
+                  </>
+                ) : (
+                  "Problem automatisch beheben"
+                )}
+              </button>
+              {fixResult && (
+                <div
+                  className={clsx(
+                    "fade-soft rounded-lg px-2.5 py-2 text-[11px] font-semibold leading-snug text-center",
+                    fixResult.steps.length > 0 &&
+                      fixResult.steps.every((s) => s.ok)
+                      ? "bg-emerald-500/12 text-emerald-800"
+                      : "bg-amber-500/15 text-amber-800"
+                  )}
+                >
+                  {fixResult.summary}
+                </div>
+              )}
+              <button
                 onClick={() => {
                   setHelpOpen(false);
                   onOpenAbout();
                 }}
-                className="w-full mt-0.5 text-[11px] font-bold rounded-lg py-2 btn-primary active:scale-[0.98]"
+                className="text-[10.5px] font-semibold text-muted hover:text-[color:var(--brand-primary)] transition"
               >
-                Diagnose öffnen
+                Mehr in der Diagnose
               </button>
             </div>
           )}
+        </div>
         </div>
       </main>
 
@@ -632,6 +695,32 @@ export function MainScreen({
   );
 }
 
+// Modern 4-pane Windows logo, so an employee sees at a glance that the card
+// opens a Windows terminal server.
+function WindowsLogo({
+  size = 18,
+  className,
+}: {
+  size?: number;
+  className?: string;
+}) {
+  return (
+    <svg
+      width={size}
+      height={size}
+      viewBox="0 0 24 24"
+      fill="currentColor"
+      aria-hidden="true"
+      className={className}
+    >
+      <rect x="2" y="2" width="9" height="9" rx="1" />
+      <rect x="13" y="2" width="9" height="9" rx="1" />
+      <rect x="2" y="13" width="9" height="9" rx="1" />
+      <rect x="13" y="13" width="9" height="9" rx="1" />
+    </svg>
+  );
+}
+
 function LaunchCard({
   item,
   primary,
@@ -712,6 +801,8 @@ function LaunchCard({
       >
         {busy ? (
           <Loader2 size={18} className="animate-spin" />
+        ) : item.type === "rdp" ? (
+          <WindowsLogo size={17} className="transition group-hover:scale-110" />
         ) : (
           <ArrowRight
             size={18}

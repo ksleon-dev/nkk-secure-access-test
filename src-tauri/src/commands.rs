@@ -3707,29 +3707,42 @@ pub struct OnSiteResult {
 }
 
 /// Probe whether any RDP target is reachable directly (LAN), not via the tunnel.
+async fn tcp_reachable(addr: &str) -> bool {
+    matches!(
+        timeout(
+            Duration::from_millis(350),
+            tokio::net::TcpStream::connect(addr),
+        )
+        .await,
+        Ok(Ok(_))
+    )
+}
+
 async fn probe_onsite(targets: &[String], vpn_active: bool) -> OnSiteResult {
     for t in targets {
         let addr = format!("{}:3389", t);
-        let reachable = matches!(
-            timeout(
-                Duration::from_millis(350),
-                tokio::net::TcpStream::connect(&addr),
-            )
-            .await,
-            Ok(Ok(_))
-        );
-        if reachable {
-            // Reachable - but is it via the VPN route? If so it is not on-site.
-            let via_vpn = local_source_ip(t, 3389)
-                .map(|ip| is_netbird_ip(&ip))
-                .unwrap_or(false);
-            if !vpn_active || !via_vpn {
-                return OnSiteResult {
-                    on_site: true,
-                    via_target: Some(t.clone()),
-                    vpn_active,
-                };
-            }
+        // Confirm reachability with a second probe. A single transient or
+        // half-open success right at a route change (tunnel just came up) must
+        // never be read as on-site - both probes have to agree first.
+        if !tcp_reachable(&addr).await {
+            continue;
+        }
+        tokio::time::sleep(Duration::from_millis(150)).await;
+        if !tcp_reachable(&addr).await {
+            continue;
+        }
+        // Reachable and stable - but is it via the VPN route? If so it is not
+        // on-site. This source-IP read can be stale the instant the tunnel
+        // flips, so the caller re-probes once the routes have settled.
+        let via_vpn = local_source_ip(t, 3389)
+            .map(|ip| is_netbird_ip(&ip))
+            .unwrap_or(false);
+        if !vpn_active || !via_vpn {
+            return OnSiteResult {
+                on_site: true,
+                via_target: Some(t.clone()),
+                vpn_active,
+            };
         }
     }
     OnSiteResult {
