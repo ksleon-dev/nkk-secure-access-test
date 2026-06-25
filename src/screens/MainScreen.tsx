@@ -136,6 +136,14 @@ export function MainScreen({
         text: "Das VPN-Programm fehlt auf diesem Rechner. Bitte beim Support melden.",
         action: null,
       };
+    // Expired session: a fleeting toast leaves the employee stuck, so we keep a
+    // calm, persistent hint with the one action that actually re-logs in.
+    if (status?.needs_login)
+      return {
+        tone: "warn",
+        text: "Deine Anmeldung ist abgelaufen. Tippe unten auf Verbinden, um dich neu anzumelden. Klappt das nicht, hilft die Diagnose oder der Support.",
+        action: null,
+      };
     if (onSiteActive)
       return {
         tone: "good",
@@ -242,6 +250,12 @@ export function MainScreen({
     return "none";
   }, [state]);
 
+  // Fire the success toast on the REAL Connected transition (user-initiated or
+  // auto-reconnect), so it only ever shows when the tunnel is genuinely up.
+  useEffect(() => {
+    if (transition === "connected") toast.success(de.toast.connected);
+  }, [transition, toast]);
+
   // Live clock + date - updates every 30s
   function formatDateTime() {
     const now = new Date();
@@ -272,8 +286,11 @@ export function MainScreen({
         await Promise.all([invoke("nb_disconnect"), minBusy]);
         toast.info(de.toast.disconnected);
       } else {
+        // Only kick off the connect here. The success toast is fired by the
+        // real Connected transition below, never from this call returning - so
+        // the employee never sees "connected" while the tunnel is still coming
+        // up (the false positive that led to launching too early).
         await Promise.all([invoke("nb_connect", {}), minBusy]);
-        toast.success(de.toast.connected);
       }
     } catch (e: unknown) {
       await minBusy; // show particles even on error

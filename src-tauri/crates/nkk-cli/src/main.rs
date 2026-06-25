@@ -8,6 +8,7 @@
 use clap::{Parser, Subcommand};
 use nkk_core::branding::{self, BrandingDto};
 use nkk_core::netbird::{ConnectionState, NetbirdClient, StatusDto};
+use nkk_core::sys;
 use std::path::PathBuf;
 
 #[derive(Parser)]
@@ -39,6 +40,12 @@ enum Command {
     Disconnect,
     /// Verbindungsstatus anzeigen.
     Status,
+    /// Internetzugang pruefen (auch Captive-Portal-Erkennung).
+    Connectivity,
+    /// Inventar (Host, OS, NetBird-Version, IP) fuer RMM.
+    Inventory,
+    /// Schnelle Gesamtdiagnose: Status, Internet, NetBird-Version.
+    Diagnose,
     /// App- und NetBird-Version anzeigen.
     Version,
 }
@@ -149,6 +156,121 @@ async fn run(cli: Cli) -> i32 {
                 1
             }
         },
+        Command::Connectivity => {
+            let c = sys::check_connectivity().await;
+            if cli.json {
+                println!(
+                    "{{\"online\":{},\"captivePortal\":{},\"httpCode\":{}}}",
+                    c.online, c.captive_portal, c.http_code
+                );
+            } else if c.online {
+                println!("Internet: ok");
+            } else if c.captive_portal {
+                println!(
+                    "Internet: Captive-Portal-Anmeldung noetig (HTTP {}).",
+                    c.http_code
+                );
+            } else {
+                println!("Internet: offline (HTTP {}).", c.http_code);
+            }
+            if c.online {
+                0
+            } else {
+                1
+            }
+        }
+        Command::Inventory => {
+            let b = load_branding();
+            let mgmt = b.as_ref().map(|x| x.netbird.management_url.clone());
+            let app_ver = b
+                .as_ref()
+                .map(|x| x.product.version.clone())
+                .unwrap_or_else(|| env!("CARGO_PKG_VERSION").to_string());
+            let (hostname, os_version, status, nb_version) = tokio::join!(
+                sys::fetch_hostname(),
+                sys::fetch_os_version(),
+                nb.status(),
+                sys::fetch_netbird_version(&nb),
+            );
+            let local_ip = status.ok().and_then(|s| s.local_ip);
+            let user = std::env::var("USER")
+                .or_else(|_| std::env::var("USERNAME"))
+                .unwrap_or_default();
+            if cli.json {
+                let v = serde_json::json!({
+                    "hostname": hostname,
+                    "os": os_version,
+                    "user": user,
+                    "appVersion": app_ver,
+                    "netbirdVersion": nb_version,
+                    "localIp": local_ip,
+                    "managementUrl": mgmt,
+                });
+                println!("{}", serde_json::to_string_pretty(&v).unwrap_or_default());
+            } else {
+                println!("NKK Secure Access - Inventar");
+                println!("  Host:        {hostname}");
+                println!("  OS:          {os_version}");
+                println!("  Benutzer:    {user}");
+                println!("  App:         {app_ver}");
+                println!("  NetBird:     {}", nb_version.as_deref().unwrap_or("-"));
+                println!("  Lokale IP:   {}", local_ip.as_deref().unwrap_or("-"));
+                println!("  Management:  {}", mgmt.as_deref().unwrap_or("-"));
+            }
+            0
+        }
+        Command::Diagnose => {
+            let (status, conn, nb_version) = tokio::join!(
+                nb.status(),
+                sys::check_connectivity(),
+                sys::fetch_netbird_version(&nb),
+            );
+            let s = status.unwrap_or_else(|_| StatusDto::error());
+            let peers_ok = s.peers.iter().filter(|p| p.connected).count();
+            let net = if conn.online {
+                "ok"
+            } else if conn.captive_portal {
+                "Captive Portal"
+            } else {
+                "offline"
+            };
+            if cli.json {
+                let v = serde_json::json!({
+                    "state": format!("{:?}", s.state),
+                    "managementConnected": s.management_connected,
+                    "localIp": s.local_ip,
+                    "peersConnected": peers_ok,
+                    "peersTotal": s.peers.len(),
+                    "online": conn.online,
+                    "captivePortal": conn.captive_portal,
+                    "netbirdVersion": nb_version,
+                    "cliAvailable": s.cli_available,
+                });
+                println!("{}", serde_json::to_string_pretty(&v).unwrap_or_default());
+            } else {
+                println!("NKK Secure Access - Diagnose");
+                println!("  VPN:         {}", state_label(&s.state));
+                println!("  Internet:    {net}");
+                println!(
+                    "  Management:  {}",
+                    if s.management_connected {
+                        "verbunden"
+                    } else {
+                        "getrennt"
+                    }
+                );
+                println!("  Peers:       {} von {} verbunden", peers_ok, s.peers.len());
+                println!("  NetBird:     {}", nb_version.as_deref().unwrap_or("-"));
+                if !s.cli_available {
+                    println!("  Hinweis:     NetBird ist nicht erreichbar.");
+                }
+            }
+            if matches!(s.state, ConnectionState::Connected) && conn.online {
+                0
+            } else {
+                1
+            }
+        }
         Command::Version => {
             let app = env!("CARGO_PKG_VERSION");
             if cli.json {

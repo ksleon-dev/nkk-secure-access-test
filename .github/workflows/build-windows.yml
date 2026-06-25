@@ -17,6 +17,33 @@ permissions:
   contents: write
 
 jobs:
+  # Headless Linux CLI: builds and tests the Tauri-free CLI + core only (no GUI,
+  # no WebKit/GTK), and ships the Linux binary as an artifact for servers/RMM.
+  build-linux-cli:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+      - name: Rust cache
+        uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: src-tauri
+      - name: Test core + build CLI
+        working-directory: src-tauri
+        run: |
+          cargo test -p nkk-core --release --quiet
+          cargo build -p nkk-cli --release
+      - name: Upload Linux CLI binary
+        uses: actions/upload-artifact@v4
+        with:
+          name: nkk-secure-access-cli-linux
+          path: src-tauri/target/release/nkk-secure-access-cli
+          if-no-files-found: error
+          retention-days: 30
+
   build-windows:
     runs-on: windows-latest
     timeout-minutes: 30
@@ -95,7 +122,9 @@ jobs:
 
       - name: Run Rust unit tests
         working-directory: src-tauri
-        run: cargo test --release --quiet --lib
+        # --workspace so the nkk-core tests (NetBird status/latency parsers, the
+        # heart of the status display) actually run, not just the app crate.
+        run: cargo test --workspace --release --quiet --lib
         continue-on-error: true
 
       - name: Bake setup key into installer (if secret is set)

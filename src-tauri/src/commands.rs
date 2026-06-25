@@ -1,6 +1,12 @@
 use crate::branding::{self, BrandingDto};
 use crate::error::{AppError, AppResult};
 use crate::netbird::{ConnectionState, NetbirdClient, StatusDto};
+// Shared, Tauri-free system probes live in the core now, so the GUI and the CLI
+// use one implementation. Imported here so existing bare calls keep resolving.
+use nkk_core::sys::{
+    check_connectivity as connectivity_core, fetch_hostname, fetch_netbird_version,
+    fetch_os_version, shell_output, ConnectivityResult,
+};
 use serde::{Deserialize, Serialize};
 use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 use tauri::{AppHandle, Emitter, Manager, State};
@@ -1052,31 +1058,6 @@ pub struct DebugInfo {
     pub timestamp: String,
 }
 
-async fn shell_output(cmd: &str, args: &[&str]) -> Option<String> {
-    let mut c = TokioCommand::new(cmd);
-    c.args(args)
-        .stdout(std::process::Stdio::piped())
-        .stderr(std::process::Stdio::null());
-    #[cfg(target_os = "windows")]
-    c.creation_flags(0x08000000);
-    let out = c.output().await.ok()?;
-    if !out.status.success() {
-        return None;
-    }
-    let s = String::from_utf8_lossy(&out.stdout).trim().to_string();
-    if s.is_empty() {
-        None
-    } else {
-        Some(s)
-    }
-}
-
-async fn fetch_hostname() -> String {
-    shell_output("hostname", &[])
-        .await
-        .unwrap_or_else(|| "unbekannt".to_string())
-}
-
 async fn fetch_public_ip() -> Option<String> {
     // Best effort via curl - cheap, universally available, hidden console.
     let fut = shell_output(
@@ -1086,31 +1067,6 @@ async fn fetch_public_ip() -> Option<String> {
     match timeout(Duration::from_secs(4), fut).await {
         Ok(Some(s)) => Some(s.trim().to_string()),
         _ => None,
-    }
-}
-
-async fn fetch_os_version() -> String {
-    #[cfg(target_os = "macos")]
-    {
-        let name = shell_output("sw_vers", &["-productName"]).await;
-        let ver = shell_output("sw_vers", &["-productVersion"]).await;
-        match (name, ver) {
-            (Some(n), Some(v)) => format!("{} {}", n, v),
-            (_, Some(v)) => format!("macOS {}", v),
-            _ => "macOS".to_string(),
-        }
-    }
-    #[cfg(target_os = "windows")]
-    {
-        shell_output("cmd", &["/c", "ver"])
-            .await
-            .unwrap_or_else(|| "Windows".to_string())
-    }
-    #[cfg(all(unix, not(target_os = "macos")))]
-    {
-        shell_output("uname", &["-sr"])
-            .await
-            .unwrap_or_else(|| "Linux".to_string())
     }
 }
 
@@ -3286,7 +3242,12 @@ async fn poll_loop(app: AppHandle) {
                     // or any transition); settle to 15s once stably connected.
                     // Gives quick recovery after sleep/wake and network changes
                     // without OS-specific power hooks.
-                    next_secs = if matches!(payload.state, ConnectionState::Connected) && !changed {
+                    // Any stable state polls slowly to save battery on an idle
+                    // laptop; Connecting and every fresh transition stay fast so
+                    // recovery after sleep/wake or a network change is quick.
+                    next_secs = if !changed
+                        && !matches!(payload.state, ConnectionState::Connecting)
+                    {
                         15
                     } else {
                         3
@@ -3432,10 +3393,6 @@ pub async fn get_health_history(
 }
 
 /// NetBird client version (`netbird version`), best effort.
-async fn fetch_netbird_version(nb: &NetbirdClient) -> Option<String> {
-    let out = shell_output(nb.binary_path(), &["version"]).await?;
-    Some(out.lines().next().unwrap_or(&out).trim().to_string())
-}
 
 // ── Local inventory / system card (RMM foundation, read-only, no telemetry) ──
 
@@ -3620,51 +3577,12 @@ pub async fn export_support_bundle(
 }
 
 // ── Connectivity / captive-portal probe ──
-
-#[derive(Serialize, Clone, Debug)]
-pub struct ConnectivityResult {
-    pub online: bool,
-    #[serde(rename = "captivePortal")]
-    pub captive_portal: bool,
-    #[serde(rename = "httpCode")]
-    pub http_code: u32,
-}
+// The type and the logic live in nkk_core::sys (shared with the CLI); this is
+// just the thin Tauri command over it.
 
 #[tauri::command]
 pub async fn check_connectivity() -> AppResult<ConnectivityResult> {
-    // Probe a well-known "204 No Content" endpoint. 204 => clean internet;
-    // any other 2xx/3xx => a captive portal intercepted the request (login page);
-    // 000/timeout => offline. We deliberately do NOT follow redirects.
-    #[cfg(target_os = "windows")]
-    let null_dev = "NUL";
-    #[cfg(not(target_os = "windows"))]
-    let null_dev = "/dev/null";
-
-    let url = "http://connectivitycheck.gstatic.com/generate_204";
-    let out = shell_output(
-        "curl",
-        &[
-            "-s", "-o", null_dev, "-w", "%{http_code}", "--max-time", "4", url,
-        ],
-    )
-    .await;
-    let code: u32 = out
-        .as_deref()
-        .and_then(|s| s.trim().parse().ok())
-        .unwrap_or(0);
-
-    let (online, captive_portal) = match code {
-        204 => (true, false),
-        // A 200/redirect on a 204-only endpoint means a portal intercepted us.
-        200 | 301 | 302 | 307 | 308 => (false, true),
-        // 000 (timeout), 4xx, 5xx: no usable internet, not a portal.
-        _ => (false, false),
-    };
-    Ok(ConnectivityResult {
-        online,
-        captive_portal,
-        http_code: code,
-    })
+    Ok(connectivity_core().await)
 }
 
 // ── On-site detection (comfort routing, NOT access control) ──

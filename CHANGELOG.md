@@ -10,6 +10,11 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), [SemVer](https
 - Service-Menue: alle laufzeitseitigen Einstellungen direkt umschaltbar (Auto-Reconnect, Beim Start verbinden, Benachrichtigungen, Autostart, RDP-Optionen) und die Aktionen sind durchnummeriert (00, 01, 02 ...), damit man sie schnell per Nummer durchgeben kann.
 - Windows-Haertung: korrektes PowerShell-Quoting (lief sonst bei Pfaden mit Leerzeichen ins Leere), hartes Timeout fuer das Enrollment (kein haengender Installer), und ein locale-unabhaengiges Credential-Cleanup, das auch auf deutschem Windows greift.
 - Kopieren laeuft ueber einen WebView2-sicheren Fallback, und das Rechtsklick-Menue blendet mit einer ruhigen Animation ein.
+- Verbinden ist jetzt ehrlich: die Erfolgsmeldung kommt erst, wenn der Tunnel WIRKLICH steht (nicht mehr beim Klick), und die Server-Erreichbarkeit wird doppelt geprueft und nach dem Routen-Settle nochmal gemessen. Kein zu frueher Fehlmesswert mehr.
+- Hauptansicht: Hinweis sitzt unter dem Button und springt nicht mehr, Fenster scrollt bei viel Inhalt, Windows-Symbol auf der Terminalserver-Karte, animierte Hilfe mit Ein-Tipp "Problem automatisch beheben". Abgelaufene Anmeldung zeigt einen ruhigen, dauerhaften Hinweis statt nur kurz aufzublitzen.
+- Headless Linux-CLI (nkk-secure-access-cli) auf gemeinsamem, Tauri-freiem Core: connect/disconnect/status/connectivity/inventory/diagnose/version, --json fuers RMM. GUI und CLI teilen eine Implementierung und koennen nicht driften.
+- Laeuft sauber von Windows 10 (1809+) bis 11 und Server 2019+: VC-Runtime fest eingelinkt (crt-static), NetBird architektur-bewusst (ARM64). Status-Poller drosselt im Ruhezustand und schont so den Akku.
+- TS2-Desktop-Verknuepfung ist auf Windows eine echte .lnk mit eigenem Apfel-Icon. Versionierte Build-Ablage (Version + Build-Nummer als Patch).
 
 ## [0.3.1] - 2026-06-25
 
