@@ -224,7 +224,7 @@ export function AdminScreen({ branding, onClose }: Props) {
         </span>
       </header>
 
-      <div className="flex-1 overflow-y-auto px-4 py-2 flex flex-col gap-1.5">
+      <div className="admin-actions flex-1 overflow-y-auto px-4 py-2 flex flex-col gap-1.5">
         <AdminAction
           icon={<RotateCcw size={14} />}
           label="NetBird Dienst neu starten"
@@ -587,10 +587,14 @@ function AdminAction({
     <button
       onClick={onClick}
       disabled={running}
-      className={`w-full flex items-center gap-2.5 surface rounded-lg px-3 py-2.5 text-left text-[12px] font-semibold transition hover:border-[color:var(--brand-primary)]/50 ${
+      className={`admin-action w-full flex items-center gap-2.5 surface rounded-lg px-3 py-2.5 text-left text-[12px] font-semibold transition hover:border-[color:var(--brand-primary)]/50 ${
         danger ? "text-red-600" : ""
       }`}
     >
+      <span
+        aria-hidden
+        className="admin-num shrink-0 w-5 text-[11px] font-bold tabular-nums text-muted text-right"
+      />
       <span className={danger ? "text-red-600" : "text-[color:var(--brand-primary)]"}>
         {running ? <Loader2 size={14} className="animate-spin" /> : icon}
       </span>

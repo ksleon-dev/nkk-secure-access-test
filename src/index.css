@@ -227,6 +227,20 @@ button:disabled {
   transform-origin: top left;
 }
 
+/* Numbered service-menu actions so a tech can read them out by number ("Nr.
+   03"). The counter follows render order, so the numbers always match what is
+   on screen even if actions are added or reordered. decimal-leading-zero gives
+   two digits (00, 01, 02 ...); reset to -1 so the first action is 00. */
+.admin-actions {
+  counter-reset: admin-step -1;
+}
+.admin-action {
+  counter-increment: admin-step;
+}
+.admin-num::before {
+  content: counter(admin-step, decimal-leading-zero);
+}
+
 @media (prefers-reduced-motion: reduce) {
   .screen-anim,
   .coach-pop,
