@@ -4,16 +4,21 @@ import {
   AlertTriangle,
   ArrowRight,
   CheckCircle2,
+  Copy,
   Headphones,
   Info,
+  Link2,
   Loader2,
   Newspaper,
+  Power,
   Settings as SettingsIcon,
+  Stethoscope,
   X,
   XCircle,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Avatar } from "../components/Avatar";
+import { useContextMenu } from "../components/ContextMenu";
 import { Decor } from "../components/Decor";
 import { Logo } from "../components/Logo";
 import { TaglineMark } from "../components/TaglineMark";
@@ -49,6 +54,7 @@ export function MainScreen({
   const [busy, setBusy] = useState(false);
   const pendingToggle = useRef(false); // prevent double-click race condition
   const toast = useToast();
+  const showMenu = useContextMenu();
   const state: ConnectionState = status?.state ?? "Disconnected";
   const isConnected = state === "Connected";
   const isBusy = busy || state === "Connecting";
@@ -479,6 +485,26 @@ export function MainScreen({
 
       {/* VPN Status Bar - clearly distinct between connected / disconnected */}
       <div
+        onContextMenu={(e) =>
+          showMenu(e, [
+            {
+              label: isConnected ? "VPN trennen" : "VPN verbinden",
+              icon: <Power size={13} />,
+              onClick: toggle,
+              disabled: isBusy,
+            },
+            {
+              label: "Diagnose öffnen",
+              icon: <Stethoscope size={13} />,
+              onClick: onOpenAbout,
+            },
+            {
+              label: "Einstellungen",
+              icon: <SettingsIcon size={13} />,
+              onClick: onOpenSettings,
+            },
+          ])
+        }
         className={clsx(
           "fade-in-5 relative z-10 px-4 shrink-0 transition-colors duration-300",
           "py-2.5",
@@ -566,6 +592,8 @@ function LaunchCard({
   onClick: () => void | Promise<void>;
 }) {
   const [busy, setBusy] = useState(false);
+  const showMenu = useContextMenu();
+  const toast = useToast();
   const actionLabel =
     item.type === "rdp"
       ? `Mit ${item.label} verbinden`
@@ -583,6 +611,35 @@ function LaunchCard({
   return (
     <button
       onClick={handle}
+      onContextMenu={(e) =>
+        showMenu(e, [
+          { label: actionLabel, icon: <ArrowRight size={13} />, onClick: handle },
+          {
+            label: "Adresse kopieren",
+            icon: <Copy size={13} />,
+            onClick: () => {
+              navigator.clipboard.writeText(item.target);
+              toast.success("Adresse kopiert.");
+            },
+          },
+          ...(item.type === "rdp"
+            ? [
+                {
+                  label: "Desktop-Verknüpfung erstellen",
+                  icon: <Link2 size={13} />,
+                  onClick: async () => {
+                    try {
+                      await invoke("create_desktop_rdp_shortcut");
+                      toast.success("Verknüpfung auf dem Desktop erstellt.");
+                    } catch (e: unknown) {
+                      toast.error(e instanceof Error ? e.message : String(e));
+                    }
+                  },
+                },
+              ]
+            : []),
+        ])
+      }
       disabled={disabled || busy}
       className={clsx(
         "w-full rounded-xl px-4 py-3.5 flex items-center gap-3 text-left transition group",

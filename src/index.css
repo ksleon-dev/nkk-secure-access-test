@@ -216,10 +216,21 @@ button:disabled {
 }
 .coach-bob { animation: coach-bob 1.7s ease-in-out infinite; }
 
+/* Right-click context menu entrance */
+@keyframes context-pop {
+  from { opacity: 0; transform: scale(0.96) translateY(-3px); }
+  to { opacity: 1; transform: none; }
+}
+.context-pop {
+  animation: context-pop 120ms ease-out;
+  transform-origin: top left;
+}
+
 @media (prefers-reduced-motion: reduce) {
   .screen-anim,
   .coach-pop,
-  .coach-bob { animation: none; }
+  .coach-bob,
+  .context-pop { animation: none; }
 }
 
 @keyframes vpn-connect-pulse {

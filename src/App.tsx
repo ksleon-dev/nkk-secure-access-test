@@ -1,6 +1,7 @@
 import { invoke } from "@tauri-apps/api/core";
 import { listen, type UnlistenFn } from "@tauri-apps/api/event";
 import { useCallback, useEffect, useRef, useState } from "react";
+import { ContextMenuProvider } from "./components/ContextMenu";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { ToastProvider, useToast } from "./components/Toast";
 import { UpdateBanner } from "./components/UpdateBanner";
@@ -359,7 +360,9 @@ export default function App() {
   return (
     <ErrorBoundary>
       <ToastProvider>
-        <AppInner />
+        <ContextMenuProvider>
+          <AppInner />
+        </ContextMenuProvider>
       </ToastProvider>
     </ErrorBoundary>
   );
