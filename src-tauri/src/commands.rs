@@ -1797,7 +1797,9 @@ pub async fn dualhoming_prefer_wired(
     {
         // Raise the Wi-Fi interface metric so the wire wins. Reversible via undo.
         let ps1 = std::env::temp_dir().join("nkk-prefer-wired.ps1");
-        let body = "$w = Get-NetAdapter -Physical | Where-Object { $_.Status -eq 'Up' -and $_.PhysicalMediaType -like '*802.11*' } | Select-Object -First 1; if ($w) { Set-NetIPInterface -InterfaceIndex $w.ifIndex -AddressFamily IPv4 -InterfaceMetric 60 }";
+        // Only deprioritise Wi-Fi if a wired adapter is actually up. With no
+        // cable present we change nothing, so Wi-Fi keeps working untouched.
+        let body = "$eth = Get-NetAdapter -Physical | Where-Object { $_.Status -eq 'Up' -and $_.PhysicalMediaType -notlike '*802.11*' }; $w = Get-NetAdapter -Physical | Where-Object { $_.Status -eq 'Up' -and $_.PhysicalMediaType -like '*802.11*' } | Select-Object -First 1; if ($eth -and $w) { Set-NetIPInterface -InterfaceIndex $w.ifIndex -AddressFamily IPv4 -InterfaceMetric 60 }";
         if std::fs::write(&ps1, body).is_err() {
             return Ok(DualHomingResult { applied: false, message: "Konnte Hilfsskript nicht schreiben.".into() });
         }
@@ -3045,7 +3047,10 @@ async fn poll_loop(app: AppHandle) {
                     // backoff + escalation, and never against a stale-login or a
                     // deliberate user disconnect or an unreachable management server.
                     let should_try_reconnect =
-                        matches!(payload.state, ConnectionState::Disconnected)
+                        matches!(
+                            payload.state,
+                            ConnectionState::Disconnected | ConnectionState::Error
+                        )
                             && payload.cli_available
                             && !payload.needs_login
                             && !state.user_disconnected.load(Ordering::Relaxed)

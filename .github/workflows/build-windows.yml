@@ -78,6 +78,21 @@ jobs:
         shell: pwsh
         run: pwsh src-tauri/bin/fetch-netbird.ps1
 
+      - name: Verify bundled binaries are populated (no 0-byte placeholders)
+        shell: pwsh
+        run: |
+          $checks = @{
+            'src-tauri/bin/vc_redist.x64.exe'     = 1000000
+            'src-tauri/bin/wintun.dll'            = 100000
+            'src-tauri/bin/netbird-installer.exe' = 500000
+          }
+          foreach ($f in $checks.Keys) {
+            if (-not (Test-Path $f)) { Write-Error "Bundle-Datei fehlt: $f"; exit 1 }
+            $len = (Get-Item $f).Length
+            if ($len -lt $checks[$f]) { Write-Error "Bundle-Datei zu klein/leer: $f ($len B, min $($checks[$f]))"; exit 1 }
+            Write-Host "OK: $f ($len B)"
+          }
+
       - name: Run Rust unit tests
         working-directory: src-tauri
         run: cargo test --release --quiet --lib

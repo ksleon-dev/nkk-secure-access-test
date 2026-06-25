@@ -90,8 +90,9 @@ export function EnrollmentScreen({ branding, onEnrolled }: Props) {
       onEnrolled();
     } catch (e: unknown) {
       setPhase("error");
-      setError(e instanceof Error ? e.message : String(e));
-      // Show error on logo for 2s then reset
+      // Keep the technical detail in the log for support, show a calm message.
+      console.error("Enrollment fehlgeschlagen:", e);
+      setError("Anmeldung fehlgeschlagen. Bitte Setup-Key prüfen und erneut versuchen.");
       await new Promise((r) => setTimeout(r, 2000));
       setPhase("idle");
     } finally {

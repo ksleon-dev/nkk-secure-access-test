@@ -230,6 +230,14 @@ nkk_netbird_run:
   ${EndIf}
   ${If} $NkkExitCode == 0
     DetailPrint "NKK: NetBird Client erfolgreich installiert."
+    ; Mark NetBird as installed BY US. Uninstall then removes only our own
+    ; NetBird and never touches one that was already on the machine (shared use).
+    ClearErrors
+    FileOpen $9 "${NKK_DATA_DIR}\netbird-owned.flag" w
+    ${IfNot} ${Errors}
+      FileWrite $9 "owned-by-nkk-secure-access"
+      FileClose $9
+    ${EndIf}
   ${Else}
     DetailPrint "NKK: NetBird Installer Exit Code $NkkExitCode (nicht blockierend)."
     StrCpy $NkkErrors "$NkkErrors[NB-INST] NetBird Installation Exit $NkkExitCode$\r$\n"
@@ -378,45 +386,59 @@ nkk_svc_ready:
 !macroend
 
 !macro NSIS_HOOK_POSTUNINSTALL
-  DetailPrint "NKK: Stoppe NetBird Service ..."
-  nsExec::ExecToLog 'sc.exe stop netbird'
+  ; Did WE install NetBird? Only then remove it. A NetBird that was already on
+  ; the machine (shared with other WireGuard tooling) is left fully untouched.
+  StrCpy $0 "0"
+  IfFileExists "${NKK_DATA_DIR}\netbird-owned.flag" 0 nkk_nb_notours
+    StrCpy $0 "1"
+  nkk_nb_notours:
+
+  ${If} $0 == "1"
+    DetailPrint "NKK: Entferne unsere NetBird Installation ..."
+    nsExec::ExecToLog 'sc.exe stop netbird'
+    Pop $NkkExitCode
+    IfFileExists "${NKK_NETBIRD_UNINST}" nkk_unb_found nkk_unb_skip
+  nkk_unb_found:
+    nsExec::ExecToLog '"${NKK_NETBIRD_UNINST}" /S'
+    Pop $NkkExitCode
+    Sleep 2000
+  nkk_unb_skip:
+    RMDir /r "$PROGRAMFILES64\NetBird"
+    RMDir /r "$LOCALAPPDATA\NetBird"
+    nsExec::ExecToLog 'sc.exe delete netbird'
+    Pop $NkkExitCode
+    ; Remove the Defender exclusions we added during install
+    nsExec::ExecToLog 'powershell -NoProfile -NonInteractive -inputformat none -ExecutionPolicy Bypass -WindowStyle Hidden -Command "try { Remove-MpPreference -ExclusionPath $\"$PROGRAMFILES64\NetBird$\" -ErrorAction SilentlyContinue; Remove-MpPreference -ExclusionProcess $\"netbird.exe$\" -ErrorAction SilentlyContinue; Remove-MpPreference -ExclusionProcess $\"netbird-ui.exe$\" -ErrorAction SilentlyContinue } catch {}"'
+    Pop $NkkExitCode
+  ${Else}
+    DetailPrint "NKK: NetBird war bereits vorhanden - bleibt erhalten."
+  ${EndIf}
+  ; NOTE: $PROGRAMDATA\NetBird is NetBird's own config and may be shared, so it
+  ; is intentionally never deleted here.
+
+  ; Remove stored secrets from Windows Credential Manager (setup key, RDP creds,
+  ; profiles). keyring target names contain the service name; best effort, the
+  ; app is the only writer. Wrapped in try/catch so it never blocks uninstall.
+  DetailPrint "NKK: Entferne gespeicherte Zugangsdaten ..."
+  nsExec::ExecToLog 'powershell -NoProfile -NonInteractive -inputformat none -ExecutionPolicy Bypass -WindowStyle Hidden -Command "try { cmdkey /list | ForEach-Object { if (($_ -match \"nkk-secure-access\") -and ($_ -match \"Target:\s*(\S+)\")) { $t = $matches[1] -replace \"^LegacyGeneric:target=\",\"\"; cmdkey /delete:$t | Out-Null } } } catch {}"'
   Pop $NkkExitCode
 
-  ; Run NetBird's own NSIS uninstaller silently
-  IfFileExists "${NKK_NETBIRD_UNINST}" nkk_unb_found nkk_unb_skip
-nkk_unb_found:
-  DetailPrint "NKK: Deinstalliere gebundlete NetBird Komponente ..."
-  nsExec::ExecToLog '"${NKK_NETBIRD_UNINST}" /S'
-  Pop $NkkExitCode
-  Sleep 2000
-nkk_unb_skip:
-
-  DetailPrint "NKK: Entferne NetBird Reste ..."
-  RMDir /r "$PROGRAMFILES64\NetBird"
-  RMDir /r "$PROGRAMDATA\NetBird"
-  RMDir /r "$LOCALAPPDATA\NetBird"
-
-  DetailPrint "NKK: Entferne Service Eintrag (falls noch vorhanden) ..."
-  nsExec::ExecToLog 'sc.exe delete netbird'
-  Pop $NkkExitCode
-
-  ; Remove the Defender exclusions we added during install
-  DetailPrint "NKK: Entferne Defender Exclusions ..."
-  nsExec::ExecToLog 'powershell -NoProfile -NonInteractive -inputformat none -ExecutionPolicy Bypass -WindowStyle Hidden -Command "try { Remove-MpPreference -ExclusionPath $\"$PROGRAMFILES64\NetBird$\" -ErrorAction SilentlyContinue; Remove-MpPreference -ExclusionProcess $\"netbird.exe$\" -ErrorAction SilentlyContinue; Remove-MpPreference -ExclusionProcess $\"netbird-ui.exe$\" -ErrorAction SilentlyContinue } catch {}"'
-  Pop $NkkExitCode
-
-  ; Remove NKK app data (enrolled marker, logs, cached data)
+  ; Remove NKK app data: ProgramData, logs, AND the Tauri roaming AppData
+  ; (enrolled.flag, user-disconnected.flag, rdp.json) so a reinstall starts clean
+  ; and does not falsely believe it is still enrolled.
   DetailPrint "NKK: Entferne App Daten ..."
   RMDir /r "${NKK_DATA_DIR}"
   RMDir /r "${NKK_LOG_DIR}"
+  RMDir /r "$APPDATA\de.kronsolutions.nkksecureaccess"
+  RMDir /r "$LOCALAPPDATA\de.kronsolutions.nkksecureaccess"
 
-  ; Remove Start Menu shortcuts (both per-user and per-machine)
+  ; Remove Start Menu + desktop shortcuts (per-user and per-machine)
   DetailPrint "NKK: Entferne Startmenu Eintraege ..."
   RMDir /r "$SMPROGRAMS\KronSolutions"
   RMDir /r "$SMPROGRAMS\NKK Secure Access"
   Delete "$DESKTOP\${PRODUCTNAME}.lnk"
 
-  ; Remove old per-user install leftovers
+  ; Remove old per-user install leftovers + autostart
   RMDir /r "$LOCALAPPDATA\NKK Secure Access"
   RMDir /r "$LOCALAPPDATA\Programs\NKK Secure Access"
   DeleteRegKey HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\NKK Secure Access"

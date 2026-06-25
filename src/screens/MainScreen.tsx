@@ -6,6 +6,7 @@ import {
   Loader2,
   Newspaper,
   Settings as SettingsIcon,
+  X,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Avatar } from "../components/Avatar";
@@ -80,6 +81,27 @@ export function MainScreen({
     }
   }
 
+  // First-run coach mark: gently point a new employee at the Verbinden button,
+  // exactly once. Dismissed by tapping it away or by connecting.
+  const [showCoach, setShowCoach] = useState(() => {
+    try {
+      return !localStorage.getItem("nkk-onboarded");
+    } catch {
+      return false;
+    }
+  });
+  function dismissCoach() {
+    try {
+      localStorage.setItem("nkk-onboarded", "1");
+    } catch {
+      /* private mode: hide for this session only */
+    }
+    setShowCoach(false);
+  }
+  useEffect(() => {
+    if (showCoach && (isConnected || state === "Connecting")) dismissCoach();
+  }, [isConnected, state, showCoach]);
+
   // Shift+<digit> hotkeys for quick-launch entries, including hidden ones
   // (e.g. Shift+1 launches the hidden Terminalserver 1). Plain Shift only, so it
   // never collides with the admin shortcut (Cmd/Ctrl+Shift+0), and never fires
@@ -139,9 +161,10 @@ export function MainScreen({
     if (pendingToggle.current) return;
     pendingToggle.current = true;
     setBusy(true);
+    const wantDisconnect = isConnected;
     const minBusy = new Promise((r) => setTimeout(r, 2500)); // particles visible min 2.5s
     try {
-      if (isConnected) {
+      if (wantDisconnect) {
         await Promise.all([invoke("nb_disconnect"), minBusy]);
         toast.info(de.toast.disconnected);
       } else {
@@ -150,8 +173,13 @@ export function MainScreen({
       }
     } catch (e: unknown) {
       await minBusy; // show particles even on error
-      const msg = e instanceof Error ? e.message : String(e);
-      toast.error(msg);
+      // Technical detail goes to the log; the employee sees a calm message.
+      console.error("VPN toggle failed:", e);
+      toast.error(
+        wantDisconnect
+          ? "Trennen hat nicht geklappt. Bitte erneut versuchen."
+          : "Verbindung fehlgeschlagen. Bitte erneut versuchen, sonst beim Support melden."
+      );
     } finally {
       setBusy(false);
       pendingToggle.current = false;
@@ -333,6 +361,27 @@ export function MainScreen({
           )}
         </div>
       </main>
+
+      {/* First-run hint pointing at the Verbinden button (shown once) */}
+      {showCoach && !isConnected && !isBusy && (status ? status.cli_available : true) && (
+        <div className="absolute bottom-[66px] right-3 z-30 max-w-[230px] coach-pop">
+          <div className="relative coach-bob surface rounded-xl px-3 py-2.5 shadow-lg border-2 border-[color:var(--brand-primary)]">
+            <button
+              onClick={dismissCoach}
+              aria-label="Hinweis schließen"
+              className="absolute top-1 right-1 text-[color:var(--brand-fg)]/45 hover:text-[color:var(--brand-fg)]"
+            >
+              <X size={13} />
+            </button>
+            <div className="text-[11.5px] font-semibold text-[color:var(--brand-fg)] leading-snug pr-3">
+              Tipp: Hier unten auf{" "}
+              <span className="text-[color:var(--brand-primary)]">Verbinden</span>{" "}
+              tippen, um auf den Server zu kommen.
+            </div>
+            <div className="absolute -bottom-[7px] right-7 w-3.5 h-3.5 rotate-45 bg-[color:var(--brand-surface)] border-r-2 border-b-2 border-[color:var(--brand-primary)]" />
+          </div>
+        </div>
+      )}
 
       {/* VPN Status Bar - clearly distinct between connected / disconnected */}
       <div
