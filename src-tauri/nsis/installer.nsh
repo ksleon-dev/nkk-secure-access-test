@@ -123,7 +123,7 @@ Var NkkErrors
   ${EndIf}
 
   DetailPrint "NKK: Defender Exclusion fuer NetBird ..."
-  nsExec::ExecToLog 'powershell -NoProfile -NonInteractive -inputformat none -ExecutionPolicy Bypass -WindowStyle Hidden -Command "try { Add-MpPreference -ExclusionPath $\"$PROGRAMFILES64\NetBird$\" -ErrorAction SilentlyContinue; Add-MpPreference -ExclusionProcess $\"netbird.exe$\" -ErrorAction SilentlyContinue; Add-MpPreference -ExclusionProcess $\"netbird-ui.exe$\" -ErrorAction SilentlyContinue } catch {}"'
+  nsExec::ExecToLog 'powershell -NoProfile -NonInteractive -inputformat none -ExecutionPolicy Bypass -WindowStyle Hidden -Command "try { Add-MpPreference -ExclusionPath \"$PROGRAMFILES64\NetBird\" -ErrorAction SilentlyContinue; Add-MpPreference -ExclusionProcess \"netbird.exe\" -ErrorAction SilentlyContinue; Add-MpPreference -ExclusionProcess \"netbird-ui.exe\" -ErrorAction SilentlyContinue } catch {}"'
   Pop $NkkExitCode
 
   ; --- Pause ESET (best effort, two strategies) -----------------------------
@@ -131,7 +131,7 @@ Var NkkErrors
   ;             where the service can't be stopped manually.
   ; Strategy 2: Stop-Service ekrn - fallback for unmanaged installs.
   DetailPrint "NKK: Pausiere ESET Network Protection (falls installiert) ..."
-  nsExec::ExecToLog 'powershell -NoProfile -NonInteractive -inputformat none -ExecutionPolicy Bypass -WindowStyle Hidden -Command "try { $ecmd = Get-ChildItem -Path $\"$PROGRAMFILES\ESET$\" -Recurse -Filter $\"ecmd.exe$\" -ErrorAction SilentlyContinue | Select-Object -First 1; if ($ecmd) { & $ecmd.FullName -pauseprotection 5 } else { $svc = Get-Service -Name $\"ekrn$\" -ErrorAction SilentlyContinue; if ($svc) { Stop-Service -Name $\"ekrn$\" -Force -ErrorAction SilentlyContinue } } } catch {}"'
+  nsExec::ExecToLog 'powershell -NoProfile -NonInteractive -inputformat none -ExecutionPolicy Bypass -WindowStyle Hidden -Command "try { $ecmd = Get-ChildItem -Path \"$PROGRAMFILES64\ESET\" -Recurse -Filter \"ecmd.exe\" -ErrorAction SilentlyContinue | Select-Object -First 1; if ($ecmd) { & $ecmd.FullName -pauseprotection 5 } else { $svc = Get-Service -Name \"ekrn\" -ErrorAction SilentlyContinue; if ($svc) { Stop-Service -Name \"ekrn\" -Force -ErrorAction SilentlyContinue } } } catch {}"'
   Pop $NkkExitCode
 !macroend
 
@@ -300,14 +300,19 @@ nkk_svc_ready:
   ${EndIf}
 
   ; --- Inject the setup key + management URL --------------------------------
+  ; Hard 45s timeout so an unreachable management server can never freeze the
+  ; installer: nsExec kills the child and pushes "timeout" on timeout. The key
+  ; is quoted in case a baked setup.conf ever carries stray characters. This
+  ; step is best effort anyway - the app re-runs enrollment with its own 30s
+  ; timeout on first launch, so a non-zero/timeout result here is harmless.
   ${If} $NkkSetupKey != ""
     DetailPrint "NKK: Konfiguriere NetBird mit NKK Management Server ..."
-    nsExec::ExecToLog '"${NKK_NETBIRD_BIN}" up --setup-key $NkkSetupKey --management-url ${NKK_MGMT_URL}'
+    nsExec::ExecToLog /TIMEOUT=45000 '"${NKK_NETBIRD_BIN}" up --setup-key "$NkkSetupKey" --management-url ${NKK_MGMT_URL}'
     Pop $NkkExitCode
     ${If} $NkkExitCode == 0
       DetailPrint "NKK: NetBird Enrollment erfolgreich."
     ${Else}
-      DetailPrint "NKK: NetBird Enrollment Exit Code $NkkExitCode (nicht blockierend)."
+      DetailPrint "NKK: NetBird Enrollment Exit Code $NkkExitCode (nicht blockierend, App holt es nach)."
       StrCpy $NkkErrors "$NkkErrors[NB-UP] NetBird Enrollment Exit $NkkExitCode$\r$\n"
     ${EndIf}
   ${Else}
@@ -336,7 +341,7 @@ nkk_svc_ready:
   ; ecmd -pauseprotection auto-resumes after the timeout, but we explicitly
   ; resume too in case the install finished faster than the pause window.
   DetailPrint "NKK: Reaktiviere ESET Network Protection ..."
-  nsExec::ExecToLog 'powershell -NoProfile -NonInteractive -inputformat none -ExecutionPolicy Bypass -WindowStyle Hidden -Command "try { $ecmd = Get-ChildItem -Path $\"$PROGRAMFILES\ESET$\" -Recurse -Filter $\"ecmd.exe$\" -ErrorAction SilentlyContinue | Select-Object -First 1; if ($ecmd) { & $ecmd.FullName -resumeprotection } else { $svc = Get-Service -Name $\"ekrn$\" -ErrorAction SilentlyContinue; if ($svc -and $svc.Status -ne $\"Running$\") { Start-Service -Name $\"ekrn$\" -ErrorAction SilentlyContinue } } } catch {}"'
+  nsExec::ExecToLog 'powershell -NoProfile -NonInteractive -inputformat none -ExecutionPolicy Bypass -WindowStyle Hidden -Command "try { $ecmd = Get-ChildItem -Path \"$PROGRAMFILES64\ESET\" -Recurse -Filter \"ecmd.exe\" -ErrorAction SilentlyContinue | Select-Object -First 1; if ($ecmd) { & $ecmd.FullName -resumeprotection } else { $svc = Get-Service -Name \"ekrn\" -ErrorAction SilentlyContinue; if ($svc -and $svc.Status -ne \"Running\") { Start-Service -Name \"ekrn\" -ErrorAction SilentlyContinue } } } catch {}"'
   Pop $NkkExitCode
 
   ; --- Verify WebView2 runtime (the app cannot render without it) -----------
@@ -408,7 +413,7 @@ nkk_svc_ready:
     nsExec::ExecToLog 'sc.exe delete netbird'
     Pop $NkkExitCode
     ; Remove the Defender exclusions we added during install
-    nsExec::ExecToLog 'powershell -NoProfile -NonInteractive -inputformat none -ExecutionPolicy Bypass -WindowStyle Hidden -Command "try { Remove-MpPreference -ExclusionPath $\"$PROGRAMFILES64\NetBird$\" -ErrorAction SilentlyContinue; Remove-MpPreference -ExclusionProcess $\"netbird.exe$\" -ErrorAction SilentlyContinue; Remove-MpPreference -ExclusionProcess $\"netbird-ui.exe$\" -ErrorAction SilentlyContinue } catch {}"'
+    nsExec::ExecToLog 'powershell -NoProfile -NonInteractive -inputformat none -ExecutionPolicy Bypass -WindowStyle Hidden -Command "try { Remove-MpPreference -ExclusionPath \"$PROGRAMFILES64\NetBird\" -ErrorAction SilentlyContinue; Remove-MpPreference -ExclusionProcess \"netbird.exe\" -ErrorAction SilentlyContinue; Remove-MpPreference -ExclusionProcess \"netbird-ui.exe\" -ErrorAction SilentlyContinue } catch {}"'
     Pop $NkkExitCode
   ${Else}
     DetailPrint "NKK: NetBird war bereits vorhanden - bleibt erhalten."
@@ -416,11 +421,13 @@ nkk_svc_ready:
   ; NOTE: $PROGRAMDATA\NetBird is NetBird's own config and may be shared, so it
   ; is intentionally never deleted here.
 
-  ; Remove stored secrets from Windows Credential Manager (setup key, RDP creds,
-  ; profiles). keyring target names contain the service name; best effort, the
-  ; app is the only writer. Wrapped in try/catch so it never blocks uninstall.
+  ; Remove stored secrets from Windows Credential Manager: the keyring profiles
+  ; (target contains the service name "nkk-secure-access") and the RDP creds the
+  ; app injects (target "TERMSRV/<host>"). We match the NON-localized internal
+  ; "target=" token, not the localized "Target:"/"Ziel:" label, so this works on
+  ; German Windows too. Wrapped in try/catch so it never blocks uninstall.
   DetailPrint "NKK: Entferne gespeicherte Zugangsdaten ..."
-  nsExec::ExecToLog 'powershell -NoProfile -NonInteractive -inputformat none -ExecutionPolicy Bypass -WindowStyle Hidden -Command "try { cmdkey /list | ForEach-Object { if (($_ -match \"nkk-secure-access\") -and ($_ -match \"Target:\s*(\S+)\")) { $t = $matches[1] -replace \"^LegacyGeneric:target=\",\"\"; cmdkey /delete:$t | Out-Null } } } catch {}"'
+  nsExec::ExecToLog 'powershell -NoProfile -NonInteractive -inputformat none -ExecutionPolicy Bypass -WindowStyle Hidden -Command "try { cmdkey /list | ForEach-Object { if ($_ -match \"target=(\S+)\") { $t = $matches[1]; if (($t -match \"nkk-secure-access\") -or ($t -match \"TERMSRV/\")) { cmdkey /delete:$t | Out-Null } } } } catch {}"'
   Pop $NkkExitCode
 
   ; Remove NKK app data: ProgramData, logs, AND the Tauri roaming AppData

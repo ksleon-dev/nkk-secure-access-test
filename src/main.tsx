@@ -2,8 +2,9 @@ import ReactDOM from "react-dom/client";
 import App from "./App";
 import "./index.css";
 
-// Disable the native context menu (right-click "Copy / Inspect / ..." etc.)
-// except inside inputs where we need the standard paste menu.
+// Global safety nets for a 24/7 run. The native right-click menu is handled in
+// one place only - ContextMenuProvider - which also allows text fields and
+// .allow-select regions (so diagnostics stay copyable); no duplicate here.
 if (typeof window !== "undefined") {
   // Last-resort visibility for otherwise-silent failures during a 24/7 run.
   window.addEventListener("unhandledrejection", (e) => {
@@ -11,13 +12,6 @@ if (typeof window !== "undefined") {
   });
   window.addEventListener("error", (e) => {
     console.error("Uncaught error:", e.error ?? e.message);
-  });
-  window.addEventListener("contextmenu", (e) => {
-    const target = e.target as HTMLElement | null;
-    if (target && (target.tagName === "INPUT" || target.tagName === "TEXTAREA")) {
-      return;
-    }
-    e.preventDefault();
   });
   window.addEventListener("dragstart", (e) => {
     const target = e.target as HTMLElement | null;
