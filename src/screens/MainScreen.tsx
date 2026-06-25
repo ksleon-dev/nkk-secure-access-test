@@ -296,8 +296,9 @@ export function MainScreen({
         </button>
       </header>
 
-      {/* Centered hero - content sits directly on the cream background */}
-      <main className="relative z-10 flex-1 flex flex-col items-center justify-center px-6 gap-3 py-2 text-center">
+      {/* Hero - top-aligned so the logo sits high and the layout never jumps
+          when the situation banner appears or disappears. */}
+      <main className="relative z-10 flex-1 flex flex-col items-center justify-start px-6 gap-2.5 pt-5 pb-2 text-center">
         <div className="fade-in-1 flex flex-col items-center">
           <div
             className="relative flex items-center justify-center cursor-pointer"

@@ -1,7 +1,10 @@
 import { invoke } from "@tauri-apps/api/core";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
+import { check } from "@tauri-apps/plugin-updater";
+import { relaunch } from "@tauri-apps/plugin-process";
 import {
   ArrowLeft,
+  Download,
   FileDown,
   FolderOpen,
   Loader2,
@@ -228,6 +231,26 @@ export function AdminScreen({ branding, onClose }: Props) {
               const msg = await invoke<string>("admin_update_netbird");
               setOutput(msg);
               return msg;
+            })
+          }
+        />
+        <AdminAction
+          icon={<Download size={14} />}
+          label="Nach App-Update suchen"
+          running={running === "appupd"}
+          onClick={() =>
+            run("appupd", async () => {
+              try {
+                const update = await check();
+                if (!update) return "Die App ist aktuell.";
+                setOutput(`App-Update ${update.version} wird geladen …`);
+                await update.downloadAndInstall();
+                await relaunch();
+                return "App-Update installiert, die App startet neu.";
+              } catch (e: unknown) {
+                console.error("App-Update:", e);
+                return "Kein App-Update gefunden oder Server nicht erreichbar.";
+              }
             })
           }
         />
