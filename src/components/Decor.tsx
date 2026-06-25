@@ -1,7 +1,8 @@
 /**
- * Subtle bio-themed background decoration - cream blob shapes plus
- * abstract red sprig / leaf line drawings in the corners that echo the
- * Naturkost Kontor website illustrations.
+ * Subtle bio-themed background decoration. Soft cream blobs for depth, plus
+ * three clean, recognisable line motifs that mean something for an organic
+ * food wholesaler: a leaf, an apple (echoing the NKK mark) and an ear of wheat.
+ * All very low opacity so they sit behind the content, never compete with it.
  */
 export function Decor() {
   return (
@@ -11,64 +12,62 @@ export function Decor() {
       preserveAspectRatio="xMidYMid slice"
       aria-hidden="true"
     >
-      {/* Soft cream blob top right */}
+      {/* Soft cream blobs for gentle depth */}
       <path
         d="M 460 -40 Q 540 80 460 200 Q 360 270 280 180 Q 220 80 320 -20 Q 400 -90 460 -40 Z"
         fill="var(--brand-surface)"
-        opacity="0.55"
+        opacity="0.5"
       />
-      {/* Soft cream blob bottom left */}
       <path
         d="M -60 540 Q 30 480 100 540 Q 130 620 50 660 Q -40 680 -80 620 Q -90 570 -60 540 Z"
         fill="var(--brand-surface)"
-        opacity="0.5"
-      />
-      {/* Tiny cream accent top left */}
-      <path
-        d="M 30 60 Q 70 50 75 90 Q 60 120 30 110 Q 5 90 30 60 Z"
-        fill="var(--brand-surface)"
-        opacity="0.35"
+        opacity="0.45"
       />
 
-      {/* Bio sprig top left - line drawing leaf cluster in cherry red */}
+      {/* Leaf, top left */}
+      <g
+        stroke="var(--brand-primary)"
+        strokeWidth="1.6"
+        fill="none"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        opacity="0.22"
+      >
+        <path d="M 18 138 C 28 118 30 96 50 80" />
+        <path d="M 50 80 C 38 78 25 86 23 102 C 37 104 49 96 50 80 Z" />
+        <path d="M 30 96 L 45 85" />
+      </g>
+
+      {/* Apple, top right (echoes the NKK mark) */}
+      <g
+        stroke="var(--brand-primary)"
+        strokeWidth="1.6"
+        fill="none"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        opacity="0.2"
+      >
+        <path d="M 384 106 C 376 100 365 104 364 115 C 363 129 372 142 381 145 C 384 146 384 144 385 143 C 386 144 387 146 390 145 C 399 142 408 129 407 115 C 406 104 395 100 387 106 Z" />
+        <path d="M 385 106 C 386 98 386 94 388 90" />
+        <path d="M 387 97 C 393 91 402 92 404 97 C 399 103 391 102 387 97 Z" />
+      </g>
+
+      {/* Ear of wheat, bottom right */}
       <g
         stroke="var(--brand-primary)"
         strokeWidth="1.4"
         fill="none"
         strokeLinecap="round"
-        opacity="0.32"
+        strokeLinejoin="round"
+        opacity="0.2"
       >
-        <path d="M 14 100 Q 38 88 50 110" />
-        <path d="M 22 96 Q 28 80 16 70" />
-        <path d="M 32 92 Q 46 80 60 88" />
-        <path d="M 38 105 Q 52 100 58 88" />
-      </g>
-
-      {/* Bio sprig bottom right - small cherry pair */}
-      <g
-        stroke="var(--brand-primary)"
-        strokeWidth="1.5"
-        fill="none"
-        strokeLinecap="round"
-        opacity="0.32"
-      >
-        <path d="M 380 540 Q 388 522 402 528" />
-        <path d="M 388 538 Q 380 552 388 564" />
-        <circle cx="386" cy="568" r="6" fill="var(--brand-primary)" opacity="0.5" />
-        <circle cx="400" cy="558" r="5" fill="var(--brand-primary)" opacity="0.5" />
-        <path d="M 372 552 Q 360 558 358 572" opacity="0.7" />
-      </g>
-
-      {/* Tiny leaf top right */}
-      <g
-        stroke="var(--brand-primary)"
-        strokeWidth="1.4"
-        fill="none"
-        strokeLinecap="round"
-        opacity="0.28"
-      >
-        <path d="M 380 110 Q 396 98 410 108 Q 400 124 380 118 Z" />
-        <path d="M 388 112 L 402 110" />
+        <path d="M 388 590 L 388 532" />
+        <path d="M 388 544 C 380 540 378 532 380 526 C 388 530 390 537 388 544" />
+        <path d="M 388 544 C 396 540 398 532 396 526 C 388 530 386 537 388 544" />
+        <path d="M 388 556 C 380 552 378 544 380 538 C 388 542 390 549 388 556" />
+        <path d="M 388 556 C 396 552 398 544 396 538 C 388 542 386 549 388 556" />
+        <path d="M 388 568 C 381 564 379 557 381 551 C 388 555 389 561 388 568" />
+        <path d="M 388 568 C 395 564 397 557 395 551 C 388 555 387 561 388 568" />
       </g>
     </svg>
   );
