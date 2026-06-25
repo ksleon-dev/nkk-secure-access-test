@@ -4011,6 +4011,8 @@ pub async fn admin_update_netbird(
     sleep(Duration::from_secs(3)).await;
     let after = fetch_netbird_version(&nb).await;
 
+    // Decide by the resulting version. Never surface a raw red error here: an
+    // update that could not complete returns a calm, actionable Ok message.
     match (&before, &after) {
         (Some(b), Some(a)) if version_lt(b, a) => {
             Ok(format!("NetBird aktualisiert: {} auf {}.", b, a))
@@ -4021,20 +4023,21 @@ pub async fn admin_update_netbird(
                     return Ok(format!("NetBird ist aktuell (Version {}).", a));
                 }
             }
-            match hint {
-                Some(h) => Err(AppError::Internal(h)),
-                None => Ok(format!(
+            Ok(match hint {
+                Some(h) => format!(
+                    "Automatisches Update nicht möglich: {} NetBird ist weiterhin Version {}.",
+                    h, a
+                ),
+                None => format!(
                     "Kein Update durchgeführt, NetBird ist weiterhin Version {}.",
                     a
-                )),
-            }
+                ),
+            })
         }
-        _ => match hint {
-            Some(h) => Err(AppError::Internal(h)),
-            None => Err(AppError::Internal(
-                "NetBird-Version nach dem Update nicht ermittelbar.".into(),
-            )),
-        },
+        _ => Ok(match hint {
+            Some(h) => format!("Automatisches Update nicht möglich: {}", h),
+            None => "NetBird-Version nicht ermittelbar, bitte Verbindung prüfen.".into(),
+        }),
     }
 }
 
@@ -4058,7 +4061,12 @@ async fn run_netbird_update() -> Option<String> {
                 TokioCommand::new("brew").args(["upgrade", "netbird"]).output(),
             )
             .await;
-            return update_hint_from(res);
+            // Trust brew only if it truly succeeded. Newer Homebrew refuses
+            // untrusted third-party taps (netbirdio/tap); on ANY failure we fall
+            // through to the .pkg below, which always upgrades in place.
+            if matches!(res, Ok(Ok(ref o)) if o.status.success()) {
+                return None;
+            }
         }
         // The official install.sh refuses when NetBird is already present, so
         // upgrade with the .pkg directly: macOS `installer` replaces it in
@@ -4214,15 +4222,26 @@ fn update_hint_from(
     match res {
         Ok(Ok(o)) if o.status.success() => None,
         Ok(Ok(o)) => {
-            let e = String::from_utf8_lossy(&o.stderr);
+            // Classify into a calm German fragment. Never echo the raw stderr,
+            // which is technical and alarming for an employee.
+            let e = String::from_utf8_lossy(&o.stderr).to_lowercase();
             if e.contains("canceled") || e.contains("cancelled") || e.contains("-128") {
-                Some("Update vom Benutzer abgebrochen.".into())
-            } else if e.contains("resolve") || e.contains("timed out") || e.contains("Could not") {
-                Some("Keine Verbindung zum Update-Server.".into())
+                Some("vom Benutzer abgebrochen.".into())
+            } else if e.contains("resolve")
+                || e.contains("timed out")
+                || e.contains("could not")
+                || e.contains("network")
+            {
+                Some("keine Verbindung zum Update-Server.".into())
+            } else if e.contains("untrusted") || e.contains("refusing to load") {
+                Some("Homebrew hat das Update gesperrt, bitte den Support kontaktieren.".into())
+            } else if e.contains("permission") || e.contains("denied") || e.contains("not permitted")
+            {
+                Some("fehlende Rechte.".into())
             } else if e.trim().is_empty() {
                 None
             } else {
-                Some(format!("Update meldete: {}", e.trim()))
+                Some("der Update-Helfer meldete einen Fehler.".into())
             }
         }
         _ => Some("Update abgebrochen oder Timeout.".into()),
