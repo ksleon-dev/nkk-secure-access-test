@@ -6,6 +6,7 @@ import {
   CheckCircle2,
   Copy,
   Headphones,
+  HelpCircle,
   Info,
   Link2,
   Loader2,
@@ -77,6 +78,7 @@ export function MainScreen({
   const canLaunch = isConnected || onSiteActive;
 
   const [connectivity, setConnectivity] = useState<ConnectivityResult | null>(null);
+  const [helpOpen, setHelpOpen] = useState(false);
   useEffect(() => {
     let alive = true;
     invoke<ConnectivityResult>("check_connectivity")
@@ -390,6 +392,21 @@ export function MainScreen({
           </div>
         </div>
 
+        <div className="fade-in-3 w-full flex flex-col gap-2 mt-1">
+          {launches.map((item, i) => (
+            <LaunchCard
+              key={item.target}
+              item={item}
+              primary={i === 0}
+              disabled={!canLaunch}
+              onClick={() => onRequestLaunch(item)}
+            />
+          ))}
+        </div>
+
+        {/* Situation read sits BELOW the action: a late or changing read never
+            shifts the primary button, and it fades in place (opacity only) so
+            it can never visibly jump. */}
         {situation &&
           (() => {
             const TONE = {
@@ -423,7 +440,7 @@ export function MainScreen({
             return (
               <div
                 className={clsx(
-                  "fade-in-3 w-full rounded-xl px-3 py-2.5 flex flex-col gap-2",
+                  "fade-soft w-full rounded-xl px-3 py-2.5 flex flex-col gap-2 mt-2",
                   t.box
                 )}
               >
@@ -450,16 +467,50 @@ export function MainScreen({
               </div>
             );
           })()}
-        <div className="fade-in-3 w-full flex flex-col gap-2 mt-1">
-          {launches.map((item, i) => (
-            <LaunchCard
-              key={item.target}
-              item={item}
-              primary={i === 0}
-              disabled={!canLaunch}
-              onClick={() => onRequestLaunch(item)}
-            />
-          ))}
+
+        {/* Contextual help, collapsed by default so it never gets in the way;
+            expands smoothly with a plain-language tip and a Diagnose shortcut. */}
+        <div className="w-full flex flex-col items-center mt-1.5">
+          <button
+            onClick={() => setHelpOpen((v) => !v)}
+            aria-expanded={helpOpen}
+            className="flex items-center gap-1.5 text-[11px] font-semibold text-muted hover:text-[color:var(--brand-primary)] transition px-2 py-1 rounded-lg"
+          >
+            <HelpCircle size={13} />
+            {helpOpen ? "Hilfe schließen" : "Hilfe"}
+          </button>
+          {helpOpen && (
+            <div className="help-pop w-full surface rounded-xl px-3 py-2.5 mt-1.5 flex flex-col gap-2">
+              <div className="flex items-start gap-2">
+                <span className="shrink-0 mt-0.5 w-4 h-4 rounded-full bg-[color:var(--brand-primary)]/12 text-[color:var(--brand-primary)] text-[10px] font-bold flex items-center justify-center">
+                  1
+                </span>
+                <span className="text-[11px] font-semibold text-[color:var(--brand-fg)]/85 leading-snug">
+                  {isConnected
+                    ? "Du bist verbunden. Tippe oben auf den Terminalserver, dann öffnet sich die Sitzung."
+                    : "Tippe unten auf Verbinden. Sobald es grün ist, öffnet der Terminalserver-Button die Sitzung."}
+                </span>
+              </div>
+              <div className="flex items-start gap-2">
+                <span className="shrink-0 mt-0.5 w-4 h-4 rounded-full bg-[color:var(--brand-primary)]/12 text-[color:var(--brand-primary)] text-[10px] font-bold flex items-center justify-center">
+                  2
+                </span>
+                <span className="text-[11px] font-semibold text-[color:var(--brand-fg)]/85 leading-snug">
+                  Klemmt etwas? Die Diagnose prüft alles automatisch und sagt in
+                  Klartext, was zu tun ist.
+                </span>
+              </div>
+              <button
+                onClick={() => {
+                  setHelpOpen(false);
+                  onOpenAbout();
+                }}
+                className="w-full mt-0.5 text-[11px] font-bold rounded-lg py-2 btn-primary active:scale-[0.98]"
+              >
+                Diagnose öffnen
+              </button>
+            </div>
+          )}
         </div>
       </main>
 
@@ -650,7 +701,6 @@ function LaunchCard({
           : "surface hover:border-[color:var(--brand-primary)]/50 hover:-translate-y-0.5",
         (disabled || busy) && "opacity-50 cursor-not-allowed hover:translate-y-0"
       )}
-      title={actionLabel}
     >
       <div
         className={clsx(

@@ -1,8 +1,9 @@
 /**
- * Subtle bio-themed background decoration. Soft cream blobs for depth, plus
- * three clean, recognisable line motifs that mean something for an organic
- * food wholesaler: a leaf, an apple (echoing the NKK mark) and an ear of wheat.
- * All very low opacity so they sit behind the content, never compete with it.
+ * Subtle bio-themed background. Soft cream blobs for depth plus clean, low
+ * opacity line motifs that mean something for an organic food wholesaler:
+ * leaf, apple (echoes the NKK mark), ear of wheat, grapes, a carrot and a pear.
+ * Everything sits at the edges and very low opacity so it reads as texture and
+ * never competes with the content in front of it.
  */
 export function Decor() {
   return (
@@ -22,6 +23,11 @@ export function Decor() {
         d="M -60 540 Q 30 480 100 540 Q 130 620 50 660 Q -40 680 -80 620 Q -90 570 -60 540 Z"
         fill="var(--brand-surface)"
         opacity="0.45"
+      />
+      <path
+        d="M 430 360 Q 480 410 440 470 Q 390 510 350 460 Q 330 410 380 372 Q 410 350 430 360 Z"
+        fill="var(--brand-surface)"
+        opacity="0.4"
       />
 
       {/* Leaf, top left */}
@@ -50,6 +56,55 @@ export function Decor() {
         <path d="M 384 106 C 376 100 365 104 364 115 C 363 129 372 142 381 145 C 384 146 384 144 385 143 C 386 144 387 146 390 145 C 399 142 408 129 407 115 C 406 104 395 100 387 106 Z" />
         <path d="M 385 106 C 386 98 386 94 388 90" />
         <path d="M 387 97 C 393 91 402 92 404 97 C 399 103 391 102 387 97 Z" />
+      </g>
+
+      {/* Pear, mid left */}
+      <g
+        stroke="var(--brand-primary)"
+        strokeWidth="1.5"
+        fill="none"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        opacity="0.16"
+      >
+        <path d="M 34 300 C 32 304 32 309 35 313 C 25 318 22 333 30 344 C 38 354 51 352 55 341 C 59 330 51 318 42 314 C 45 310 44 304 41 301" />
+        <path d="M 38 300 L 38 292" />
+        <path d="M 38 295 C 44 290 50 293 50 299 C 43 301 38 299 38 295 Z" />
+      </g>
+
+      {/* Grapes, mid right */}
+      <g
+        stroke="var(--brand-primary)"
+        strokeWidth="1.4"
+        fill="none"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        opacity="0.16"
+      >
+        <path d="M 392 286 L 392 296" />
+        <path d="M 392 289 C 400 285 407 289 407 295 C 399 298 392 295 392 289 Z" />
+        <circle cx="383" cy="304" r="6.5" />
+        <circle cx="396" cy="304" r="6.5" />
+        <circle cx="389" cy="315" r="6.5" />
+        <circle cx="402" cy="315" r="6.5" />
+        <circle cx="395" cy="326" r="6.5" />
+      </g>
+
+      {/* Carrot, bottom left */}
+      <g
+        stroke="var(--brand-primary)"
+        strokeWidth="1.5"
+        fill="none"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        opacity="0.18"
+      >
+        <path d="M 24 560 Q 44 564 36 602 Q 32 610 28 602 Q 18 572 24 560 Z" />
+        <path d="M 27 572 L 34 574" />
+        <path d="M 28 583 L 33 585" />
+        <path d="M 25 560 C 20 550 18 544 16 538" />
+        <path d="M 30 558 C 30 547 30 541 30 535" />
+        <path d="M 34 560 C 38 551 41 546 44 541" />
       </g>
 
       {/* Ear of wheat, bottom right */}
