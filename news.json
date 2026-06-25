@@ -5,7 +5,7 @@
     "type": "update",
     "version": "0.3.1",
     "title": "Schlauer im Netz, bequemer im Alltag",
-    "body": "Die App erkennt jetzt selbst, ob du im Büro oder unterwegs bist, und warnt, wenn zwei Netze gleichzeitig laufen und die Verbindung ausbremsen. In den Einstellungen stellst du ein, was im Remote Desktop mitgeht (Zwischenablage, Drucker, Kamera). Und du kannst dir eine Desktop-Verknüpfung zum Terminalserver anlegen."
+    "body": "Die App erkennt jetzt selbst, ob du im Büro oder unterwegs bist, und warnt, wenn zwei Netze gleichzeitig laufen und die Verbindung ausbremsen. In den Einstellungen stellst du ein, was im Remote Desktop mitgeht (Zwischenablage, Drucker und mehr). Und du kannst dir eine Desktop-Verknüpfung zum Terminalserver anlegen."
   },
   {
     "id": "v030",

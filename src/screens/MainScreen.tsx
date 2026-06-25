@@ -1,12 +1,16 @@
 import { invoke } from "@tauri-apps/api/core";
 import clsx from "clsx";
 import {
+  AlertTriangle,
   ArrowRight,
+  CheckCircle2,
   Headphones,
+  Info,
   Loader2,
   Newspaper,
   Settings as SettingsIcon,
   X,
+  XCircle,
 } from "lucide-react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { Avatar } from "../components/Avatar";
@@ -18,7 +22,7 @@ import { de } from "../i18n/de";
 import { italicAccent, timeOfDayGreeting } from "../lib/greeting";
 import type { BrandingDto, QuickLaunchEntry } from "../types/branding";
 import { displayName, type CredentialProfileMeta } from "../types/credentials";
-import type { NetworkContext } from "../types/debug";
+import type { ConnectivityResult, NetworkContext } from "../types/debug";
 import type { ConnectionState, StatusDto } from "../types/netbird";
 
 interface Props {
@@ -64,6 +68,63 @@ export function MainScreen({
   }, [state]);
   const onSiteActive = netCtx?.serverReachableDirect ?? false;
   const canLaunch = isConnected || onSiteActive;
+
+  const [connectivity, setConnectivity] = useState<ConnectivityResult | null>(null);
+  useEffect(() => {
+    let alive = true;
+    invoke<ConnectivityResult>("check_connectivity")
+      .then((r) => alive && setConnectivity(r))
+      .catch(() => alive && setConnectivity(null));
+    return () => {
+      alive = false;
+    };
+  }, [state]);
+
+  // Smart, plain-language read of the situation. Only states we can detect
+  // reliably are shown, so the employee never gets a false alarm.
+  const situation = useMemo<
+    | { tone: "good" | "warn" | "info" | "error"; text: string; action: "fixdh" | null }
+    | null
+  >(() => {
+    if (isConnected) return null;
+    if (status && !status.cli_available)
+      return {
+        tone: "error",
+        text: "Das VPN-Programm fehlt auf diesem Rechner. Bitte beim Support melden.",
+        action: null,
+      };
+    if (onSiteActive)
+      return {
+        tone: "good",
+        text: "Du bist im NKK-Netz. Die Server gehen direkt, du brauchst hier kein VPN.",
+        action: null,
+      };
+    if (netCtx?.dualHoming)
+      return {
+        tone: "warn",
+        text: "Kabel und WLAN laufen gleichzeitig, das bremst. Ich kann automatisch das Kabel bevorzugen.",
+        action: "fixdh",
+      };
+    if (connectivity && !connectivity.online && !connectivity.captivePortal)
+      return {
+        tone: "error",
+        text: "Keine Internetverbindung. Prüfe dein WLAN oder steck das LAN-Kabel ein.",
+        action: null,
+      };
+    if (connectivity?.captivePortal)
+      return {
+        tone: "warn",
+        text: "Dieses WLAN will erst eine Anmeldung im Browser. Melde dich dort an, dann geht das VPN.",
+        action: null,
+      };
+    if (netCtx)
+      return {
+        tone: "info",
+        text: "Du bist unterwegs. Tippe unten auf Verbinden, um auf die Server zu kommen.",
+        action: null,
+      };
+    return null;
+  }, [isConnected, status, onSiteActive, netCtx, connectivity]);
 
   const [fixingDh, setFixingDh] = useState(false);
   async function fixDualHoming() {
@@ -321,25 +382,66 @@ export function MainScreen({
           </div>
         </div>
 
-        {netCtx?.dualHoming && (
-          <div className="fade-in-3 w-full rounded-lg px-3 py-2 bg-amber-500/15 text-amber-800 border border-amber-500/40 flex flex-col gap-1.5">
-            <div className="flex items-start gap-1.5 text-[10.5px] leading-snug">
-              <span aria-hidden>⚠</span>
-              <span>
-                Mehrere Netzwerke gleichzeitig aktiv. Das kann die Verbindung
-                langsam machen. Am besten nur ein Netz nutzen, LAN-Kabel
-                bevorzugen.
-              </span>
-            </div>
-            <button
-              onClick={fixDualHoming}
-              disabled={fixingDh}
-              className="self-start text-[10px] font-bold rounded-md px-2.5 py-1 bg-amber-600 text-white hover:bg-amber-700 transition disabled:opacity-50"
-            >
-              {fixingDh ? "wird gesetzt …" : "Kabel automatisch bevorzugen"}
-            </button>
-          </div>
-        )}
+        {situation &&
+          (() => {
+            const TONE = {
+              good: {
+                box: "bg-emerald-500/12 border border-emerald-500/35",
+                text: "text-emerald-800",
+                icon: "text-emerald-600",
+                Icon: CheckCircle2,
+              },
+              warn: {
+                box: "bg-amber-500/15 border border-amber-500/40",
+                text: "text-amber-800",
+                icon: "text-amber-600",
+                Icon: AlertTriangle,
+              },
+              info: {
+                box: "surface",
+                text: "text-[color:var(--brand-fg)]/90",
+                icon: "text-[color:var(--brand-primary)]",
+                Icon: Info,
+              },
+              error: {
+                box: "bg-red-500/12 border border-red-500/40",
+                text: "text-red-700",
+                icon: "text-red-600",
+                Icon: XCircle,
+              },
+            } as const;
+            const t = TONE[situation.tone];
+            const SitIcon = t.Icon;
+            return (
+              <div
+                className={clsx(
+                  "fade-in-3 w-full rounded-xl px-3 py-2.5 flex flex-col gap-2",
+                  t.box
+                )}
+              >
+                <div className="flex items-start gap-2">
+                  <SitIcon size={15} className={clsx("shrink-0 mt-0.5", t.icon)} />
+                  <span
+                    className={clsx(
+                      "text-[11.5px] font-semibold leading-snug",
+                      t.text
+                    )}
+                  >
+                    {situation.text}
+                  </span>
+                </div>
+                {situation.action === "fixdh" && (
+                  <button
+                    onClick={fixDualHoming}
+                    disabled={fixingDh}
+                    className="w-full text-[11px] font-bold rounded-lg py-2 bg-amber-600 text-white hover:bg-amber-700 transition disabled:opacity-50 active:scale-[0.98]"
+                  >
+                    {fixingDh ? "wird gesetzt …" : "Kabel automatisch bevorzugen"}
+                  </button>
+                )}
+              </div>
+            );
+          })()}
         <div className="fade-in-3 w-full flex flex-col gap-2 mt-1">
           {launches.map((item, i) => (
             <LaunchCard
@@ -350,15 +452,6 @@ export function MainScreen({
               onClick={() => onRequestLaunch(item)}
             />
           ))}
-          {launches.length > 0 && !isConnected && (
-            <div className="text-[11px] text-center mt-0.5 italic text-[color:var(--brand-fg)]/70">
-              {status && !status.cli_available
-                ? "Kein VPN Client installiert, bitte Administrator kontaktieren."
-                : onSiteActive
-                ? "Du bist im Firmennetz, kein VPN nötig."
-                : "Erst VPN verbinden um Server zu öffnen."}
-            </div>
-          )}
         </div>
       </main>
 

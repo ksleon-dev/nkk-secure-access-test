@@ -1484,22 +1484,25 @@ pub async fn probe_mtu(app: AppHandle, state: State<'_, AppState>) -> AppResult<
     let path_mtu = best + 28;
     // WireGuard adds ~60 bytes; leave headroom and clamp to sane bounds.
     let recommended = path_mtu.saturating_sub(80).clamp(1280, 1420);
-    let (status, note) = if path_mtu >= 1500 {
+    // The anchor is usually reached through the tunnel, so a value around
+    // 1280-1400 is the normal WireGuard range, not a fault. Only flag a path
+    // that is genuinely small enough to cause fragmentation trouble.
+    let (status, note) = if path_mtu >= 1420 {
         (
             "optimal".to_string(),
             format!("Pfad-MTU {}, voll und ohne Fragmentierung.", path_mtu),
         )
-    } else if recommended >= 1400 {
+    } else if path_mtu >= 1280 {
         (
-            "optimal".to_string(),
-            format!("Pfad-MTU {}, WireGuard-MTU {} passt gut.", path_mtu, recommended),
+            "ok".to_string(),
+            format!("Pfad-MTU {}, im normalen Bereich für WireGuard.", path_mtu),
         )
     } else {
         (
             "niedrig".to_string(),
             format!(
-                "Pfad-MTU nur {}. Optimale WireGuard-MTU etwa {}, das beugt stillen Aussetzern vor.",
-                path_mtu, recommended
+                "Pfad-MTU ist mit {} sehr niedrig, das kann bremsen. Bitte den Support informieren.",
+                path_mtu
             ),
         )
     };
@@ -3842,6 +3845,60 @@ pub async fn admin_open_log_folder(state: State<'_, AppState>) -> AppResult<()> 
     let dir = crate::logging::log_dir();
     let _ = std::fs::create_dir_all(&dir);
     open_dir(&dir);
+    Ok(())
+}
+
+/// Force a clean reconnect: like an explicit connect, it clears the disconnect
+/// intent + backoff, takes the tunnel down, and brings it back up. Never returns
+/// a scary error; reports a calm status instead.
+#[tauri::command]
+pub async fn admin_force_reconnect(
+    app: AppHandle,
+    state: State<'_, AppState>,
+) -> AppResult<String> {
+    if !state.admin_unlocked.load(Ordering::Relaxed) {
+        return Err(AppError::Internal("Service-Menue nicht freigeschaltet.".into()));
+    }
+    let mgmt = ensure_branding(&app, &state)
+        .await
+        .map(|b| b.netbird.management_url.clone())
+        .unwrap_or_default();
+    state.user_disconnected.store(false, Ordering::Relaxed);
+    set_user_disconnected_marker(&app, false);
+    reset_reconnect_state();
+    let nb = state.netbird.clone();
+    let _ = timeout(Duration::from_secs(8), nb.down()).await;
+    sleep(Duration::from_secs(1)).await;
+    let up = timeout(Duration::from_secs(35), nb.up(&mgmt, None)).await;
+    Ok(match up {
+        Ok(Ok(())) => "Verbindung neu aufgebaut.".to_string(),
+        _ => "Reconnect angestoßen, bitte den Status kurz prüfen.".to_string(),
+    })
+}
+
+/// Open the app data folder (enrolled marker, rdp settings) for support.
+#[tauri::command]
+pub async fn admin_open_app_data(app: AppHandle, state: State<'_, AppState>) -> AppResult<()> {
+    if !state.admin_unlocked.load(Ordering::Relaxed) {
+        return Err(AppError::Internal("Service-Menue nicht freigeschaltet.".into()));
+    }
+    let dir = app
+        .path()
+        .app_data_dir()
+        .map_err(|e| AppError::Internal(e.to_string()))?;
+    let _ = std::fs::create_dir_all(&dir);
+    open_dir(&dir);
+    Ok(())
+}
+
+/// Restart the whole app (picks up a fresh config / clears a wedged UI).
+#[tauri::command]
+#[allow(unreachable_code)]
+pub async fn admin_restart_app(app: AppHandle, state: State<'_, AppState>) -> AppResult<()> {
+    if !state.admin_unlocked.load(Ordering::Relaxed) {
+        return Err(AppError::Internal("Service-Menue nicht freigeschaltet.".into()));
+    }
+    app.restart();
     Ok(())
 }
 

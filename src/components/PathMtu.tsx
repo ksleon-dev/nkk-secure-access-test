@@ -5,6 +5,7 @@ import type { MtuProbe } from "../types/debug";
 
 const TONE: Record<string, string> = {
   optimal: "text-emerald-700",
+  ok: "text-emerald-700",
   niedrig: "text-amber-700",
   unbekannt: "text-muted",
 };

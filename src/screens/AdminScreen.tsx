@@ -187,6 +187,12 @@ export function AdminScreen({ branding, onClose }: Props) {
           onClick={() => run("restart", () => invoke<string>("admin_restart_service"))}
         />
         <AdminAction
+          icon={<RefreshCw size={14} />}
+          label="Verbindung neu aufbauen"
+          running={running === "freconnect"}
+          onClick={() => run("freconnect", () => invoke<string>("admin_force_reconnect"))}
+        />
+        <AdminAction
           icon={<Wrench size={14} />}
           label="NetBird reparieren / installieren"
           running={running === "repair"}
@@ -310,6 +316,28 @@ export function AdminScreen({ branding, onClose }: Props) {
             run("logs", async () => {
               await invoke("admin_open_log_folder");
               return "Log-Ordner geöffnet.";
+            })
+          }
+        />
+        <AdminAction
+          icon={<FolderOpen size={14} />}
+          label="App-Daten-Ordner öffnen"
+          running={running === "appdata"}
+          onClick={() =>
+            run("appdata", async () => {
+              await invoke("admin_open_app_data");
+              return "App-Daten-Ordner geöffnet.";
+            })
+          }
+        />
+        <AdminAction
+          icon={<RefreshCw size={14} />}
+          label="App neu starten"
+          running={running === "restartapp"}
+          onClick={() =>
+            run("restartapp", async () => {
+              await invoke("admin_restart_app");
+              return "App startet neu …";
             })
           }
         />
