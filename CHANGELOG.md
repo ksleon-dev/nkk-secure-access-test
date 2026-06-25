@@ -6,6 +6,11 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), [SemVer](https
 
 ## [Unreleased]
 
+- Installer pausiert jetzt Bitdefender (statt ESET) waehrend der NetBird-Treiberinstallation und startet den Echtzeitschutz danach wieder. NKK setzt Bitdefender ein. Best effort und auf zentral verwalteten Endpoints per Selbstschutz ggf. blockiert; dann muss NetBird in der Bitdefender-Policy freigegeben werden.
+- Service-Menue: alle laufzeitseitigen Einstellungen direkt umschaltbar (Auto-Reconnect, Beim Start verbinden, Benachrichtigungen, Autostart, RDP-Optionen) und die Aktionen sind durchnummeriert (00, 01, 02 ...), damit man sie schnell per Nummer durchgeben kann.
+- Windows-Haertung: korrektes PowerShell-Quoting (lief sonst bei Pfaden mit Leerzeichen ins Leere), hartes Timeout fuer das Enrollment (kein haengender Installer), und ein locale-unabhaengiges Credential-Cleanup, das auch auf deutschem Windows greift.
+- Kopieren laeuft ueber einen WebView2-sicheren Fallback, und das Rechtsklick-Menue blendet mit einer ruhigen Animation ein.
+
 ## [0.3.1] - 2026-06-25
 
 Komfort und Netz-Intelligenz.

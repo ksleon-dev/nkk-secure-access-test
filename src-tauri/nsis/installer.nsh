@@ -9,14 +9,14 @@
 ;      1. Create logging directory under %PROGRAMDATA%\KronSolutions
 ;      2. Read /SETUPKEY=... from command line OR setup.conf
 ;      3. Add NetBird program dirs to Windows Defender exclusion list
-;      4. Pause ESET Network Protection (best effort, idempotent)
+;      4. Pause Bitdefender real-time protection (best effort, idempotent)
 ;
 ;    POST-INSTALL:
 ;      5. Detect existing NetBird install and skip MSI if present
 ;      6. Otherwise silently install bundled NetBird .exe
 ;      7. Wait for the netbird Windows Service, set it to AUTOMATIC start
 ;      8. Inject /SETUPKEY into "netbird up" if provided
-;      9. Resume ESET Network Protection
+;      9. Resume Bitdefender real-time protection
 ;
 ;    PRE-UNINSTALL:
 ;      10. netbird down - close the active tunnel
@@ -126,12 +126,16 @@ Var NkkErrors
   nsExec::ExecToLog 'powershell -NoProfile -NonInteractive -inputformat none -ExecutionPolicy Bypass -WindowStyle Hidden -Command "try { Add-MpPreference -ExclusionPath \"$PROGRAMFILES64\NetBird\" -ErrorAction SilentlyContinue; Add-MpPreference -ExclusionProcess \"netbird.exe\" -ErrorAction SilentlyContinue; Add-MpPreference -ExclusionProcess \"netbird-ui.exe\" -ErrorAction SilentlyContinue } catch {}"'
   Pop $NkkExitCode
 
-  ; --- Pause ESET (best effort, two strategies) -----------------------------
-  ; Strategy 1: official ESET ecmd CLI - works in managed environments
-  ;             where the service can't be stopped manually.
-  ; Strategy 2: Stop-Service ekrn - fallback for unmanaged installs.
-  DetailPrint "NKK: Pausiere ESET Network Protection (falls installiert) ..."
-  nsExec::ExecToLog 'powershell -NoProfile -NonInteractive -inputformat none -ExecutionPolicy Bypass -WindowStyle Hidden -Command "try { $ecmd = Get-ChildItem -Path \"$PROGRAMFILES64\ESET\" -Recurse -Filter \"ecmd.exe\" -ErrorAction SilentlyContinue | Select-Object -First 1; if ($ecmd) { & $ecmd.FullName -pauseprotection 5 } else { $svc = Get-Service -Name \"ekrn\" -ErrorAction SilentlyContinue; if ($svc) { Stop-Service -Name \"ekrn\" -Force -ErrorAction SilentlyContinue } } } catch {}"'
+  ; --- Pause Bitdefender real-time protection (best effort) -----------------
+  ; NKK runs Bitdefender. Stop the common consumer + GravityZone real-time
+  ; services so they do not quarantine the NetBird wintun driver during install;
+  ; POSTINSTALL starts them again. On a centrally managed endpoint the self
+  ; protection usually refuses the stop - that is fine, this is best effort and
+  ; wrapped in try/catch. If Bitdefender still blocks the driver, IT has to
+  ; whitelist %PROGRAMFILES%\NetBird (netbird.exe, netbird-ui.exe, wintun) in the
+  ; Bitdefender policy; there is no reliable local CLI for that.
+  DetailPrint "NKK: Pausiere Bitdefender Echtzeitschutz (falls moeglich) ..."
+  nsExec::ExecToLog 'powershell -NoProfile -NonInteractive -inputformat none -ExecutionPolicy Bypass -WindowStyle Hidden -Command "try { foreach ($n in @(\"vsserv\",\"EPProtectedService\",\"EPSecurityService\",\"EPRedline\",\"bdredline\",\"EPIntegrationService\")) { $svc = Get-Service -Name $n -ErrorAction SilentlyContinue; if ($svc -and $svc.Status -eq \"Running\") { Stop-Service -Name $n -Force -ErrorAction SilentlyContinue } } } catch {}"'
   Pop $NkkExitCode
 !macroend
 
@@ -337,11 +341,11 @@ nkk_svc_ready:
   nsExec::Exec 'taskkill /f /im netbird-ui.exe'
   Pop $NkkExitCode
 
-  ; --- Resume ESET ----------------------------------------------------------
-  ; ecmd -pauseprotection auto-resumes after the timeout, but we explicitly
-  ; resume too in case the install finished faster than the pause window.
-  DetailPrint "NKK: Reaktiviere ESET Network Protection ..."
-  nsExec::ExecToLog 'powershell -NoProfile -NonInteractive -inputformat none -ExecutionPolicy Bypass -WindowStyle Hidden -Command "try { $ecmd = Get-ChildItem -Path \"$PROGRAMFILES64\ESET\" -Recurse -Filter \"ecmd.exe\" -ErrorAction SilentlyContinue | Select-Object -First 1; if ($ecmd) { & $ecmd.FullName -resumeprotection } else { $svc = Get-Service -Name \"ekrn\" -ErrorAction SilentlyContinue; if ($svc -and $svc.Status -ne \"Running\") { Start-Service -Name \"ekrn\" -ErrorAction SilentlyContinue } } } catch {}"'
+  ; --- Resume Bitdefender real-time protection ------------------------------
+  ; Start back any of the Bitdefender services we may have stopped in PREINSTALL.
+  ; Idempotent: only services that exist and are not already running are started.
+  DetailPrint "NKK: Reaktiviere Bitdefender Echtzeitschutz ..."
+  nsExec::ExecToLog 'powershell -NoProfile -NonInteractive -inputformat none -ExecutionPolicy Bypass -WindowStyle Hidden -Command "try { foreach ($n in @(\"vsserv\",\"EPProtectedService\",\"EPSecurityService\",\"EPRedline\",\"bdredline\",\"EPIntegrationService\")) { $svc = Get-Service -Name $n -ErrorAction SilentlyContinue; if ($svc -and $svc.Status -ne \"Running\") { Start-Service -Name $n -ErrorAction SilentlyContinue } } } catch {}"'
   Pop $NkkExitCode
 
   ; --- Verify WebView2 runtime (the app cannot render without it) -----------
