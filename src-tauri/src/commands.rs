@@ -2415,17 +2415,91 @@ pub async fn create_desktop_rdp_shortcut(
     });
 
     let content = rdp_file_content(&target, &s, username.as_deref());
-    let dir = app
-        .path()
-        .desktop_dir()
-        .map_err(|e| AppError::Internal(format!("Desktop: {}", e)))?;
     let name = branding
         .as_ref()
         .map(|b| b.product.short_name.clone())
         .unwrap_or_else(|| "NKK".to_string());
-    let path = dir.join(format!("{} Terminalserver.rdp", name));
-    std::fs::write(&path, content).map_err(|e| AppError::Io(e.to_string()))?;
-    Ok(path.to_string_lossy().to_string())
+
+    let result_path: std::path::PathBuf;
+
+    // Windows: store the .rdp in app-data and drop a .lnk with our own TS2 icon
+    // on the Desktop, launched through mstsc. A bare .rdp would only ever show
+    // the generic Remote-Desktop icon.
+    #[cfg(target_os = "windows")]
+    {
+        use std::os::windows::process::CommandExt;
+        let data_dir = app
+            .path()
+            .app_data_dir()
+            .map_err(|e| AppError::Internal(format!("App-Daten: {}", e)))?;
+        let _ = std::fs::create_dir_all(&data_dir);
+        let rdp_path = data_dir.join(format!("{} Terminalserver.rdp", name));
+        std::fs::write(&rdp_path, content).map_err(|e| AppError::Io(e.to_string()))?;
+
+        let desktop = app
+            .path()
+            .desktop_dir()
+            .map_err(|e| AppError::Internal(format!("Desktop: {}", e)))?;
+        let lnk_path = desktop.join(format!("{} Terminalserver.lnk", name));
+
+        // Bundled TS2 icon; if it is somehow missing the shortcut still works,
+        // it just falls back to the default mstsc icon.
+        let icon_line = app
+            .path()
+            .resource_dir()
+            .ok()
+            .map(|r| r.join("resources").join("ts2-shortcut.ico"))
+            .filter(|p| p.exists())
+            .map(|p| format!("$sc.IconLocation = '{},0'; ", p.to_string_lossy()))
+            .unwrap_or_default();
+
+        let ps = format!(
+            "$ws = New-Object -ComObject WScript.Shell; \
+             $sc = $ws.CreateShortcut('{lnk}'); \
+             $sc.TargetPath = \"$env:SystemRoot\\System32\\mstsc.exe\"; \
+             $sc.Arguments = '\"{rdp}\"'; \
+             $sc.Description = 'NKK Terminalserver 2'; \
+             {icon}$sc.Save()",
+            lnk = lnk_path.to_string_lossy(),
+            rdp = rdp_path.to_string_lossy(),
+            icon = icon_line,
+        );
+        let out = TokioCommand::new("powershell")
+            .args([
+                "-NoProfile",
+                "-NonInteractive",
+                "-inputformat",
+                "none",
+                "-ExecutionPolicy",
+                "Bypass",
+                "-Command",
+                &ps,
+            ])
+            .creation_flags(0x08000000)
+            .output()
+            .await
+            .map_err(|e| AppError::Internal(format!("Verknuepfung: {}", e)))?;
+        if !out.status.success() {
+            return Err(AppError::Internal(
+                "Verknuepfung konnte nicht erstellt werden.".into(),
+            ));
+        }
+        result_path = lnk_path;
+    }
+
+    // macOS / Linux: a plain .rdp on the Desktop, opened by the system client.
+    #[cfg(not(target_os = "windows"))]
+    {
+        let desktop = app
+            .path()
+            .desktop_dir()
+            .map_err(|e| AppError::Internal(format!("Desktop: {}", e)))?;
+        let path = desktop.join(format!("{} Terminalserver.rdp", name));
+        std::fs::write(&path, content).map_err(|e| AppError::Io(e.to_string()))?;
+        result_path = path;
+    }
+
+    Ok(result_path.to_string_lossy().to_string())
 }
 
 #[tauri::command]

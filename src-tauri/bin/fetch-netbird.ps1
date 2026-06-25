@@ -5,9 +5,15 @@
 $ErrorActionPreference = "Stop"
 $scriptDir = Split-Path -Parent $MyInvocation.MyCommand.Definition
 
-# --- 1. NetBird installer ---------------------------------------------------
+# --- 1. NetBird installer (architecture-aware) ------------------------------
 $nbTarget = Join-Path $scriptDir "netbird-installer.exe"
-$nbUrl = if ($env:NETBIRD_INSTALLER_URL) { $env:NETBIRD_INSTALLER_URL } else { "https://pkgs.netbird.io/windows/x64" }
+# Pick the build for the target architecture so Windows on ARM gets a native
+# NetBird instead of an emulated x64 one. Override with NETBIRD_ARCH (x64|arm64)
+# in the ARM64 CI job, or NETBIRD_INSTALLER_URL for a full custom URL (wins).
+$nbArch = if ($env:NETBIRD_ARCH) { $env:NETBIRD_ARCH }
+          elseif ($env:PROCESSOR_ARCHITECTURE -eq "ARM64") { "arm64" }
+          else { "x64" }
+$nbUrl = if ($env:NETBIRD_INSTALLER_URL) { $env:NETBIRD_INSTALLER_URL } else { "https://pkgs.netbird.io/windows/$nbArch" }
 
 Write-Host "NKK: Lade NetBird Windows Installer von $nbUrl ..."
 Invoke-WebRequest -Uri $nbUrl -OutFile $nbTarget -UseBasicParsing -MaximumRedirection 5

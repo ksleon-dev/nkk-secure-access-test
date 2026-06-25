@@ -1,0 +1,13 @@
+# Statically link the MSVC C runtime (VCRUNTIME140.dll) into the Windows binary.
+#
+# A default Rust MSVC build links VCRUNTIME140.dll dynamically. That DLL is NOT
+# guaranteed on a clean Windows 10/11 (it ships with the VC++ Redistributable,
+# not the OS). Without this, the app would only start because the installer
+# bundles and installs vc_redist - a single point of failure. crt-static makes
+# the binary self-contained, so it launches even if the redist step never ran.
+#
+# Only the VCRuntime/C-startup is linked statically; the UCRT stays dynamic and
+# is part of the OS from Windows 10 on, so this adds no new cross-version risk.
+# This only affects Windows (MSVC) builds, which run in CI - not local macOS.
+[target.'cfg(all(windows, target_env = "msvc"))']
+rustflags = ["-C", "target-feature=+crt-static"]
