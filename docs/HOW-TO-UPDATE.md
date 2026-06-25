@@ -3,16 +3,32 @@
 Complete checklist for releasing a new version of NKK Secure Access.
 Every step matters. Skip nothing.
 
-## 1. Bump Version Numbers (4 files)
+> **Wichtig (Stand 0.3.0):** Der Auto-Updater-Endpoint in `src-tauri/tauri.conf.json`
+> (`plugins.updater.endpoints`) zeigt noch auf ein privates Test-Repo. Bevor die
+> Auto-Updates produktiv laufen, MUSS dieser Endpoint auf den finalen, oeffentlich
+> erreichbaren Release-Host gesetzt werden (das Repo, von dem `latest.json` geladen
+> wird). Die CI baut `latest.json` bereits repo-relativ (`github.repository`), das
+> ist also nur diese eine Zeile in der Config. Ohne erreichbaren Endpoint sehen
+> installierte Clients nie ein Update.
 
-All four files must have the same version string.
+## 1. Bump Version Numbers
+
+Seit 0.3.0 erzwingt die CI (Schritt "Verify version consistency"), dass diese
+drei Versionen identisch sind, sonst bricht der Build ab. `branding.json`
+`product.version` wird zur Laufzeit ohnehin aus der kompilierten Binary
+ueberschrieben (Single Source of Truth = `Cargo.toml`), sollte aber zur Klarheit
+mitgepflegt werden.
 
 | File | Field | Example |
 |------|-------|---------|
-| `src-tauri/tauri.conf.json` | `"version": "X.Y.Z"` | Line 4 |
-| `src-tauri/Cargo.toml` | `version = "X.Y.Z"` | Line 3 |
-| `src-tauri/resources/branding.json` | `"version": "X.Y.Z"` | `product.version` |
+| `src-tauri/Cargo.toml` | `version = "X.Y.Z"` | **Master**, Line 3 |
+| `src-tauri/tauri.conf.json` | `"version": "X.Y.Z"` | muss matchen |
+| `package.json` | `"version": "X.Y.Z"` | muss matchen |
+| `src-tauri/resources/branding.json` | `"version": "X.Y.Z"` | informativ (auto-override) |
 | `docs/anleitung.html` | `Version X.Y.Z` | Inside `.version` div, around line 287 |
+
+Ausserdem muss ein `CHANGELOG.md`-Eintrag `## [X.Y.Z]` existieren, sonst bricht
+der Tag-Build ab.
 
 ## 2. Update News / Changelog
 
@@ -82,9 +98,14 @@ zip -P nkk NKK-Secure-Access.zip "NKK Secure Access_X.Y.Z_x64-setup.exe"
 ## 4. Auto Updater
 
 ### How it works
-- App checks `latest.json` from GitHub Releases 5 seconds after start
-- Endpoint: `https://github.com/leonkro-test/nkk-secure-access-test/releases/latest/download/latest.json`
-- If remote version > installed version, a banner appears
+- App checks `latest.json` from the configured endpoint 5 seconds after start
+- Endpoint (in `tauri.conf.json`): currently the private test repo, **muss vor dem
+  Produktivbetrieb auf den finalen oeffentlichen Release-Host gesetzt werden**
+- The build now emits the signed updater artifacts because
+  `bundle.createUpdaterArtifacts` is `true` (ohne das gibt es keine `.sig` und der
+  Updater bekommt eine leere Signatur)
+- If remote version > installed version, a banner appears (now also showing the
+  changelog section for the new version, pulled from `latest.json` `notes`)
 - User clicks "Jetzt installieren" > download with progress > "Neu starten"
 - Signed with Ed25519 (pubkey in `tauri.conf.json`, private key in GitHub secrets)
 

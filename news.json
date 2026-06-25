@@ -1,41 +1,41 @@
 [
   {
-    "id": "v026",
-    "date": "28. April 2026",
+    "id": "v031",
+    "date": "25. Juni 2026",
     "type": "update",
-    "version": "0.2.6",
-    "title": "Audit Fixes + sauberer Disconnect",
-    "body": "Trennen Knopf trennt jetzt wirklich und der Auto-Reconnect respektiert das. Setup Key wird beim Update sauber übernommen. RDP läuft mit besserer Bildqualität. Installer räumt alte Per-User Installationen vor dem Upgrade auf. Plus viele kleine Sicherheits Audits unter der Haube."
+    "version": "0.3.1",
+    "title": "Schlauer im Netz, bequemer im Alltag",
+    "body": "Die App erkennt jetzt selbst, ob du im Büro oder unterwegs bist, und warnt, wenn zwei Netze gleichzeitig laufen und die Verbindung ausbremsen. Terminalserver 1 ist aufgeräumt und liegt jetzt auf Shift+1. Beim Support-Paket kannst du den Zielordner wählen. In den Einstellungen stellst du selbst ein, was im Remote Desktop mitgeht: Zwischenablage, Laufwerke, Drucker, Kamera, Mikrofon, mehrere Bildschirme. Und du kannst dir eine Desktop-Verknüpfung zum Terminalserver anlegen."
   },
   {
-    "id": "v025",
-    "date": "15. April 2026",
+    "id": "v030",
+    "date": "18. Juni 2026",
     "type": "update",
-    "version": "0.2.5",
-    "title": "Copy/Paste, Dateien, Stabilität",
-    "body": "Copy/Paste und Dateien kopieren zwischen PC und Terminalserver funktioniert jetzt zuverlässig. VPN trennt sich sauber beim Beenden. Fehlende Windows Komponenten werden automatisch mitinstalliert."
+    "version": "0.3.0",
+    "title": "Mehrere Bildschirme, Copy/Paste und bessere Diagnose",
+    "body": "Remote Desktop nutzt jetzt alle deine Monitore, Text und Dateien lassen sich zuverlässig kopieren. Im Büro gehen die Server-Buttons sogar ohne VPN. Und wenn mal etwas klemmt, zeigt das Diagnose-Fenster einen Verlauf und erkennt WLAN-Anmeldeseiten."
   },
   {
-    "id": "v020",
-    "date": "11. April 2026",
+    "id": "v028",
+    "date": "12. Mai 2026",
     "type": "update",
-    "version": "0.2.0",
-    "title": "Schneller, stabiler, schöner",
-    "body": "Terminalserver öffnet sich jetzt sofort. Auto Updater eingebaut — Updates kommen automatisch. Speedtest + Smart Debug in der Diagnose. Logo Animation beim Verbinden. Verbindung läuft den ganzen Arbeitstag stabil durch."
+    "version": "0.2.8",
+    "title": "Stabiler im Dauerbetrieb",
+    "body": "Trennen bleibt jetzt auch nach Neustart getrennt, und die App verbindet sich nach dem Aufklappen des Laptops schneller wieder. Viele kleine Stabilitätsverbesserungen unter der Haube."
   },
   {
     "id": "welcome-1",
     "date": "11. April 2026",
     "type": "announcement",
     "title": "Willkommen bei NKK Secure Access!",
-    "body": "Wir haben euren alten VPN Client durch eine neue, sichere Lösung ersetzt. Alles was ihr tun müsst: Terminalserver Button klicken und arbeiten. Bei Fragen oder Problemen meldet euch bei support@ticket.kronsolutions.de — wir helfen sofort."
+    "body": "Wir haben euren alten VPN Client durch eine neue, sichere Lösung ersetzt. Alles was ihr tun müsst: Terminalserver Button klicken und arbeiten. Bei Fragen oder Problemen meldet euch bei support@ticket.kronsolutions.de, wir helfen sofort."
   },
   {
     "id": "feedback-1",
     "date": "11. April 2026",
     "type": "feedback",
     "title": "Euer Feedback ist Gold wert",
-    "body": "Wir bauen diese App für euch. Wenn etwas nervt, fehlt oder besser sein könnte — sagt Bescheid. Jedes Feedback hilft uns, NKK Secure Access noch besser zu machen. Einfach im Diagnose Panel auf 'Diagnose kopieren' klicken und per Mail schicken."
+    "body": "Wir bauen diese App für euch. Wenn etwas nervt, fehlt oder besser sein könnte, sagt Bescheid. Einfach im Diagnose Panel auf 'Diagnose kopieren' klicken und per Mail schicken."
   },
   {
     "id": "v010",
@@ -43,6 +43,6 @@
     "type": "update",
     "version": "0.1.0",
     "title": "Erster Release",
-    "body": "Terminalserver 1 + 2 Quick Launch, automatische NetBird Installation, VPN Status Anzeige, Diagnose Panel für Support, Anmeldedaten Speicher im System Tresor."
+    "body": "Terminalserver Quick Launch, automatische NetBird Installation, VPN Status Anzeige, Diagnose Panel für Support, Anmeldedaten sicher im System Tresor."
   }
 ]

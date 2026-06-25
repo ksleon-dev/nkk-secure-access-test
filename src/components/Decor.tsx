@@ -1,5 +1,5 @@
 /**
- * Subtle bio-themed background decoration — cream blob shapes plus
+ * Subtle bio-themed background decoration - cream blob shapes plus
  * abstract red sprig / leaf line drawings in the corners that echo the
  * Naturkost Kontor website illustrations.
  */
@@ -30,7 +30,7 @@ export function Decor() {
         opacity="0.35"
       />
 
-      {/* Bio sprig top left — line drawing leaf cluster in cherry red */}
+      {/* Bio sprig top left - line drawing leaf cluster in cherry red */}
       <g
         stroke="var(--brand-primary)"
         strokeWidth="1.4"
@@ -44,7 +44,7 @@ export function Decor() {
         <path d="M 38 105 Q 52 100 58 88" />
       </g>
 
-      {/* Bio sprig bottom right — small cherry pair */}
+      {/* Bio sprig bottom right - small cherry pair */}
       <g
         stroke="var(--brand-primary)"
         strokeWidth="1.5"

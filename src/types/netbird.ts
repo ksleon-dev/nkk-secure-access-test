@@ -19,4 +19,5 @@ export interface StatusDto {
   local_ip?: string | null;
   updated_at: string;
   cli_available: boolean;
+  needs_login: boolean;
 }

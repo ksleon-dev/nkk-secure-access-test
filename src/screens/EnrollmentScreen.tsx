@@ -29,7 +29,7 @@ export function EnrollmentScreen({ branding, onEnrolled }: Props) {
   const toast = useToast();
   const enrolledRef = useRef(false);
 
-  // Listen for status changes — if NetBird connects (e.g. manually via CLI),
+  // Listen for status changes - if NetBird connects (e.g. manually via CLI),
   // auto-transition to main screen even if the UI enrollment failed.
   useEffect(() => {
     let cancelled = false;

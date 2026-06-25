@@ -26,7 +26,9 @@ export interface KeyringTestResult {
   message: string;
 }
 
-export const DEFAULT_DOMAIN = "NKKHB";
+// Neutral fallback only. The real default AD domain is white-label and comes
+// from branding.json (netbird.defaultDomain), passed into the credential modal.
+export const DEFAULT_DOMAIN = "";
 
 export function displayName(p: CredentialProfileMeta | null): string | null {
   if (!p?.username) return null;

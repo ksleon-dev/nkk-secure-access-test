@@ -7,18 +7,18 @@ interface LogoProps {
   className?: string;
 }
 
-/**
- * Renders the NKK Secure Access logo — traced SVG of the VPN icon
- * (cherry mark + "VPN" wordmark on cherry red rounded square).
- * Scales perfectly at any size.
- */
+// Authentic Naturkost Kontor brand mark (the original logo, sprig and all).
+// Its artboard is 209 x 218.7, slightly taller than wide, so derive the
+// height from the width instead of forcing a square and squashing it.
+const LOGO_RATIO = 218.7 / 209;
+
 export function Logo({ branding, size = 120, className }: LogoProps) {
   return (
     <img
       src={nkkLogoUrl}
       alt={branding.product.name}
       width={size}
-      height={size}
+      height={Math.round(size * LOGO_RATIO)}
       className={className}
       draggable={false}
     />

@@ -1,6 +1,6 @@
 [package]
 name = "nkk-secure-access"
-version = "0.2.6"
+version = "0.3.1"
 description = "NKK Secure Access — Netbird VPN Client (white-label fähig)"
 authors = ["KronSolutions GmbH"]
 edition = "2021"
@@ -30,6 +30,8 @@ tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 tracing-appender = "0.2"
 chrono = { version = "0.4", features = ["serde"] }
 parking_lot = "0.12"
+sha2 = "0.10"
+constant_time_eq = "0.3"
 tauri-plugin-updater = "2.10.1"
 tauri-plugin-single-instance = "2"
 

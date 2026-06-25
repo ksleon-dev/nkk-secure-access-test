@@ -22,47 +22,62 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_notification::init())
         .plugin(tauri_plugin_autostart::init(
-            tauri_plugin_autostart::MacosLauncher::AppleScript,
+            // LaunchAgent is the robust choice for a silent 24/7 background
+            // client on macOS: a ~/Library/LaunchAgents plist that survives
+            // updates and does not fire the AppleScript automation TCC prompt.
+            tauri_plugin_autostart::MacosLauncher::LaunchAgent,
             None,
         ))
         .plugin(tauri_plugin_updater::Builder::new().build())
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
-            // Second instance tried to start → focus the existing window
-            if let Some(w) = app.get_webview_window("main") {
-                let _ = w.show();
-                let _ = w.set_focus();
-            }
+            // Second instance tried to start → bring the existing window forward,
+            // re-centering it first if it drifted off every monitor.
+            let _ = tray::open_main_window(app);
         }))
         .manage(commands::AppState::new())
         .setup(|app| {
-            // Tray setup is non-fatal — if it fails the user can still use
+            // Tray setup is non-fatal - if it fails the user can still use
             // the main window and the rest of the app keeps working.
             let tray_ok = tray::setup(app.handle()).is_ok();
             if !tray_ok {
-                tracing::warn!("Tray Icon konnte nicht erstellt werden — Close-to-tray deaktiviert");
+                tracing::warn!("Tray Icon konnte nicht erstellt werden - Close-to-tray deaktiviert");
             }
             // Store whether tray is available for the close handler
             app.manage(TrayAvailable(tray_ok));
 
-            commands::start_status_polling(app.handle().clone());
-            commands::cleanup_stale_credentials();
-
-            // Eagerly load branding so a missing/broken branding.json shows
-            // up in the logs at startup, not on first user interaction.
+            // Eagerly load branding so a missing/broken branding.json shows up in
+            // the logs at startup, and collect the RDP targets so stale-credential
+            // cleanup is driven by branding instead of hardcoded tenant IPs.
+            let mut rdp_targets: Vec<String> = Vec::new();
             match app.path().resource_dir() {
-                Ok(resource_dir) => {
-                    if let Err(e) = branding::load(&resource_dir) {
+                Ok(resource_dir) => match branding::load(&resource_dir) {
+                    Ok(b) => {
+                        rdp_targets = b
+                            .quick_launch
+                            .iter()
+                            .filter(|q| q.kind == "rdp")
+                            .map(|q| q.target.clone())
+                            .collect();
+                    }
+                    Err(e) => {
                         tracing::warn!(
                             "Branding konnte nicht geladen werden ({}). \
                              App nutzt Fallback Werte.",
                             e
                         );
                     }
-                }
+                },
                 Err(e) => {
                     tracing::warn!("resource_dir() fehlgeschlagen: {}", e);
                 }
             }
+
+            // Honour a persisted "Trennen" before the poller starts, so a
+            // deliberate disconnect is not auto-reconnected after a restart.
+            commands::init_user_disconnected(app.handle());
+            commands::cleanup_stale_credentials(&rdp_targets);
+            commands::start_status_polling(app.handle().clone());
+
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -75,6 +90,9 @@ pub fn run() {
             commands::open_rdp,
             commands::open_smb,
             commands::open_url,
+            commands::rdp_settings_get,
+            commands::rdp_settings_save,
+            commands::create_desktop_rdp_shortcut,
             commands::get_branding,
             commands::set_autostart,
             commands::is_autostart_enabled,
@@ -90,10 +108,27 @@ pub fn run() {
             commands::smart_debug,
             commands::check_netbird_setup,
             commands::install_netbird,
+            commands::get_health_history,
+            commands::get_inventory,
+            commands::export_support_bundle,
+            commands::check_connectivity,
+            commands::detect_onsite,
+            commands::detect_network_context,
+            commands::probe_mtu,
+            commands::measure_link_quality,
+            commands::dualhoming_prefer_wired,
+            commands::admin_unlock,
+            commands::admin_is_unlocked,
+            commands::admin_open_log_folder,
+            commands::admin_restart_service,
+            commands::admin_check_netbird_version,
+            commands::admin_update_netbird,
+            commands::admin_list_levels,
+            commands::admin_run_level,
         ])
         .on_window_event(|window, event| {
             if let tauri::WindowEvent::CloseRequested { api, .. } = event {
-                // Only hide to tray if tray is available — otherwise let the
+                // Only hide to tray if tray is available - otherwise let the
                 // window close normally so the user isn't soft-locked.
                 let has_tray = window.app_handle()
                     .try_state::<TrayAvailable>()
@@ -103,7 +138,7 @@ pub fn run() {
                     let _ = window.hide();
                     api.prevent_close();
                 } else {
-                    // No tray — real close. Disconnect VPN first, then quit.
+                    // No tray - real close. Disconnect VPN first, then quit.
                     api.prevent_close();
                     if let Some(state) = window.app_handle().try_state::<commands::AppState>() {
                         let nb = state.netbird.clone();

@@ -27,7 +27,7 @@ export function ConnectButton({
   const label = isBusy
     ? "Verbinde …"
     : isOn
-    ? "Verbunden — Trennen"
+    ? "Verbunden - Trennen"
     : "Mit dem Tunnel verbinden";
 
   return (

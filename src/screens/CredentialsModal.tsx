@@ -19,12 +19,15 @@ import {
 
 interface Props {
   initial: CredentialProfileMeta | null;
+  /** Default AD domain from branding.json (netbird.defaultDomain). */
+  defaultDomain?: string;
   onSaved: (saved: CredentialProfileMeta) => void;
   onClose: () => void;
 }
 
-export function CredentialsModal({ initial, onSaved, onClose }: Props) {
+export function CredentialsModal({ initial, defaultDomain, onSaved, onClose }: Props) {
   const editing = !!initial;
+  const domainDefault = defaultDomain || DEFAULT_DOMAIN;
 
   // Escape key closes modal
   const handleEsc = useCallback(
@@ -40,13 +43,13 @@ export function CredentialsModal({ initial, onSaved, onClose }: Props) {
   const [label, setLabel] = useState(initial?.label ?? "");
   const [username, setUsername] = useState(initial?.username ?? "");
   const [password, setPassword] = useState("");
-  const [domain, setDomain] = useState(initial?.domain ?? DEFAULT_DOMAIN);
+  const [domain, setDomain] = useState(initial?.domain ?? domainDefault);
   const [showPw, setShowPw] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const toast = useToast();
 
-  // Prefill username from OS user — only ONCE on mount when creating a new
+  // Prefill username from OS user - only ONCE on mount when creating a new
   // profile. After that the user can clear the field freely without it
   // popping back.
   useEffect(() => {
@@ -84,7 +87,7 @@ export function CredentialsModal({ initial, onSaved, onClose }: Props) {
       toast.success(
         editing
           ? "Profil aktualisiert."
-          : "Profil gespeichert — verschlüsselt im OS Tresor."
+          : "Profil gespeichert - verschlüsselt im OS Tresor."
       );
       onSaved(saved);
     } catch (e: unknown) {
@@ -151,7 +154,7 @@ export function CredentialsModal({ initial, onSaved, onClose }: Props) {
                 type="text"
                 value={domain}
                 onChange={(e) => setDomain(e.target.value)}
-                placeholder={DEFAULT_DOMAIN}
+                placeholder={domainDefault || "Domäne"}
                 spellCheck={false}
                 autoComplete="off"
                 className={inputCls}

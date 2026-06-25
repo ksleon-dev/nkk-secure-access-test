@@ -6,17 +6,22 @@ use tauri::{
 
 pub fn setup<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()> {
     // Best-effort load of branding so we can render quick launch entries
-    // directly in the tray menu — falls back gracefully if not available.
+    // directly in the tray menu - falls back gracefully if not available.
     let branding = app
         .path()
         .resource_dir()
         .ok()
         .and_then(|d| crate::branding::load(&d).ok());
 
+    let product_name = branding
+        .as_ref()
+        .map(|b| b.product.name.clone())
+        .unwrap_or_else(|| "Secure Access".to_string());
+
     let header_label = branding
         .as_ref()
         .map(|b| format!("{}  ·  v{}", b.product.name, b.product.version))
-        .unwrap_or_else(|| "NKK Secure Access".to_string());
+        .unwrap_or_else(|| product_name.clone());
 
     let header = MenuItem::with_id(app, "header", &header_label, false, None::<&str>)?;
     let sep1 = PredefinedMenuItem::separator(app)?;
@@ -77,16 +82,16 @@ pub fn setup<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()> {
         Some(i) => i,
         None => {
             tracing::warn!(
-                "default_window_icon() returned None — Tray wird ohne Icon registriert."
+                "default_window_icon() returned None - Tray wird ohne Icon registriert."
             );
-            // Tauri requires SOMETHING — a 1x1 transparent pixel as last resort.
+            // Tauri requires SOMETHING - a 1x1 transparent pixel as last resort.
             // The tray will appear as an invisible 1x1 dot rather than crashing the app.
             tauri::image::Image::new_owned(vec![0, 0, 0, 0], 1, 1)
         }
     };
 
     let _tray = TrayIconBuilder::with_id("main-tray")
-        .tooltip("NKK Secure Access")
+        .tooltip(&product_name)
         .icon(icon)
         .menu(&menu)
         .show_menu_on_left_click(false)
@@ -149,11 +154,38 @@ pub fn setup<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()> {
     Ok(())
 }
 
-fn open_main_window<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()> {
+pub(crate) fn open_main_window<R: Runtime>(app: &AppHandle<R>) -> tauri::Result<()> {
     if let Some(window) = app.get_webview_window("main") {
+        ensure_on_screen(&window);
         let _ = window.show();
         let _ = window.unminimize();
         let _ = window.set_focus();
     }
     Ok(())
+}
+
+// Pull the window back to center if it ended up entirely off every monitor -
+// e.g. a screen was unplugged while its saved position pointed there. Without
+// this a "lost" window can't be clicked back, which matters on multi-monitor
+// 24/7 desks.
+fn ensure_on_screen<R: Runtime>(window: &tauri::WebviewWindow<R>) {
+    let (Ok(pos), Ok(size)) = (window.outer_position(), window.outer_size()) else {
+        return;
+    };
+    let monitors = match window.available_monitors() {
+        Ok(m) => m,
+        Err(_) => return,
+    };
+    let (wl, wt) = (pos.x, pos.y);
+    let (wr, wb) = (pos.x + size.width as i32, pos.y + size.height as i32);
+    let on_screen = monitors.iter().any(|m| {
+        let mp = m.position();
+        let ms = m.size();
+        let (ml, mt) = (mp.x, mp.y);
+        let (mr, mb) = (mp.x + ms.width as i32, mp.y + ms.height as i32);
+        wl < mr && wr > ml && wt < mb && wb > mt
+    });
+    if !on_screen {
+        let _ = window.center();
+    }
 }
