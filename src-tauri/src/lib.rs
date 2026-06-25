@@ -5,7 +5,7 @@ mod logging;
 mod netbird;
 mod tray;
 
-use tauri::Manager;
+use tauri::{Emitter, Manager};
 
 struct TrayAvailable(bool);
 
@@ -78,6 +78,25 @@ pub fn run() {
             commands::cleanup_stale_credentials(&rdp_targets);
             commands::start_status_polling(app.handle().clone());
 
+            // Load admin settings into the runtime, and honour "connect on start"
+            // by triggering the same path the tray uses, unless the user has
+            // deliberately stayed disconnected.
+            let app_settings = commands::init_app_settings(app.handle());
+            if app_settings.connect_on_start {
+                let app_h = app.handle().clone();
+                tauri::async_runtime::spawn(async move {
+                    tokio::time::sleep(std::time::Duration::from_secs(3)).await;
+                    if let Some(state) = app_h.try_state::<commands::AppState>() {
+                        if !state
+                            .user_disconnected
+                            .load(std::sync::atomic::Ordering::Relaxed)
+                        {
+                            let _ = app_h.emit("tray-connect", ());
+                        }
+                    }
+                });
+            }
+
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -92,6 +111,8 @@ pub fn run() {
             commands::open_url,
             commands::rdp_settings_get,
             commands::rdp_settings_save,
+            commands::app_settings_get,
+            commands::app_settings_save,
             commands::create_desktop_rdp_shortcut,
             commands::get_branding,
             commands::set_autostart,

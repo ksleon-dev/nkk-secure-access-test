@@ -136,3 +136,19 @@ export interface LinkQuality {
   status: string; // "gut" | "okay" | "degradiert" | "weg"
   ok: boolean;
 }
+
+export interface AppSettings {
+  autoReconnect: boolean;
+  connectOnStart: boolean;
+  notifications: boolean;
+}
+
+export interface RdpSettings {
+  clipboard: boolean;
+  drives: boolean;
+  printers: boolean;
+  camera: boolean;
+  microphone: boolean;
+  audio: boolean;
+  multimon: boolean;
+}

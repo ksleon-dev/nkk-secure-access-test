@@ -2282,6 +2282,85 @@ pub async fn rdp_settings_save(app: AppHandle, settings: RdpSettings) -> AppResu
     Ok(())
 }
 
+// ── App-wide settings the admin can change at runtime ──
+// Persisted in app_data/app-settings.json. Behaviour flags are mirrored into
+// atomics so the status poller reads them without touching disk every tick.
+
+static AUTO_RECONNECT: AtomicBool = AtomicBool::new(true);
+static NOTIFICATIONS: AtomicBool = AtomicBool::new(true);
+
+#[derive(Serialize, Deserialize, Clone, Debug)]
+#[serde(default)]
+pub struct AppSettings {
+    #[serde(rename = "autoReconnect")]
+    pub auto_reconnect: bool,
+    #[serde(rename = "connectOnStart")]
+    pub connect_on_start: bool,
+    pub notifications: bool,
+}
+
+impl Default for AppSettings {
+    fn default() -> Self {
+        Self {
+            auto_reconnect: true,
+            connect_on_start: false,
+            notifications: true,
+        }
+    }
+}
+
+fn app_settings_path(app: &AppHandle) -> Option<std::path::PathBuf> {
+    app.path()
+        .app_data_dir()
+        .ok()
+        .map(|d| d.join("app-settings.json"))
+}
+
+fn load_app_settings(app: &AppHandle) -> AppSettings {
+    app_settings_path(app)
+        .and_then(|p| std::fs::read_to_string(p).ok())
+        .and_then(|s| serde_json::from_str(&s).ok())
+        .unwrap_or_default()
+}
+
+fn apply_app_settings(s: &AppSettings) {
+    AUTO_RECONNECT.store(s.auto_reconnect, Ordering::Relaxed);
+    NOTIFICATIONS.store(s.notifications, Ordering::Relaxed);
+}
+
+/// Load persisted settings into the runtime atomics. Called once at startup.
+pub fn init_app_settings(app: &AppHandle) -> AppSettings {
+    let s = load_app_settings(app);
+    apply_app_settings(&s);
+    s
+}
+
+#[tauri::command]
+pub async fn app_settings_get(app: AppHandle) -> AppSettings {
+    load_app_settings(&app)
+}
+
+#[tauri::command]
+pub async fn app_settings_save(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    settings: AppSettings,
+) -> AppResult<()> {
+    if !state.admin_unlocked.load(Ordering::Relaxed) {
+        return Err(AppError::Internal("Service-Menue nicht freigeschaltet.".into()));
+    }
+    let path = app_settings_path(&app)
+        .ok_or_else(|| AppError::Internal("Kein Datenverzeichnis.".into()))?;
+    if let Some(parent) = path.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    let json =
+        serde_json::to_string_pretty(&settings).map_err(|e| AppError::Internal(e.to_string()))?;
+    std::fs::write(&path, json).map_err(|e| AppError::Io(e.to_string()))?;
+    apply_app_settings(&settings);
+    Ok(())
+}
+
 fn rdp_file_content(target: &str, s: &RdpSettings, username: Option<&str>) -> String {
     let mut lines = vec![
         format!("full address:s:{}", target),
@@ -3010,7 +3089,7 @@ async fn poll_loop(app: AppHandle) {
                         .as_ref()
                         .and_then(|b| b.product.network_name.clone());
 
-                    if should_notify {
+                    if should_notify && NOTIFICATIONS.load(Ordering::Relaxed) {
                         send_status_notification(
                             &app,
                             &payload,
@@ -3056,6 +3135,7 @@ async fn poll_loop(app: AppHandle) {
                         )
                             && payload.cli_available
                             && !payload.needs_login
+                            && AUTO_RECONNECT.load(Ordering::Relaxed)
                             && !state.user_disconnected.load(Ordering::Relaxed)
                             && !RECONNECT_PAUSED.load(Ordering::Relaxed);
 

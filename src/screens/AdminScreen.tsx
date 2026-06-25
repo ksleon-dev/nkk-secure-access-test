@@ -4,10 +4,12 @@ import { check } from "@tauri-apps/plugin-updater";
 import { relaunch } from "@tauri-apps/plugin-process";
 import {
   ArrowLeft,
+  ChevronDown,
   Download,
   FileDown,
   FolderOpen,
   Loader2,
+  Monitor,
   Lock,
   Maximize2,
   PackagePlus,
@@ -23,12 +25,14 @@ import { useToast } from "../components/Toast";
 import { OutputOverlay } from "../components/OutputOverlay";
 import type { BrandingDto } from "../types/branding";
 import type {
+  AppSettings,
   ConnectivityResult,
   Inventory,
   LevelMeta,
   LevelRunResult,
   NetbirdVersionCheck,
   OnSiteResult,
+  RdpSettings,
   SmartDebugResult,
 } from "../types/debug";
 
@@ -75,6 +79,44 @@ export function AdminScreen({ branding, onClose }: Props) {
       .then(setLevels)
       .catch(() => setLevels([]));
   }, [unlocked]);
+
+  // Live settings the admin can change.
+  const [appSettings, setAppSettings] = useState<AppSettings | null>(null);
+  const [rdp, setRdp] = useState<RdpSettings | null>(null);
+  const [autostart, setAutostart] = useState(false);
+  const [rdpOpen, setRdpOpen] = useState(false);
+
+  useEffect(() => {
+    if (!unlocked) return;
+    invoke<AppSettings>("app_settings_get").then(setAppSettings).catch(() => {});
+    invoke<RdpSettings>("rdp_settings_get").then(setRdp).catch(() => {});
+    invoke<boolean>("is_autostart_enabled").then(setAutostart).catch(() => {});
+  }, [unlocked]);
+
+  function setAppField(key: keyof AppSettings, value: boolean) {
+    if (!appSettings) return;
+    const next = { ...appSettings, [key]: value };
+    setAppSettings(next);
+    invoke("app_settings_save", { settings: next }).catch((e) =>
+      toast.error(e instanceof Error ? e.message : String(e))
+    );
+  }
+  function setRdpField(key: keyof RdpSettings, value: boolean) {
+    if (!rdp) return;
+    const next = { ...rdp, [key]: value };
+    setRdp(next);
+    invoke("rdp_settings_save", { settings: next }).catch((e) =>
+      toast.error(e instanceof Error ? e.message : String(e))
+    );
+  }
+  async function toggleAutostart(value: boolean) {
+    try {
+      await invoke("set_autostart", { enable: value });
+      setAutostart(value);
+    } catch (e: unknown) {
+      toast.error(e instanceof Error ? e.message : String(e));
+    }
+  }
 
   const tryUnlock = useCallback(async () => {
     setBusy(true);
@@ -378,6 +420,93 @@ export function AdminScreen({ branding, onClose }: Props) {
           }}
         />
 
+        {/* Live-Einstellungen, die der Admin direkt ändern kann */}
+        <div className="mt-2 pt-2 border-t border-[color:var(--brand-border)]">
+          <h3 className="text-[9px] font-bold uppercase tracking-wider text-muted mb-1.5 px-1">
+            Einstellungen
+          </h3>
+          {appSettings && (
+            <div className="surface rounded-lg px-2.5 py-0.5 mb-1.5">
+              <SettingToggle
+                label="Auto-Reconnect"
+                hint="Verbindung automatisch wiederherstellen"
+                checked={appSettings.autoReconnect}
+                onChange={(v) => setAppField("autoReconnect", v)}
+              />
+              <SettingToggle
+                label="Beim Start verbinden"
+                hint="VPN gleich beim Öffnen aufbauen"
+                checked={appSettings.connectOnStart}
+                onChange={(v) => setAppField("connectOnStart", v)}
+              />
+              <SettingToggle
+                label="Status-Benachrichtigungen"
+                checked={appSettings.notifications}
+                onChange={(v) => setAppField("notifications", v)}
+              />
+              <SettingToggle
+                label="Autostart"
+                hint="Beim Hochfahren automatisch starten"
+                checked={autostart}
+                onChange={toggleAutostart}
+              />
+            </div>
+          )}
+          <button
+            onClick={() => setRdpOpen((v) => !v)}
+            className="w-full surface rounded-lg px-2.5 py-2 flex items-center justify-between text-[12px] font-semibold text-[color:var(--brand-fg)] hover:border-[color:var(--brand-primary)]/50 transition"
+          >
+            <span className="flex items-center gap-1.5">
+              <Monitor size={13} className="text-[color:var(--brand-primary)]" />
+              Remote-Desktop-Einstellungen
+            </span>
+            <ChevronDown
+              size={14}
+              className={`transition-transform ${rdpOpen ? "rotate-180" : ""}`}
+            />
+          </button>
+          {rdpOpen && rdp && (
+            <div className="surface rounded-lg px-2.5 py-0.5 mt-1">
+              <SettingToggle
+                label="Zwischenablage"
+                checked={rdp.clipboard}
+                onChange={(v) => setRdpField("clipboard", v)}
+              />
+              <SettingToggle
+                label="Laufwerke"
+                hint="aus Sicherheitsgründen meist aus"
+                checked={rdp.drives}
+                onChange={(v) => setRdpField("drives", v)}
+              />
+              <SettingToggle
+                label="Drucker"
+                checked={rdp.printers}
+                onChange={(v) => setRdpField("printers", v)}
+              />
+              <SettingToggle
+                label="Kamera"
+                checked={rdp.camera}
+                onChange={(v) => setRdpField("camera", v)}
+              />
+              <SettingToggle
+                label="Mikrofon"
+                checked={rdp.microphone}
+                onChange={(v) => setRdpField("microphone", v)}
+              />
+              <SettingToggle
+                label="Ton"
+                checked={rdp.audio}
+                onChange={(v) => setRdpField("audio", v)}
+              />
+              <SettingToggle
+                label="Mehrere Bildschirme"
+                checked={rdp.multimon}
+                onChange={(v) => setRdpField("multimon", v)}
+              />
+            </div>
+          )}
+        </div>
+
         {levels.length > 0 && (
           <div className="mt-1">
             <h3 className="text-[9px] font-bold uppercase tracking-wider text-muted mb-1">
@@ -467,5 +596,46 @@ function AdminAction({
       </span>
       {label}
     </button>
+  );
+}
+
+function SettingToggle({
+  label,
+  hint,
+  checked,
+  onChange,
+}: {
+  label: string;
+  hint?: string;
+  checked: boolean;
+  onChange: (next: boolean) => void;
+}) {
+  return (
+    <div className="flex items-center justify-between py-1.5 border-b border-[color:var(--brand-border)] last:border-b-0">
+      <div className="min-w-0 pr-2">
+        <div className="text-[12px] font-semibold text-[color:var(--brand-fg)]">
+          {label}
+        </div>
+        {hint && <div className="text-[10px] text-muted">{hint}</div>}
+      </div>
+      <button
+        type="button"
+        role="switch"
+        aria-checked={checked}
+        aria-label={label}
+        onClick={() => onChange(!checked)}
+        className={`relative w-9 h-5 rounded-full transition shrink-0 ${
+          checked
+            ? "bg-[color:var(--brand-primary)]"
+            : "bg-[color:var(--brand-fg)]/20"
+        }`}
+      >
+        <span
+          className={`absolute top-0.5 w-4 h-4 rounded-full bg-white transition-all ${
+            checked ? "left-[18px]" : "left-0.5"
+          }`}
+        />
+      </button>
+    </div>
   );
 }
