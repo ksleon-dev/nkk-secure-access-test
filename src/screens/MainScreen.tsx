@@ -387,7 +387,7 @@ export function MainScreen({
 
       {/* Hero - vertically centred so there is equal space above and below the
           content block. */}
-      <main className="relative z-10 flex-1 overflow-y-auto">
+      <main className="main-scroll relative z-10 flex-1 overflow-y-auto">
         <div className="min-h-full flex flex-col items-center justify-center px-6 gap-2.5 py-3 text-center">
         <div className="fade-in-1 flex flex-col items-center">
           <div

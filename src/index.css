@@ -120,11 +120,19 @@ button:disabled {
 .overflow-y-auto,
 .overflow-auto,
 .overflow-y-scroll {
-  /* both-edges so the reserved scrollbar space is symmetric and centred content
-     (the hero, the connect card) stays exactly in the middle, scrollbar or not. */
-  scrollbar-gutter: stable both-edges;
+  /* Reserve the scrollbar's space on the inline-end only. For left-aligned panel
+     content this keeps the left edge flush with the fixed header/footer while the
+     scrollbar sits on the right - no shift, no misalignment. */
+  scrollbar-gutter: stable;
   scrollbar-width: thin;
   scrollbar-color: rgba(181, 31, 41, 0.32) transparent;
+}
+
+/* Centred screens (the main view) need a symmetric gutter so the hero and the
+   connect card stay exactly in the middle. Declared after the rule above so it
+   wins for that one container. */
+.main-scroll {
+  scrollbar-gutter: stable both-edges;
 }
 
 @layer components {
