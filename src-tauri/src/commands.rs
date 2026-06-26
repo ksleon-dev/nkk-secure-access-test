@@ -2234,6 +2234,14 @@ pub struct AppSettings {
     #[serde(rename = "connectOnStart")]
     pub connect_on_start: bool,
     pub notifications: bool,
+    /// UI profile: "user" (default) or "manager" (Geschaeftsfuehrer). Set in the
+    /// admin menu; the manager profile unlocks more launch targets and UI.
+    #[serde(default = "default_role")]
+    pub role: String,
+}
+
+fn default_role() -> String {
+    "user".to_string()
 }
 
 impl Default for AppSettings {
@@ -2242,6 +2250,7 @@ impl Default for AppSettings {
             auto_reconnect: true,
             connect_on_start: false,
             notifications: true,
+            role: default_role(),
         }
     }
 }

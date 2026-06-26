@@ -48,6 +48,8 @@ export interface QuickLaunchEntry {
   hidden?: boolean;
   /** Optional Shift+<digit> hotkey (e.g. "1") that launches this entry. */
   hotkey?: string;
+  /** "manager" => only the Geschäftsführer profile sees it; absent => everyone. */
+  role?: "user" | "manager";
 }
 
 export interface BrandingDto {

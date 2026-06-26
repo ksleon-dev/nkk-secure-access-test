@@ -101,6 +101,17 @@ export function AdminScreen({ branding, onClose }: Props) {
       toast.error(e instanceof Error ? e.message : String(e))
     );
   }
+  function setAppRole(manager: boolean) {
+    if (!appSettings) return;
+    const next: AppSettings = {
+      ...appSettings,
+      role: manager ? "manager" : "user",
+    };
+    setAppSettings(next);
+    invoke("app_settings_save", { settings: next }).catch((e) =>
+      toast.error(e instanceof Error ? e.message : String(e))
+    );
+  }
   function setRdpField(key: keyof RdpSettings, value: boolean) {
     if (!rdp) return;
     const next = { ...rdp, [key]: value };
@@ -427,6 +438,12 @@ export function AdminScreen({ branding, onClose }: Props) {
           </h3>
           {appSettings && (
             <div className="surface rounded-lg px-2.5 py-0.5 mb-1.5">
+              <SettingToggle
+                label="Geschäftsführer-Profil"
+                hint="Mehr Server-Buttons und Übersicht für die Leitung"
+                checked={appSettings.role === "manager"}
+                onChange={setAppRole}
+              />
               <SettingToggle
                 label="Auto-Reconnect"
                 hint="Verbindung automatisch wiederherstellen"

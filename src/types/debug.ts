@@ -137,10 +137,13 @@ export interface LinkQuality {
   ok: boolean;
 }
 
+export type UserRole = "user" | "manager";
+
 export interface AppSettings {
   autoReconnect: boolean;
   connectOnStart: boolean;
   notifications: boolean;
+  role: UserRole;
 }
 
 export interface RdpSettings {

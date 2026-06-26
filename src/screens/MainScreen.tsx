@@ -5,6 +5,7 @@ import {
   ArrowRight,
   CheckCircle2,
   Copy,
+  Crown,
   Headphones,
   HelpCircle,
   Info,
@@ -12,6 +13,7 @@ import {
   Loader2,
   Newspaper,
   Power,
+  Server,
   Settings as SettingsIcon,
   Stethoscope,
   X,
@@ -30,9 +32,11 @@ import { italicAccent, timeOfDayGreeting } from "../lib/greeting";
 import type { BrandingDto, QuickLaunchEntry } from "../types/branding";
 import { displayName, type CredentialProfileMeta } from "../types/credentials";
 import type {
+  AppSettings,
   ConnectivityResult,
   NetworkContext,
   SmartDebugResult,
+  UserRole,
 } from "../types/debug";
 import type { ConnectionState, StatusDto } from "../types/netbird";
 
@@ -119,6 +123,15 @@ export function MainScreen({
 
   const [connectivity, setConnectivity] = useState<ConnectivityResult | null>(null);
   const [helpOpen, setHelpOpen] = useState(false);
+  // UI profile set in the admin menu. Re-read on mount (screens re-mount on
+  // navigation, so returning from the admin picks up a change immediately).
+  const [role, setRole] = useState<UserRole>("user");
+  useEffect(() => {
+    invoke<AppSettings>("app_settings_get")
+      .then((s) => setRole(s.role === "manager" ? "manager" : "user"))
+      .catch(() => {});
+  }, []);
+  const isManager = role === "manager";
   const [fixing, setFixing] = useState(false);
   const [fixResult, setFixResult] = useState<SmartDebugResult | null>(null);
   // One-tap auto-fix. Same smart_debug command the Diagnose uses, so there is
@@ -310,8 +323,10 @@ export function MainScreen({
 
   // Hidden entries (e.g. the outdated Terminalserver 1) are not shown as cards;
   // they are only reachable via their Shift+<digit> hotkey.
+  // The Geschäftsführer profile sees every target (including hidden and
+  // manager-only ones); a normal user sees only the public, non-manager ones.
   const launches = [...branding.quickLaunch]
-    .filter((q) => !q.hidden)
+    .filter((q) => (isManager ? true : !q.hidden && q.role !== "manager"))
     .sort((a, b) => Number(!!b.default) - Number(!!a.default));
 
   async function toggle() {
@@ -483,6 +498,12 @@ export function MainScreen({
           </div>
         </div>
 
+        {isManager && (
+          <div className="banner-in inline-flex items-center gap-1 mt-1 px-2.5 py-1 rounded-full bg-[color:var(--brand-primary)]/12 text-[color:var(--brand-primary)] text-[10px] font-bold uppercase tracking-wider">
+            <Crown size={11} /> Geschäftsführer
+          </div>
+        )}
+
         <div className="fade-in-3 w-full flex flex-col gap-2 mt-1">
           {launches.map((item, i) => (
             <LaunchCard
@@ -494,6 +515,20 @@ export function MainScreen({
             />
           ))}
         </div>
+
+        {/* Manager-only at-a-glance status when connected. */}
+        {isManager && isConnected && status && (
+          <div className="fade-soft w-full surface rounded-xl px-3 py-2 mt-1 flex items-center justify-between text-[11px]">
+            <span className="flex items-center gap-1.5 font-semibold text-[color:var(--brand-fg)]/80">
+              <Server size={13} className="text-[color:var(--brand-primary)]" />
+              {status.local_ip ?? "verbunden"}
+            </span>
+            <span className="font-bold text-[color:var(--brand-fg)]">
+              {status.peers.filter((p) => p.connected).length} von{" "}
+              {status.peers.length} Geräten erreichbar
+            </span>
+          </div>
+        )}
 
         {/* Situation read sits BELOW the action: a late or changing read never
             shifts the primary button, and it fades in place (opacity only) so

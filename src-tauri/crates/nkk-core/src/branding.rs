@@ -76,6 +76,11 @@ pub struct QuickLaunchEntry {
     /// Optional Shift+<digit> hotkey (e.g. "1") that launches this entry.
     #[serde(default)]
     pub hotkey: Option<String>,
+    /// Optional role gate. "manager" => only the Geschaeftsfuehrer profile sees
+    /// this entry; absent/"user" => everyone. White-label tenants can add their
+    /// own manager-only targets without code changes.
+    #[serde(default)]
+    pub role: Option<String>,
 }
 
 /// Hidden service-menu gate. The hash protects against accidental employee
