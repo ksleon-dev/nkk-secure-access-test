@@ -124,8 +124,8 @@ jobs:
         working-directory: src-tauri
         # --workspace so the nkk-core tests (NetBird status/latency parsers, the
         # heart of the status display) actually run, not just the app crate.
+        # Blocking now (no continue-on-error): a red test must stop the build.
         run: cargo test --workspace --release --quiet --lib
-        continue-on-error: true
 
       - name: Bake setup key into installer (if secret is set)
         shell: pwsh
