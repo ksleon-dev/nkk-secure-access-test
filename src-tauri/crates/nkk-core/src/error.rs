@@ -50,6 +50,10 @@ impl From<serde_json::Error> for AppError {
     }
 }
 
+// Only the GUI stores credentials, so keyring (and its dbus dependency on
+// Linux) is an opt-in feature. The headless CLI builds without it, so it stays
+// dependency-light and needs no dbus on a server.
+#[cfg(feature = "keyring")]
 impl From<keyring::Error> for AppError {
     fn from(e: keyring::Error) -> Self {
         AppError::Keyring(e.to_string())

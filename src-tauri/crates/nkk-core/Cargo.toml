@@ -16,5 +16,9 @@ tracing-subscriber = { workspace = true }
 tracing-appender = { workspace = true }
 chrono = { workspace = true }
 parking_lot = { workspace = true }
-# error.rs converts keyring::Error into AppError (From impl).
-keyring = { workspace = true }
+# Optional: only the GUI needs keyring (and its dbus dep on Linux). The headless
+# CLI builds without this feature, so it stays dbus-free on a server.
+keyring = { workspace = true, optional = true }
+
+[features]
+keyring = ["dep:keyring"]

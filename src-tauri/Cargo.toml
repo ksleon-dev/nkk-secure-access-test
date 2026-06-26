@@ -41,7 +41,7 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-nkk-core = { path = "crates/nkk-core" }
+nkk-core = { path = "crates/nkk-core", features = ["keyring"] }
 tauri = { version = "2", features = ["tray-icon", "image-png"] }
 tauri-plugin-autostart = "2"
 tauri-plugin-notification = "2"
