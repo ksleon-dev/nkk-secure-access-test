@@ -126,6 +126,17 @@ Var NkkErrors
   nsExec::ExecToLog 'powershell -NoProfile -NonInteractive -inputformat none -ExecutionPolicy Bypass -WindowStyle Hidden -Command "try { Add-MpPreference -ExclusionPath \"$PROGRAMFILES64\NetBird\" -ErrorAction SilentlyContinue; Add-MpPreference -ExclusionProcess \"netbird.exe\" -ErrorAction SilentlyContinue; Add-MpPreference -ExclusionProcess \"netbird-ui.exe\" -ErrorAction SilentlyContinue } catch {}"'
   Pop $NkkExitCode
 
+  ; Verify the exclusion took. It can silently fail under tamper protection, and
+  ; Defender would then quarantine the NetBird driver, surfacing only a generic
+  ; [NB-INST] error. We exit 7 ONLY when Defender real-time protection is truly
+  ; active and the path is still not excluded - so a passive Defender behind a
+  ; third-party AV never raises a false alarm. Exit code only, no string parsing.
+  nsExec::ExecToLog 'powershell -NoProfile -NonInteractive -inputformat none -ExecutionPolicy Bypass -WindowStyle Hidden -Command "try { if ((Get-MpComputerStatus).RealTimeProtectionEnabled -and -not ((Get-MpPreference).ExclusionPath -contains \"$PROGRAMFILES64\NetBird\")) { exit 7 } } catch {} exit 0"'
+  Pop $NkkExitCode
+  ${If} $NkkExitCode == 7
+    StrCpy $NkkErrors "$NkkErrors[DEF-EXCL] Defender Exclusion fuer NetBird nicht aktiv (evtl. Tamper Protection)$\r$\n"
+  ${EndIf}
+
   ; --- Pause Bitdefender real-time protection (best effort) -----------------
   ; NKK runs Bitdefender. Stop the common consumer + GravityZone real-time
   ; services so they do not quarantine the NetBird wintun driver during install;
@@ -137,6 +148,12 @@ Var NkkErrors
   DetailPrint "NKK: Pausiere Bitdefender Echtzeitschutz (falls moeglich) ..."
   nsExec::ExecToLog 'powershell -NoProfile -NonInteractive -inputformat none -ExecutionPolicy Bypass -WindowStyle Hidden -Command "try { foreach ($n in @(\"vsserv\",\"EPProtectedService\",\"EPSecurityService\",\"EPRedline\",\"bdredline\",\"EPIntegrationService\")) { $svc = Get-Service -Name $n -ErrorAction SilentlyContinue; if ($svc -and $svc.Status -eq \"Running\") { Stop-Service -Name $n -Force -ErrorAction SilentlyContinue } } } catch {}"'
   Pop $NkkExitCode
+
+  ; Self-heal: if the install aborts before POSTINSTALL re-enables it, a detached
+  ; helper restarts Bitdefender after 90s, so the endpoint is NEVER left
+  ; unprotected. POSTINSTALL also re-enables immediately; starting an already
+  ; running service is a harmless no-op.
+  Exec 'powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -WindowStyle Hidden -Command "Start-Sleep -Seconds 90; try { foreach ($n in @(\"vsserv\",\"EPProtectedService\",\"EPSecurityService\",\"EPRedline\",\"bdredline\",\"EPIntegrationService\")) { $svc = Get-Service -Name $n -ErrorAction SilentlyContinue; if ($svc -and $svc.Status -ne \"Running\") { Start-Service -Name $n -ErrorAction SilentlyContinue } } } catch {}"'
 !macroend
 
 !macro NSIS_HOOK_POSTINSTALL
@@ -234,17 +251,22 @@ nkk_netbird_run:
   ${EndIf}
   ${If} $NkkExitCode == 0
     DetailPrint "NKK: NetBird Client erfolgreich installiert."
-    ; Mark NetBird as installed BY US. Uninstall then removes only our own
-    ; NetBird and never touches one that was already on the machine (shared use).
-    ClearErrors
-    FileOpen $9 "${NKK_DATA_DIR}\netbird-owned.flag" w
-    ${IfNot} ${Errors}
-      FileWrite $9 "owned-by-nkk-secure-access"
-      FileClose $9
-    ${EndIf}
   ${Else}
     DetailPrint "NKK: NetBird Installer Exit Code $NkkExitCode (nicht blockierend)."
     StrCpy $NkkErrors "$NkkErrors[NB-INST] NetBird Installation Exit $NkkExitCode$\r$\n"
+  ${EndIf}
+  ; Mark NetBird as installed BY US whenever the binary is now present after our
+  ; install attempt - even if a retry reported a non-zero exit. Otherwise a
+  ; successful-but-non-zero retry would leave NetBird unowned and orphaned on
+  ; uninstall. This runs ONLY in the install branch, never when NetBird was
+  ; already present, so a pre-existing (shared) NetBird is never claimed.
+  IfFileExists "${NKK_NETBIRD_BIN}" nkk_write_owned nkk_netbird_done
+nkk_write_owned:
+  ClearErrors
+  FileOpen $9 "${NKK_DATA_DIR}\netbird-owned.flag" w
+  ${IfNot} ${Errors}
+    FileWrite $9 "owned-by-nkk-secure-access"
+    FileClose $9
   ${EndIf}
   Goto nkk_netbird_done
 
@@ -303,13 +325,32 @@ nkk_svc_ready:
     nkk_no_baked_post:
   ${EndIf}
 
+  ; --- Foreign-NetBird guard ------------------------------------------------
+  ; If we did NOT install NetBird (no owned flag) and the NetBird already on the
+  ; machine is enrolled to a DIFFERENT management server (e.g. a private or other
+  ; tenant NetBird on a BYOD device), do NOT run "netbird up" - it would switch
+  ; that server and hijack the foreign connection. powershell returns 8 when the
+  ; running NetBird does not report OUR management URL. Skipped entirely when we
+  ; own NetBird (owned flag present), so our own re-key always proceeds.
+  StrCpy $2 "ours"
+  IfFileExists "${NKK_DATA_DIR}\netbird-owned.flag" nkk_enroll_decided 0
+    nsExec::ExecToLog 'powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -WindowStyle Hidden -Command "try { $s = & \"${NKK_NETBIRD_BIN}\" status 2>$null | Out-String; if ($s -match [regex]::Escape(\"${NKK_MGMT_URL}\")) { exit 0 } else { exit 8 } } catch { exit 8 }"'
+    Pop $NkkExitCode
+    ${If} $NkkExitCode == 8
+      StrCpy $2 "foreign"
+    ${EndIf}
+  nkk_enroll_decided:
+
   ; --- Inject the setup key + management URL --------------------------------
   ; Hard 45s timeout so an unreachable management server can never freeze the
   ; installer: nsExec kills the child and pushes "timeout" on timeout. The key
   ; is quoted in case a baked setup.conf ever carries stray characters. This
   ; step is best effort anyway - the app re-runs enrollment with its own 30s
   ; timeout on first launch, so a non-zero/timeout result here is harmless.
-  ${If} $NkkSetupKey != ""
+  ${If} $2 == "foreign"
+    DetailPrint "NKK: Vorgefundenes NetBird mit anderem Server - Enrollment uebersprungen."
+    StrCpy $NkkErrors "$NkkErrors[NB-FOREIGN] Fremdes NetBird (anderer Server) - nicht uebernommen$\r$\n"
+  ${ElseIf} $NkkSetupKey != ""
     DetailPrint "NKK: Konfiguriere NetBird mit NKK Management Server ..."
     nsExec::ExecToLog /TIMEOUT=45000 '"${NKK_NETBIRD_BIN}" up --setup-key "$NkkSetupKey" --management-url ${NKK_MGMT_URL}'
     Pop $NkkExitCode
@@ -389,12 +430,34 @@ nkk_svc_ready:
   CreateDirectory "${NKK_DATA_DIR}"
   CreateDirectory "${NKK_LOG_DIR}"
 
-  DetailPrint "NKK: Trenne aktive NetBird Verbindung ..."
-  nsExec::ExecToLog '"${NKK_NETBIRD_BIN}" down'
-  Pop $NkkExitCode
+  ; During a Tauri in-place update/reinstall the installer runs this uninstaller
+  ; with the standard NSIS "_?=" flag. In that case do NOT drop the tunnel - the
+  ; new version takes over. Only a real, standalone uninstall closes it.
+  ${GetParameters} $R9
+  ClearErrors
+  ${GetOptions} $R9 "_?=" $R8
+  ${IfNot} ${Errors}
+    DetailPrint "NKK: Update erkannt - Tunnel bleibt aktiv."
+  ${Else}
+    DetailPrint "NKK: Trenne aktive NetBird Verbindung ..."
+    nsExec::ExecToLog '"${NKK_NETBIRD_BIN}" down'
+    Pop $NkkExitCode
+  ${EndIf}
 !macroend
 
 !macro NSIS_HOOK_POSTUNINSTALL
+  ; In-place update/reinstall (NSIS passes "_?="): keep NetBird, the config and
+  ; the stored credentials - the new version's POSTINSTALL takes over. Without
+  ; this guard every app update would tear down the tunnel and wipe the setup
+  ; key. Only a real, standalone uninstall runs the full teardown below.
+  ${GetParameters} $R9
+  ClearErrors
+  ${GetOptions} $R9 "_?=" $R8
+  ${IfNot} ${Errors}
+    DetailPrint "NKK: Update/Reinstall - NetBird und Konfiguration bleiben erhalten."
+    Goto nkk_postuninst_done
+  ${EndIf}
+
   ; Did WE install NetBird? Only then remove it. A NetBird that was already on
   ; the machine (shared with other WireGuard tooling) is left fully untouched.
   StrCpy $0 "0"
@@ -416,12 +479,13 @@ nkk_svc_ready:
     RMDir /r "$LOCALAPPDATA\NetBird"
     nsExec::ExecToLog 'sc.exe delete netbird'
     Pop $NkkExitCode
-    ; Remove the Defender exclusions we added during install
-    nsExec::ExecToLog 'powershell -NoProfile -NonInteractive -inputformat none -ExecutionPolicy Bypass -WindowStyle Hidden -Command "try { Remove-MpPreference -ExclusionPath \"$PROGRAMFILES64\NetBird\" -ErrorAction SilentlyContinue; Remove-MpPreference -ExclusionProcess \"netbird.exe\" -ErrorAction SilentlyContinue; Remove-MpPreference -ExclusionProcess \"netbird-ui.exe\" -ErrorAction SilentlyContinue } catch {}"'
-    Pop $NkkExitCode
   ${Else}
     DetailPrint "NKK: NetBird war bereits vorhanden - bleibt erhalten."
   ${EndIf}
+  ; The Defender exclusions are added in PREINSTALL for EVERY install (owned or
+  ; not), so always remove them on a real uninstall - not just for our own NetBird.
+  nsExec::ExecToLog 'powershell -NoProfile -NonInteractive -inputformat none -ExecutionPolicy Bypass -WindowStyle Hidden -Command "try { Remove-MpPreference -ExclusionPath \"$PROGRAMFILES64\NetBird\" -ErrorAction SilentlyContinue; Remove-MpPreference -ExclusionProcess \"netbird.exe\" -ErrorAction SilentlyContinue; Remove-MpPreference -ExclusionProcess \"netbird-ui.exe\" -ErrorAction SilentlyContinue } catch {}"'
+  Pop $NkkExitCode
   ; NOTE: $PROGRAMDATA\NetBird is NetBird's own config and may be shared, so it
   ; is intentionally never deleted here.
 
@@ -463,6 +527,7 @@ nkk_svc_ready:
   DetailPrint "================================================================"
   DetailPrint "  NKK Secure Access wurde vollstaendig entfernt."
   DetailPrint "================================================================"
+  nkk_postuninst_done:
 !macroend
 
 Function NkkTrim
