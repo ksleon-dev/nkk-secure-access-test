@@ -85,7 +85,23 @@ export function MainScreen({
       clearTimeout(settle);
     };
   }, [state]);
-  const onSiteActive = netCtx?.serverReachableDirect ?? false;
+  // Right after a disconnect the tunnel is still tearing down, so the on-site
+  // probe can briefly read the server as directly reachable and flash a wrong
+  // "no VPN needed" banner. Ignore the on-site read during that settle window
+  // (a touch longer than the re-probe above), so it never shows a wrong state.
+  const [justDisconnected, setJustDisconnected] = useState(false);
+  const prevStateForGrace = useRef(state);
+  useEffect(() => {
+    const was = prevStateForGrace.current;
+    prevStateForGrace.current = state;
+    if (was === "Connected" && state === "Disconnected") {
+      setJustDisconnected(true);
+      const t = setTimeout(() => setJustDisconnected(false), 1800);
+      return () => clearTimeout(t);
+    }
+  }, [state]);
+  const onSiteActive =
+    !justDisconnected && (netCtx?.serverReachableDirect ?? false);
   const canLaunch = isConnected || onSiteActive;
 
   const [connectivity, setConnectivity] = useState<ConnectivityResult | null>(null);
