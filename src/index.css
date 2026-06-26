@@ -120,7 +120,9 @@ button:disabled {
 .overflow-y-auto,
 .overflow-auto,
 .overflow-y-scroll {
-  scrollbar-gutter: stable;
+  /* both-edges so the reserved scrollbar space is symmetric and centred content
+     (the hero, the connect card) stays exactly in the middle, scrollbar or not. */
+  scrollbar-gutter: stable both-edges;
   scrollbar-width: thin;
   scrollbar-color: rgba(181, 31, 41, 0.32) transparent;
 }
