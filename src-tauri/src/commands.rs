@@ -2226,7 +2226,11 @@ pub async fn rdp_settings_get(app: AppHandle) -> RdpSettings {
 }
 
 #[tauri::command]
-pub async fn rdp_settings_save(app: AppHandle, settings: RdpSettings) -> AppResult<()> {
+pub async fn rdp_settings_save(
+    app: AppHandle,
+    state: State<'_, AppState>,
+    settings: RdpSettings,
+) -> AppResult<()> {
     let path = rdp_settings_path(&app)
         .ok_or_else(|| AppError::Internal("Kein Datenverzeichnis.".into()))?;
     if let Some(parent) = path.parent() {
@@ -2235,6 +2239,28 @@ pub async fn rdp_settings_save(app: AppHandle, settings: RdpSettings) -> AppResu
     let json =
         serde_json::to_string_pretty(&settings).map_err(|e| AppError::Internal(e.to_string()))?;
     std::fs::write(&path, json).map_err(|e| AppError::Io(e.to_string()))?;
+
+    // Keep an existing desktop shortcut in sync with the settings the employee
+    // just changed, so it always matches. Only an already-present shortcut is
+    // rewritten - we never create one here. Best effort, never fails the save.
+    let name = ensure_branding_from_state(&app, &state)
+        .await
+        .map(|b| b.product.short_name)
+        .unwrap_or_else(|| "NKK".to_string());
+    let shortcut_name = if cfg!(target_os = "windows") {
+        format!("{} Terminalserver.lnk", name)
+    } else {
+        format!("{} Terminalserver.rdp", name)
+    };
+    let exists = app
+        .path()
+        .desktop_dir()
+        .ok()
+        .map(|d| d.join(&shortcut_name).exists())
+        .unwrap_or(false);
+    if exists {
+        let _ = create_desktop_rdp_shortcut(app.clone(), state).await;
+    }
     Ok(())
 }
 
