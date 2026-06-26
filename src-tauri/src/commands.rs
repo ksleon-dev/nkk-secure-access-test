@@ -321,11 +321,11 @@ pub async fn creds_test() -> AppResult<KeyringTestResult> {
     // macOS: no keyring used - always OK
     #[cfg(target_os = "macos")]
     {
-        return Ok(KeyringTestResult {
+        Ok(KeyringTestResult {
             ok: true,
             backend: "Lokale Datei (kein Schlüsselbund)".to_string(),
             message: "Auf macOS werden Anmeldedaten lokal gespeichert - kein Keychain nötig.".to_string(),
-        });
+        })
     }
 
     #[cfg(not(target_os = "macos"))]
@@ -821,15 +821,14 @@ async fn management_reachable(url: &str) -> bool {
         None => (host_port, 443u16),
     };
     let addr = format!("{}:{}", host, port);
-    match timeout(
-        Duration::from_secs(2),
-        tokio::net::TcpStream::connect(addr),
+    matches!(
+        timeout(
+            Duration::from_secs(2),
+            tokio::net::TcpStream::connect(addr),
+        )
+        .await,
+        Ok(Ok(_))
     )
-    .await
-    {
-        Ok(Ok(_)) => true,
-        _ => false,
-    }
 }
 
 #[tauri::command]
@@ -1695,7 +1694,7 @@ pub async fn dualhoming_prefer_wired(
             });
         }
         // Save the original order so it can be restored.
-        if let Some(d) = app.path().app_data_dir().ok() {
+        if let Ok(d) = app.path().app_data_dir() {
             let _ = std::fs::create_dir_all(&d);
             let _ = std::fs::write(d.join("netorder-backup.txt"), names.join("\n"));
         }
@@ -1732,7 +1731,7 @@ pub async fn dualhoming_prefer_wired(
             .output()
             .await;
         let _ = std::fs::remove_file(&sp);
-        return Ok(match res {
+        Ok(match res {
             Ok(o) if o.status.success() => DualHomingResult {
                 applied: true,
                 message: format!(
@@ -1749,7 +1748,7 @@ pub async fn dualhoming_prefer_wired(
                 }
             }
             Err(_) => DualHomingResult { applied: false, message: "Aktion fehlgeschlagen.".into() },
-        });
+        })
     }
 
     #[cfg(target_os = "windows")]
@@ -1994,7 +1993,7 @@ pub async fn smart_debug(
     }
     steps.push(cli_step);
 
-    if !cli_present && !steps.last().map_or(false, |s| s.ok) {
+    if !cli_present && !steps.last().is_some_and(|s| s.ok) {
         return Ok(SmartDebugResult {
             summary: "NetBird Client fehlt. Bitte den Installer erneut ausführen.".into(),
             steps,
@@ -2034,14 +2033,14 @@ pub async fn smart_debug(
             vpn_step.action_taken = Some("Starte Daemon neu …".into());
             let _ = timeout(
                 Duration::from_secs(3),
-                TokioCommand::new(&state.netbird.binary_path())
+                TokioCommand::new(state.netbird.binary_path())
                     .args(["service", "stop"])
                     .output(),
             ).await;
             sleep(Duration::from_millis(500)).await;
             let _ = timeout(
                 Duration::from_secs(3),
-                TokioCommand::new(&state.netbird.binary_path())
+                TokioCommand::new(state.netbird.binary_path())
                     .args(["service", "start"])
                     .output(),
             ).await;
@@ -2104,13 +2103,14 @@ pub async fn smart_debug(
     // ── Step 7: RDP Port Check ──
     if lan_ok {
         let rdp_addr = format!("{}:3389", debug_lan);
-        let rdp_ok = match timeout(
-            Duration::from_secs(3),
-            tokio::net::TcpStream::connect(&rdp_addr),
-        ).await {
-            Ok(Ok(_)) => true,
-            _ => false,
-        };
+        let rdp_ok = matches!(
+            timeout(
+                Duration::from_secs(3),
+                tokio::net::TcpStream::connect(&rdp_addr),
+            )
+            .await,
+            Ok(Ok(_))
+        );
         steps.push(SmartDebugStep {
             name: "Remote Desktop".into(),
             ok: rdp_ok,
@@ -2148,7 +2148,7 @@ pub async fn smart_debug(
 
     // ── Summary ──
     let all_ok = steps.iter().all(|s| s.ok);
-    let fixed = steps.iter().any(|s| s.action_taken.as_ref().map_or(false, |a| a.contains("erfolgreich")));
+    let fixed = steps.iter().any(|s| s.action_taken.as_ref().is_some_and(|a| a.contains("erfolgreich")));
     let summary = if all_ok && fixed {
         "Probleme wurden automatisch behoben - alles funktioniert jetzt.".into()
     } else if all_ok {
@@ -2754,7 +2754,7 @@ pub async fn open_rdp(
             .arg(&path)
             .spawn()
             .map_err(|e| AppError::Internal(format!("open rdp: {}", e)))?;
-        return Ok(());
+        Ok(())
     }
 
     #[cfg(all(unix, not(target_os = "macos")))]
@@ -2823,7 +2823,7 @@ pub async fn open_smb(target: String) -> AppResult<()> {
             .arg(url)
             .spawn()
             .map_err(|e| AppError::Internal(format!("open smb: {}", e)))?;
-        return Ok(());
+        Ok(())
     }
     #[cfg(all(unix, not(target_os = "macos")))]
     Err(AppError::Unsupported("SMB".to_string()))
@@ -3881,15 +3881,13 @@ async fn wired_already_preferred() -> bool {
                 if wifi.is_none() {
                     wifi = Some(order);
                 }
-            } else if hw.contains("ethernet")
+            } else if (hw.contains("ethernet")
                 || hw.contains("lan")
                 || hw.contains("thunderbolt")
-                || hw.contains("usb")
-            {
-                if wired.is_none() {
+                || hw.contains("usb"))
+                && wired.is_none() {
                     wired = Some(order);
                 }
-            }
             order += 1;
         }
     }
@@ -4173,7 +4171,7 @@ pub async fn admin_restart_service(state: State<'_, AppState>) -> AppResult<Stri
             TokioCommand::new(&bin).args(["service", "start"]).output(),
         )
         .await;
-        return Ok("NetBird Dienst neu gestartet.".into());
+        Ok("NetBird Dienst neu gestartet.".into())
     }
     #[cfg(all(unix, not(target_os = "macos")))]
     {

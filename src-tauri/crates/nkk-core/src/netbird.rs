@@ -146,6 +146,12 @@ pub struct NetbirdClient {
     op_lock: Arc<AsyncMutex<()>>,
 }
 
+impl Default for NetbirdClient {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl NetbirdClient {
     pub fn new() -> Self {
         let binary = std::env::var("NETBIRD_BIN").unwrap_or_else(|_| find_netbird_binary());
