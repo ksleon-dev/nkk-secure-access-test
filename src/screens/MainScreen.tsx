@@ -91,15 +91,28 @@ export function MainScreen({
   // (a touch longer than the re-probe above), so it never shows a wrong state.
   const [justDisconnected, setJustDisconnected] = useState(false);
   const prevStateForGrace = useRef(state);
+  const graceTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
   useEffect(() => {
     const was = prevStateForGrace.current;
     prevStateForGrace.current = state;
     if (was === "Connected" && state === "Disconnected") {
+      // Restart the grace on every disconnect via a ref-held timer, not the
+      // effect cleanup. Reconnect flapping (Disconnected -> Connecting -> ...)
+      // would otherwise clear the timer and strand the flag on forever.
       setJustDisconnected(true);
-      const t = setTimeout(() => setJustDisconnected(false), 1800);
-      return () => clearTimeout(t);
+      if (graceTimer.current) clearTimeout(graceTimer.current);
+      graceTimer.current = setTimeout(() => {
+        setJustDisconnected(false);
+        graceTimer.current = null;
+      }, 1800);
     }
   }, [state]);
+  useEffect(
+    () => () => {
+      if (graceTimer.current) clearTimeout(graceTimer.current);
+    },
+    []
+  );
   const onSiteActive =
     !justDisconnected && (netCtx?.serverReachableDirect ?? false);
   const canLaunch = isConnected || onSiteActive;

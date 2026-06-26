@@ -26,7 +26,12 @@ pub async fn shell_output(cmd: &str, args: &[&str]) -> Option<String> {
         .stderr(std::process::Stdio::null());
     #[cfg(target_os = "windows")]
     c.creation_flags(0x08000000);
-    let out = c.output().await.ok()?;
+    // Hard 5s cap. A wedged binary (e.g. a hung netbird) must never leave a
+    // join!-block (inventory, support bundle, version check) hanging forever.
+    let out = match tokio::time::timeout(std::time::Duration::from_secs(5), c.output()).await {
+        Ok(Ok(out)) => out,
+        _ => return None,
+    };
     if !out.status.success() {
         return None;
     }

@@ -5,6 +5,7 @@ use std::collections::VecDeque;
 use std::process::Stdio;
 use std::sync::Arc;
 use tokio::process::Command;
+use tokio::sync::Mutex as AsyncMutex;
 use tokio::time::{timeout, Duration};
 
 const LOG_BUFFER_SIZE: usize = 500;
@@ -139,6 +140,10 @@ impl LogBuffer {
 pub struct NetbirdClient {
     binary: String,
     pub logs: Arc<LogBuffer>,
+    // Serialises tunnel-changing operations (up/down) so a concurrent connect
+    // and disconnect can never interleave and leave the tunnel in an
+    // indeterminate state. status() deliberately stays lock-free.
+    op_lock: Arc<AsyncMutex<()>>,
 }
 
 impl NetbirdClient {
@@ -147,6 +152,7 @@ impl NetbirdClient {
         let client = Self {
             binary: binary.clone(),
             logs: Arc::new(LogBuffer::default()),
+            op_lock: Arc::new(AsyncMutex::new(())),
         };
         client.log(format!("NetBird Binary: {}", binary));
         client.log(format!("Plattform: {} {}", std::env::consts::OS, std::env::consts::ARCH));
@@ -229,6 +235,9 @@ impl NetbirdClient {
     }
 
     pub async fn up(&self, management_url: &str, setup_key: Option<&str>) -> AppResult<()> {
+        // Serialise against a concurrent down(); status() is intentionally not
+        // gated so the poller and the Windows pre-check never block or deadlock.
+        let _guard = self.op_lock.lock().await;
         let mut args: Vec<&str> = vec!["up", "--management-url", management_url];
         if let Some(k) = setup_key {
             args.push("--setup-key");
@@ -242,6 +251,7 @@ impl NetbirdClient {
     }
 
     pub async fn down(&self) -> AppResult<()> {
+        let _guard = self.op_lock.lock().await;
         self.run_with_timeout(&["down"], 15).await?;
         Ok(())
     }

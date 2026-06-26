@@ -3196,6 +3196,25 @@ async fn poll_loop(app: AppHandle) {
                                 if let Some(url) = mgmt_url {
                                     // Don't hammer an unreachable server with `up`.
                                     if management_reachable(&url).await {
+                                        // The reachability probe can take a
+                                        // couple of seconds. If the user hit
+                                        // Trennen in the meantime, do NOT bring
+                                        // the tunnel back, and do not count this
+                                        // as a failed reconnect.
+                                        let aborted = RECONNECT_PAUSED.load(Ordering::Relaxed)
+                                            || reconnect_app
+                                                .try_state::<AppState>()
+                                                .map(|s| {
+                                                    s.user_disconnected.load(Ordering::Relaxed)
+                                                })
+                                                .unwrap_or(false);
+                                        if aborted {
+                                            tracing::info!(
+                                                "Auto-Reconnect abgebrochen: Nutzer hat getrennt."
+                                            );
+                                            RECONNECT_IN_FLIGHT.store(false, Ordering::Relaxed);
+                                            return;
+                                        }
                                         tracing::info!("Auto-Reconnect: versuche Wiederverbindung ...");
                                         match reconnect_nb.up(&url, key.as_deref()).await {
                                             Ok(_) => {
