@@ -492,7 +492,7 @@ export function MainScreen({
             return (
               <div
                 className={clsx(
-                  "fade-soft w-full rounded-xl px-3 py-2.5 flex flex-col gap-2 mt-2",
+                  "banner-in w-full rounded-xl px-3 py-2.5 flex flex-col gap-2 mt-2",
                   t.box
                 )}
               >

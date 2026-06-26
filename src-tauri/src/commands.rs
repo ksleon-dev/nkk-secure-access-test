@@ -1409,7 +1409,7 @@ pub async fn probe_mtu(app: AppHandle, state: State<'_, AppState>) -> AppResult<
         path_mtu: 0,
         recommended_mtu: 0,
         status: "unbekannt".into(),
-        note: "Anker nicht per Ping erreichbar. Ist das VPN verbunden?".into(),
+        note: "Anker nicht per Ping erreichbar. Besteht eine Verbindung zum Firmennetz?".into(),
     };
 
     // Establish a lower bound the path can carry; bail out if even small DF
@@ -3774,6 +3774,76 @@ pub struct NetworkContext {
     pub warning: Option<String>,
 }
 
+/// True when a wired connection already outranks Wi-Fi, so two active default
+/// routes are NOT actually a problem and we must not nag the user about it.
+#[cfg(target_os = "macos")]
+async fn wired_already_preferred() -> bool {
+    let out = match TokioCommand::new("networksetup")
+        .arg("-listnetworkserviceorder")
+        .output()
+        .await
+    {
+        Ok(o) if o.status.success() => String::from_utf8_lossy(&o.stdout).to_string(),
+        _ => return false,
+    };
+    let lines: Vec<&str> = out.lines().collect();
+    let mut order = 0usize;
+    let (mut wired, mut wifi): (Option<usize>, Option<usize>) = (None, None);
+    for i in 0..lines.len() {
+        let l = lines[i].trim();
+        if l.starts_with('(') && !l.contains("Hardware Port") && !l.contains("asterisk") {
+            if l.find(')').is_none() {
+                continue;
+            }
+            let hw = lines.get(i + 1).map(|s| s.to_lowercase()).unwrap_or_default();
+            if hw.contains("wi-fi") {
+                if wifi.is_none() {
+                    wifi = Some(order);
+                }
+            } else if hw.contains("ethernet")
+                || hw.contains("lan")
+                || hw.contains("thunderbolt")
+                || hw.contains("usb")
+            {
+                if wired.is_none() {
+                    wired = Some(order);
+                }
+            }
+            order += 1;
+        }
+    }
+    matches!((wired, wifi), (Some(w), Some(f)) if w < f)
+}
+
+#[cfg(target_os = "windows")]
+async fn wired_already_preferred() -> bool {
+    use std::os::windows::process::CommandExt;
+    // Lower IPv4 interface metric wins. Wired is already preferred only when its
+    // metric is strictly lower than Wi-Fi's (a tie is treated as not preferred,
+    // so the user still gets the option to fix it).
+    let ps = "$e = Get-NetAdapter -Physical | Where-Object { $_.Status -eq 'Up' -and $_.PhysicalMediaType -notlike '*802.11*' } | Select-Object -First 1; $w = Get-NetAdapter -Physical | Where-Object { $_.Status -eq 'Up' -and $_.PhysicalMediaType -like '*802.11*' } | Select-Object -First 1; if ($e -and $w) { $em = (Get-NetIPInterface -InterfaceIndex $e.ifIndex -AddressFamily IPv4).InterfaceMetric; $wm = (Get-NetIPInterface -InterfaceIndex $w.ifIndex -AddressFamily IPv4).InterfaceMetric; if ($em -lt $wm) { 'WIRED' } else { 'OTHER' } } else { 'OTHER' }";
+    let out = TokioCommand::new("powershell")
+        .args([
+            "-NoProfile",
+            "-NonInteractive",
+            "-inputformat",
+            "none",
+            "-ExecutionPolicy",
+            "Bypass",
+            "-Command",
+            ps,
+        ])
+        .creation_flags(0x08000000)
+        .output()
+        .await;
+    matches!(out, Ok(o) if o.status.success() && String::from_utf8_lossy(&o.stdout).contains("WIRED"))
+}
+
+#[cfg(not(any(target_os = "macos", target_os = "windows")))]
+async fn wired_already_preferred() -> bool {
+    false
+}
+
 #[tauri::command]
 pub async fn detect_network_context(
     app: AppHandle,
@@ -3797,7 +3867,9 @@ pub async fn detect_network_context(
     );
     let onsite = probe_onsite(&targets, vpn_connected).await;
     let routes = enumerate_default_routes().await;
-    let dual_homing = routes.len() >= 2;
+    // Two default routes are only a problem if the wire is NOT already winning.
+    // If the cable already has priority, there is nothing to warn about.
+    let dual_homing = routes.len() >= 2 && !wired_already_preferred().await;
     let server_reachable_direct = onsite.on_site;
 
     let (context, chosen_path, reason) = if server_reachable_direct {
