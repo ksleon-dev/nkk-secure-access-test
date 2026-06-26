@@ -120,6 +120,14 @@ jobs:
             Write-Host "OK: $f ($len B)"
           }
 
+      # The app crate's lib test compiles run(), which invokes
+      # tauri::generate_context!() - a proc macro that validates frontendDist
+      # (../dist) at compile time and panics if it is missing. Build the frontend
+      # first so `cargo test` can compile the app crate (nkk-core tests run either
+      # way, but commands.rs unit tests live in the app crate).
+      - name: Build frontend (dist needed by generate_context in lib tests)
+        run: npm run build
+
       - name: Run Rust unit tests
         working-directory: src-tauri
         # --workspace so the nkk-core tests (NetBird status/latency parsers, the
