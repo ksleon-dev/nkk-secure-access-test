@@ -2452,10 +2452,46 @@ pub async fn create_desktop_rdp_shortcut(
             .map_err(|e| AppError::Internal(format!("Desktop: {}", e)))?;
         let path = desktop.join(format!("{} Terminalserver.rdp", name));
         std::fs::write(&path, content).map_err(|e| AppError::Io(e.to_string()))?;
+
+        // macOS: a .rdp otherwise shows the generic Remote-Desktop icon. Stamp
+        // our TS2 icon onto the file via NSWorkspace (JXA - no Xcode tools
+        // needed). Best effort: the shortcut works regardless.
+        #[cfg(target_os = "macos")]
+        if let Some(icon) = ts2_icon_path(&app) {
+            let js = format!(
+                "ObjC.import('AppKit'); var i = $.NSImage.alloc.initWithContentsOfFile('{icon}'); \
+                 $.NSWorkspace.sharedWorkspace.setIconForFileOptions(i, '{file}', 0);",
+                icon = icon.to_string_lossy().replace('\'', ""),
+                file = path.to_string_lossy().replace('\'', ""),
+            );
+            let _ = TokioCommand::new("osascript")
+                .args(["-l", "JavaScript", "-e", &js])
+                .output()
+                .await;
+        }
+
         result_path = path;
     }
 
     Ok(result_path.to_string_lossy().to_string())
+}
+
+/// Resolve the bundled TS2 icns, both in dev (source tree) and in the packaged
+/// app. Returns None if it cannot be found - the caller then skips icon setting.
+#[cfg(target_os = "macos")]
+fn ts2_icon_path(app: &AppHandle) -> Option<std::path::PathBuf> {
+    let mut candidates: Vec<std::path::PathBuf> = Vec::new();
+    if let Ok(rd) = app.path().resource_dir() {
+        candidates.push(rd.join("resources").join("ts2-shortcut.icns"));
+        candidates.push(rd.join("ts2-shortcut.icns"));
+        candidates.push(rd.join("_up_").join("resources").join("ts2-shortcut.icns"));
+    }
+    #[cfg(debug_assertions)]
+    candidates.push(std::path::PathBuf::from(concat!(
+        env!("CARGO_MANIFEST_DIR"),
+        "/resources/ts2-shortcut.icns"
+    )));
+    candidates.into_iter().find(|p| p.exists())
 }
 
 #[tauri::command]

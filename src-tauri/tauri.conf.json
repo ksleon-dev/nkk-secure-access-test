@@ -51,6 +51,7 @@
       "resources/branding.json": "resources/branding.json",
       "resources/assets/nkk-logo.svg": "resources/assets/nkk-logo.svg",
       "resources/ts2-shortcut.ico": "resources/ts2-shortcut.ico",
+      "resources/ts2-shortcut.icns": "resources/ts2-shortcut.icns",
       "bin/netbird-installer.exe": "resources/bin/netbird-installer.exe",
       "bin/vc_redist.x64.exe": "resources/bin/vc_redist.x64.exe",
       "bin/wintun.dll": "resources/bin/wintun.dll",
