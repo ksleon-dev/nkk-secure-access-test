@@ -5,7 +5,6 @@ import {
   ArrowRight,
   CheckCircle2,
   Copy,
-  Crown,
   Headphones,
   HelpCircle,
   Info,
@@ -323,10 +322,16 @@ export function MainScreen({
 
   // Hidden entries (e.g. the outdated Terminalserver 1) are not shown as cards;
   // they are only reachable via their Shift+<digit> hotkey.
-  // The Geschäftsführer profile sees every target (including hidden and
-  // manager-only ones); a normal user sees only the public, non-manager ones.
+  // Hidden entries (e.g. an outdated TS1) stay hidden for everyone - they are
+  // only reachable by hotkey. The Geschäftsführer profile additionally sees
+  // purpose-built manager-only targets (role: "manager"), like a NetBird-free
+  // fallback path. A normal user never sees those.
   const launches = [...branding.quickLaunch]
-    .filter((q) => (isManager ? true : !q.hidden && q.role !== "manager"))
+    .filter((q) => {
+      if (q.hidden) return false;
+      if (q.role === "manager") return isManager;
+      return true;
+    })
     .sort((a, b) => Number(!!b.default) - Number(!!a.default));
 
   async function toggle() {
@@ -499,8 +504,8 @@ export function MainScreen({
         </div>
 
         {isManager && (
-          <div className="banner-in inline-flex items-center gap-1 mt-1 px-2.5 py-1 rounded-full bg-[color:var(--brand-primary)]/12 text-[color:var(--brand-primary)] text-[10px] font-bold uppercase tracking-wider">
-            <Crown size={11} /> Geschäftsführer
+          <div className="banner-in mt-1 px-3 py-1 rounded-full border border-[color:var(--brand-primary)]/35 text-[color:var(--brand-primary)] text-[10.5px] font-semibold tracking-wide">
+            Geschäftsführer
           </div>
         )}
 
