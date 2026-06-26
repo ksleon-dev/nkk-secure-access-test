@@ -197,6 +197,12 @@ export function MainScreen({
         text: "Dieses WLAN will erst eine Anmeldung im Browser. Melde dich dort an, dann geht das VPN.",
         action: null,
       };
+    if (state === "Error")
+      return {
+        tone: "error",
+        text: "Die Verbindung ist gestört. Tippe unten auf Verbinden oder öffne bei Bedarf die Diagnose.",
+        action: null,
+      };
     if (netCtx)
       return {
         tone: "info",
@@ -204,7 +210,7 @@ export function MainScreen({
         action: null,
       };
     return null;
-  }, [isConnected, status, onSiteActive, netCtx, connectivity]);
+  }, [isConnected, status, onSiteActive, netCtx, connectivity, state]);
 
   const [fixingDh, setFixingDh] = useState(false);
   async function fixDualHoming() {
@@ -340,7 +346,7 @@ export function MainScreen({
     <div className="h-full flex flex-col relative">
       <Decor />
       {/* Top utility bar pinned to top */}
-      <header className="relative z-20 px-3 pt-3 pb-2 flex items-center gap-1 bg-[color:var(--brand-bg-soft)] border-b border-[color:var(--brand-border)]">
+      <header className="relative z-20 px-4 pt-4 pb-2 flex items-center gap-1 bg-[color:var(--brand-bg-soft)] border-b border-[color:var(--brand-border)]">
         <div className="flex-1">
           <span className="text-[13px] font-bold text-[color:var(--brand-fg)]/85 tabular-nums">
             {dateTime.time}
@@ -388,7 +394,7 @@ export function MainScreen({
       {/* Hero - vertically centred so there is equal space above and below the
           content block. */}
       <main className="main-scroll relative z-10 flex-1 overflow-y-auto">
-        <div className="min-h-full flex flex-col items-center justify-center px-6 gap-2.5 py-3 text-center">
+        <div className="min-h-full flex flex-col items-center justify-center px-2 gap-2.5 py-3 text-center">
         <div className="fade-in-1 flex flex-col items-center">
           <div
             className="relative flex items-center justify-center cursor-pointer"

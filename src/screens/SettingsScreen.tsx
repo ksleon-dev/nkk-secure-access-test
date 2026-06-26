@@ -427,7 +427,7 @@ export function SettingsScreen({
       </div>
 
       {/* Permanent vendor footer */}
-      <div className="text-center text-[9px] py-1.5 shrink-0 font-semibold uppercase tracking-wider text-[color:var(--brand-surface)]/80">
+      <div className="text-center text-[9px] py-1 shrink-0 font-bold uppercase tracking-[0.15em] text-[color:var(--brand-surface)]/85 bg-[color:var(--brand-primary)]/95">
         {branding.vendor.footer}
       </div>
     </div>
@@ -469,7 +469,7 @@ function Toggle({
       aria-checked={checked}
       onClick={() => onChange(!checked)}
       className={`relative w-10 h-6 rounded-full transition-colors ${
-        checked ? "bg-[var(--brand-primary)]" : "bg-gray-400/40"
+        checked ? "bg-[var(--brand-primary)]" : "bg-[color:var(--brand-fg)]/20"
       }`}
     >
       <span
@@ -480,7 +480,7 @@ function Toggle({
       <Power
         size={10}
         className={`absolute top-1.5 ${
-          checked ? "left-1.5 text-white" : "right-1.5 text-gray-500"
+          checked ? "left-1.5 text-white" : "right-1.5 text-[color:var(--brand-fg)]/40"
         }`}
       />
     </button>

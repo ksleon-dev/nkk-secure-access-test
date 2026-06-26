@@ -203,9 +203,9 @@ export function EnrollmentScreen({ branding, onEnrolled }: Props) {
           <ShieldCheck size={10} />
           <span>{de.enrollment.helpText}</span>
         </div>
-        <div className="text-center text-[9px] font-semibold uppercase tracking-wider text-[color:var(--brand-surface)]/80">
-          {branding.vendor.footer}
-        </div>
+      </div>
+      <div className="text-center text-[9px] py-1 shrink-0 font-bold uppercase tracking-[0.15em] text-[color:var(--brand-surface)]/85 bg-[color:var(--brand-primary)]/95">
+        {branding.vendor.footer}
       </div>
     </div>
   );
