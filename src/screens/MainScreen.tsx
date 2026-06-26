@@ -12,8 +12,8 @@ import {
   Loader2,
   Newspaper,
   Power,
-  Server,
   Settings as SettingsIcon,
+  ShieldCheck,
   Stethoscope,
   X,
   XCircle,
@@ -521,16 +521,16 @@ export function MainScreen({
           ))}
         </div>
 
-        {/* Manager-only at-a-glance status when connected. */}
+        {/* Manager-only at-a-glance status when connected: calm and reassuring,
+            not a technical peer ratio that could look alarming. */}
         {isManager && isConnected && status && (
           <div className="fade-soft w-full surface rounded-xl px-3 py-2 mt-1 flex items-center justify-between text-[11px]">
-            <span className="flex items-center gap-1.5 font-semibold text-[color:var(--brand-fg)]/80">
-              <Server size={13} className="text-[color:var(--brand-primary)]" />
-              {status.local_ip ?? "verbunden"}
+            <span className="flex items-center gap-1.5 font-semibold text-emerald-700">
+              <ShieldCheck size={13} />
+              Sicher verbunden
             </span>
-            <span className="font-bold text-[color:var(--brand-fg)]">
-              {status.peers.filter((p) => p.connected).length} von{" "}
-              {status.peers.length} Geräten erreichbar
+            <span className="font-semibold text-[color:var(--brand-fg)]/65 tabular-nums">
+              {status.local_ip ?? ""}
             </span>
           </div>
         )}
