@@ -75,7 +75,13 @@ function AppInner() {
             : item.type === "smb"
             ? "open_smb"
             : "open_url";
-        await invoke(cmd, { target: item.target });
+        // RDP entries may carry an RD Gateway (NetBird-free path); the backend
+        // routes over HTTPS/443 and skips the VPN reconnect when it is set.
+        const launchArgs =
+          item.type === "rdp"
+            ? { target: item.target, gateway: item.gateway ?? null }
+            : { target: item.target };
+        await invoke(cmd, launchArgs);
         toast.success(`${item.label} wird gestartet …`);
       } catch (e: unknown) {
         const msg = e instanceof Error ? e.message : String(e);

@@ -81,6 +81,11 @@ pub struct QuickLaunchEntry {
     /// own manager-only targets without code changes.
     #[serde(default)]
     pub role: Option<String>,
+    /// Optional RD Gateway host (RDP over HTTPS/443). When set, this entry reaches
+    /// the target THROUGH the gateway without any VPN - the NetBird-free fallback
+    /// path. The app skips the VPN reconnect for such entries.
+    #[serde(default)]
+    pub gateway: Option<String>,
 }
 
 /// Hidden service-menu gate. The hash protects against accidental employee

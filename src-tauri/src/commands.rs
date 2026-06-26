@@ -2488,49 +2488,56 @@ fn ts2_icon_path(app: &AppHandle) -> Option<std::path::PathBuf> {
 pub async fn open_rdp(
     app: AppHandle,
     target: String,
+    gateway: Option<String>,
     state: State<'_, AppState>,
 ) -> AppResult<()> {
     let target = validate_host_target(&target)?;
     let rdp = load_rdp_settings(&app);
+    // A gateway entry reaches the target over HTTPS/443 (RD Gateway), entirely
+    // without NetBird, so it must never touch the VPN. Empty string = no gateway.
+    let gateway = gateway.filter(|g| !g.trim().is_empty());
 
     // NON-BLOCKING VPN check - launch RDP immediately, reconnect in background.
     // The old approach waited 10-25 seconds for VPN to connect before launching
     // mstsc, which felt sluggish. Now we launch RDP first and let VPN catch up.
-    let nb_clone = state.netbird.clone();
-    let branding_result = ensure_branding(&app, &state).await.ok();
-    let key = cached_setup_key(&state).await.ok().flatten();
-    let app_reconnect = app.clone();
-    let user_disconnected = state.user_disconnected.load(Ordering::Relaxed);
+    // Skipped entirely for the gateway path (it is the NetBird-free fallback).
+    if gateway.is_none() {
+        let nb_clone = state.netbird.clone();
+        let branding_result = ensure_branding(&app, &state).await.ok();
+        let key = cached_setup_key(&state).await.ok().flatten();
+        let app_reconnect = app.clone();
+        let user_disconnected = state.user_disconnected.load(Ordering::Relaxed);
 
-    tauri::async_runtime::spawn(async move {
-        if user_disconnected { return; } // respect explicit disconnect
-        let needs_reconnect = match timeout(Duration::from_secs(2), nb_clone.status()).await {
-            Ok(Ok(s)) => !matches!(s.state, ConnectionState::Connected),
-            _ => true,
-        };
-        if needs_reconnect {
-            if let Some(b) = branding_result {
-                // On-site (terminal server reachable directly on the LAN)? Then
-                // RDP works without the tunnel - do not force a VPN connect.
-                let targets: Vec<String> = b
-                    .quick_launch
-                    .iter()
-                    .filter(|q| q.kind == "rdp")
-                    .map(|q| q.target.clone())
-                    .collect();
-                if probe_onsite(&targets, false).await.on_site {
-                    tracing::info!("RDP: on-site erkannt, kein VPN noetig.");
-                    return;
-                }
-                tracing::info!("RDP: VPN nicht verbunden, versuche Background-Reconnect");
-                if nb_clone.up(&b.netbird.management_url, key.as_deref()).await.is_ok() {
-                    if let Ok(s) = nb_clone.status().await {
-                        let _ = app_reconnect.emit("netbird-status-changed", &s);
+        tauri::async_runtime::spawn(async move {
+            if user_disconnected { return; } // respect explicit disconnect
+            let needs_reconnect = match timeout(Duration::from_secs(2), nb_clone.status()).await {
+                Ok(Ok(s)) => !matches!(s.state, ConnectionState::Connected),
+                _ => true,
+            };
+            if needs_reconnect {
+                if let Some(b) = branding_result {
+                    // On-site (terminal server reachable directly on the LAN)? Then
+                    // RDP works without the tunnel - do not force a VPN connect.
+                    let targets: Vec<String> = b
+                        .quick_launch
+                        .iter()
+                        .filter(|q| q.kind == "rdp")
+                        .map(|q| q.target.clone())
+                        .collect();
+                    if probe_onsite(&targets, false).await.on_site {
+                        tracing::info!("RDP: on-site erkannt, kein VPN noetig.");
+                        return;
+                    }
+                    tracing::info!("RDP: VPN nicht verbunden, versuche Background-Reconnect");
+                    if nb_clone.up(&b.netbird.management_url, key.as_deref()).await.is_ok() {
+                        if let Ok(s) = nb_clone.status().await {
+                            let _ = app_reconnect.emit("netbird-status-changed", &s);
+                        }
                     }
                 }
             }
-        }
-    });
+        });
+    }
 
     // Launch RDP IMMEDIATELY - no waiting for VPN.
     // Generate a .rdp file with all redirections enabled (clipboard, files, printers).
@@ -2566,6 +2573,14 @@ pub async fn open_rdp(
         }
         if rdp.microphone {
             lines.push("audiocapturemode:i:1".into());
+        }
+        // RD Gateway: route the session over HTTPS/443 instead of the VPN tunnel.
+        if let Some(gw) = &gateway {
+            lines.push(format!("gatewayhostname:s:{}", gw));
+            lines.push("gatewayusagemethod:i:1".into());
+            lines.push("gatewaycredentialssource:i:4".into());
+            lines.push("gatewayprofileusagemethod:i:1".into());
+            lines.push("promptcredentialonce:i:1".into());
         }
         let full_addr = format!("full address:s:{}", target);
         let mut owned_lines: Vec<String> = vec![full_addr];

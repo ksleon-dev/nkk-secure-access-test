@@ -50,6 +50,8 @@ export interface QuickLaunchEntry {
   hotkey?: string;
   /** "manager" => only the Geschäftsführer profile sees it; absent => everyone. */
   role?: "user" | "manager";
+  /** RD Gateway host (RDP over HTTPS) => reaches the target without any VPN. */
+  gateway?: string;
 }
 
 export interface BrandingDto {
