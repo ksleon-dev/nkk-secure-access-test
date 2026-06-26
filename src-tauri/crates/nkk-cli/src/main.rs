@@ -111,7 +111,7 @@ async fn run(cli: Cli) -> i32 {
                 );
                 return 2;
             };
-            match nb.up(&mgmt_url, setup_key.as_deref()).await {
+            match nb.up_with_retry(&mgmt_url, setup_key.as_deref()).await {
                 Ok(()) => {
                     println!("Verbindung wird aufgebaut.");
                     0

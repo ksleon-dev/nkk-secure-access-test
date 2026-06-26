@@ -640,58 +640,13 @@ pub async fn nb_connect(
         _ => cached_setup_key(&state).await?,
     };
 
-    // Robust connect with retry: if the first "up" fails, restart the service
-    // and try again. Covers fresh installs where the service isn't running yet.
-    let up_result = {
-        #[cfg(target_os = "windows")]
-        {
-            // Pre-check: ensure service is running
-            let status_check = state.netbird.status().await;
-            if matches!(status_check, Err(AppError::NetbirdMissing) | Err(AppError::NetbirdCli(_))) {
-                tracing::info!("NetBird Service nicht erreichbar, starte Service ...");
-                let mut sc = TokioCommand::new("sc.exe");
-                sc.args(["start", "netbird"]);
-                sc.creation_flags(0x08000000);
-                let _ = timeout(Duration::from_secs(5), sc.output()).await;
-                sleep(Duration::from_secs(3)).await;
-            }
-        }
-
-        // Attempt 1
-        let first = state.netbird.up(&branding.netbird.management_url, key.as_deref()).await;
-
-        if first.is_err() {
-            tracing::warn!("Erster Verbindungsversuch fehlgeschlagen, versuche Retry ...");
-            // Restart service and retry
-            #[cfg(target_os = "windows")]
-            {
-                let mut sc_stop = TokioCommand::new("sc.exe");
-                sc_stop.args(["stop", "netbird"]);
-                sc_stop.creation_flags(0x08000000);
-                let _ = timeout(Duration::from_secs(3), sc_stop.output()).await;
-                sleep(Duration::from_secs(1)).await;
-                let mut sc_start = TokioCommand::new("sc.exe");
-                sc_start.args(["start", "netbird"]);
-                sc_start.creation_flags(0x08000000);
-                let _ = timeout(Duration::from_secs(5), sc_start.output()).await;
-                sleep(Duration::from_secs(3)).await;
-            }
-            #[cfg(target_os = "macos")]
-            {
-                let _ = timeout(
-                    Duration::from_secs(3),
-                    TokioCommand::new(state.netbird.binary_path()).args(["service", "start"]).output(),
-                ).await;
-                sleep(Duration::from_secs(2)).await;
-            }
-
-            // Attempt 2
-            state.netbird.up(&branding.netbird.management_url, key.as_deref()).await
-        } else {
-            first
-        }
-    };
-    up_result?;
+    // Robust connect with retry (service pre-check + restart-and-retry) lives in
+    // the shared core, so the GUI and the headless CLI get the exact same
+    // self-healing - no drift on the connect path.
+    state
+        .netbird
+        .up_with_retry(&branding.netbird.management_url, key.as_deref())
+        .await?;
 
     // Detect first enrollment BEFORE writing the marker - the diagnostic is sent
     // only once, when a device first joins, not on every connect.

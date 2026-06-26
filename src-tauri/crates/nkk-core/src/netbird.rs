@@ -231,10 +231,30 @@ impl NetbirdClient {
             } else {
                 stderr.clone()
             };
+            // On a headless Linux box netbird usually needs elevated rights; add a
+            // plain hint when the failure looks like a permission/socket problem,
+            // so an admin is not left guessing on the CLI.
+            #[cfg(all(unix, not(target_os = "macos")))]
+            let hint = {
+                let low = msg.to_lowercase();
+                if low.contains("permission denied")
+                    || low.contains("operation not permitted")
+                    || low.contains("connection refused")
+                    || low.contains("/var/run/netbird")
+                    || low.contains("dial unix")
+                {
+                    " (Tipp: auf Servern mit erhoehten Rechten ausfuehren, z.B. sudo.)"
+                } else {
+                    ""
+                }
+            };
+            #[cfg(not(all(unix, not(target_os = "macos"))))]
+            let hint = "";
             return Err(AppError::NetbirdCli(format!(
-                "Exit {}: {}",
+                "Exit {}: {}{}",
                 output.status.code().unwrap_or(-1),
-                msg.trim()
+                msg.trim(),
+                hint
             )));
         }
         Ok(stdout)
@@ -260,6 +280,80 @@ impl NetbirdClient {
         let _guard = self.op_lock.lock().await;
         self.run_with_timeout(&["down"], 15).await?;
         Ok(())
+    }
+
+    /// Connect with self-healing, shared by the GUI and the CLI so both get the
+    /// same robustness: ensure the service is up, try once, and on failure
+    /// restart the service and try again. Covers fresh installs or a stopped
+    /// service where a plain `up` would just fail.
+    pub async fn up_with_retry(
+        &self,
+        management_url: &str,
+        setup_key: Option<&str>,
+    ) -> AppResult<()> {
+        // Pre-check (Windows): if the service is not reachable, start it first.
+        #[cfg(target_os = "windows")]
+        {
+            if matches!(
+                self.status().await,
+                Err(AppError::NetbirdMissing) | Err(AppError::NetbirdCli(_))
+            ) {
+                self.log("NetBird Service nicht erreichbar, starte Service ...");
+                self.start_service().await;
+                tokio::time::sleep(Duration::from_secs(3)).await;
+            }
+        }
+
+        // Attempt 1.
+        if self.up(management_url, setup_key).await.is_ok() {
+            return Ok(());
+        }
+        self.log("Erster Verbindungsversuch fehlgeschlagen, versuche Retry ...");
+        // Restart the service, then attempt 2.
+        self.restart_service().await;
+        self.up(management_url, setup_key).await
+    }
+
+    #[cfg(target_os = "windows")]
+    async fn start_service(&self) {
+        use std::os::windows::process::CommandExt;
+        let mut sc = Command::new("sc.exe");
+        sc.args(["start", "netbird"]).creation_flags(0x08000000);
+        let _ = timeout(Duration::from_secs(5), sc.output()).await;
+    }
+
+    /// Best-effort restart of the NetBird service/daemon for the connect retry.
+    async fn restart_service(&self) {
+        #[cfg(target_os = "windows")]
+        {
+            use std::os::windows::process::CommandExt;
+            let mut sc_stop = Command::new("sc.exe");
+            sc_stop.args(["stop", "netbird"]).creation_flags(0x08000000);
+            let _ = timeout(Duration::from_secs(3), sc_stop.output()).await;
+            tokio::time::sleep(Duration::from_secs(1)).await;
+            let mut sc_start = Command::new("sc.exe");
+            sc_start.args(["start", "netbird"]).creation_flags(0x08000000);
+            let _ = timeout(Duration::from_secs(5), sc_start.output()).await;
+            tokio::time::sleep(Duration::from_secs(3)).await;
+        }
+        #[cfg(target_os = "macos")]
+        {
+            let _ = timeout(
+                Duration::from_secs(3),
+                Command::new(&self.binary).args(["service", "start"]).output(),
+            )
+            .await;
+            tokio::time::sleep(Duration::from_secs(2)).await;
+        }
+        #[cfg(all(unix, not(target_os = "macos")))]
+        {
+            let _ = timeout(
+                Duration::from_secs(3),
+                Command::new(&self.binary).args(["service", "restart"]).output(),
+            )
+            .await;
+            tokio::time::sleep(Duration::from_secs(2)).await;
+        }
     }
 
     pub async fn status(&self) -> AppResult<StatusDto> {

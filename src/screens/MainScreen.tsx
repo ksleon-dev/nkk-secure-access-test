@@ -155,7 +155,11 @@ export function MainScreen({
   // Smart, plain-language read of the situation. Only states we can detect
   // reliably are shown, so the employee never gets a false alarm.
   const situation = useMemo<
-    | { tone: "good" | "warn" | "info" | "error"; text: string; action: "fixdh" | null }
+    | {
+        tone: "good" | "warn" | "info" | "error";
+        text: string;
+        action: "fixdh" | "relogin" | null;
+      }
     | null
   >(() => {
     if (isConnected) return null;
@@ -170,8 +174,8 @@ export function MainScreen({
     if (status?.needs_login)
       return {
         tone: "warn",
-        text: "Deine Anmeldung ist abgelaufen. Tippe unten auf Verbinden, um dich neu anzumelden. Klappt das nicht, hilft die Diagnose oder der Support.",
-        action: null,
+        text: "Deine Anmeldung ist abgelaufen. Melde dich neu an, dann geht es weiter. Klappt das nicht, hilft die Diagnose oder der Support.",
+        action: "relogin",
       };
     if (onSiteActive)
       return {
@@ -549,6 +553,15 @@ export function MainScreen({
                     className="w-full text-[11px] font-bold rounded-lg py-2 bg-amber-600 text-white hover:bg-amber-700 transition disabled:opacity-50 active:scale-[0.98]"
                   >
                     {fixingDh ? "wird gesetzt …" : "Kabel automatisch bevorzugen"}
+                  </button>
+                )}
+                {situation.action === "relogin" && (
+                  <button
+                    onClick={toggle}
+                    disabled={isBusy}
+                    className="w-full text-[11px] font-bold rounded-lg py-2 btn-primary active:scale-[0.98] disabled:opacity-60"
+                  >
+                    {isBusy ? "Melde an …" : "Jetzt neu anmelden"}
                   </button>
                 )}
               </div>
