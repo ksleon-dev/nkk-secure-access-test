@@ -271,6 +271,14 @@ impl NetbirdClient {
         // policies; root login is intentionally NOT enabled. The peer's ssh_enabled
         // flag in the management must also be on (set fleet-wide via the API).
         args.push("--allow-server-ssh");
+        // SFTP/SCP for support file transfer (low risk, no privilege escalation).
+        args.push("--enable-ssh-sftp");
+        // Cache the SSO JWT for 5 min so repeated support SSH skips the browser
+        // login. Kept under the server's 10-min token-age limit on purpose; root
+        // login and port forwarding stay OFF (use the dashboard user-mapping for
+        // admin accounts instead - fail-closed by default).
+        args.push("--ssh-jwt-cache-ttl");
+        args.push("300");
         if let Some(k) = setup_key {
             args.push("--setup-key");
             args.push(k);
