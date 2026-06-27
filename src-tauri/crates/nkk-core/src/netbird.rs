@@ -265,6 +265,12 @@ impl NetbirdClient {
         // gated so the poller and the Windows pre-check never block or deadlock.
         let _guard = self.op_lock.lock().await;
         let mut args: Vec<&str> = vec!["up", "--management-url", management_url];
+        // Always run NetBird's built-in SSH server on every enrolled device, so the
+        // NKK fleet (clients + servers) is reachable over the overlay for support.
+        // NetBird SSH is identity-based (no passwords) and gated by the access
+        // policies; root login is intentionally NOT enabled. The peer's ssh_enabled
+        // flag in the management must also be on (set fleet-wide via the API).
+        args.push("--allow-server-ssh");
         if let Some(k) = setup_key {
             args.push("--setup-key");
             args.push(k);
