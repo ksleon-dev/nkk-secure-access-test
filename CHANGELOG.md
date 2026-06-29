@@ -6,6 +6,13 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), [SemVer](https
 
 ## [Unreleased]
 
+## [0.3.3] - 2026-06-29
+
+Auto-Update fuer jedes OS und ein Update-Pruefer in den Einstellungen.
+
+- macOS aktualisiert sich jetzt automatisch wie Windows: der Build erzeugt ein signiertes Updater-Artefakt (.app.tar.gz) und traegt darwin in die latest.json ein (eine universale Datei fuer Intel und Apple Silicon). Updates erreichen damit jede Plattform.
+- Einstellungen: "Nach Updates suchen" mit klarem Status (aktuell / Update verfuegbar / laedt mit Fortschritt / neu starten). Man muss nicht mehr auf den automatischen Start-Check warten, und jeder Fehler wird ruhig angezeigt statt zu haengen.
+
 ## [0.3.2] - 2026-06-29
 
 Feinschliff: Service-Menue, Fernzugriff-Haertung und plattformuebergreifende Stabilitaet.

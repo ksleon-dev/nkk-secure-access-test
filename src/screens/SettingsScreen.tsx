@@ -1,8 +1,11 @@
 import { invoke } from "@tauri-apps/api/core";
+import { check, type Update } from "@tauri-apps/plugin-updater";
+import { relaunch } from "@tauri-apps/plugin-process";
 import {
   ArrowLeft,
   CheckCircle2,
   ChevronDown,
+  Download,
   Loader2,
   LogOut,
   Monitor,
@@ -26,7 +29,7 @@ interface RdpSettings {
   audio: boolean;
   multimon: boolean;
 }
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { Avatar } from "../components/Avatar";
 import { useToast } from "../components/Toast";
 import { de } from "../i18n/de";
@@ -415,6 +418,7 @@ export function SettingsScreen({
               {branding.product.version}
             </span>
           </div>
+          <UpdateChecker currentVersion={branding.product.version} />
         </Section>
 
         <button
@@ -509,6 +513,167 @@ function RdpRow({
         )}
       </div>
       <Toggle checked={checked} onChange={onChange} />
+    </div>
+  );
+}
+
+type UpdPhase =
+  | "idle"
+  | "checking"
+  | "uptodate"
+  | "available"
+  | "downloading"
+  | "ready"
+  | "error";
+
+/**
+ * Manual "check for updates" in Settings. Uses the same updater plugin as the
+ * automatic startup check, but on demand. Every async path is wrapped so a
+ * missing network / VPN or a broken manifest shows a calm message instead of
+ * throwing. Works on every OS the manifest has an entry for.
+ */
+function UpdateChecker({ currentVersion }: { currentVersion: string }) {
+  const [phase, setPhase] = useState<UpdPhase>("idle");
+  const [newVersion, setNewVersion] = useState<string | null>(null);
+  const [progress, setProgress] = useState(0);
+  const [err, setErr] = useState<string | null>(null);
+  const updateRef = useRef<Update | null>(null);
+
+  async function doCheck() {
+    setPhase("checking");
+    setErr(null);
+    try {
+      const upd = await check();
+      if (!upd) {
+        setPhase("uptodate");
+        return;
+      }
+      updateRef.current = upd;
+      setNewVersion(upd.version);
+      setPhase("available");
+    } catch (e: unknown) {
+      setErr(e instanceof Error ? e.message : String(e));
+      setPhase("error");
+    }
+  }
+
+  async function doInstall() {
+    const upd = updateRef.current;
+    if (!upd) return;
+    setPhase("downloading");
+    setProgress(0);
+    setErr(null);
+    try {
+      let total = 0;
+      let done = 0;
+      await upd.downloadAndInstall((ev) => {
+        if (ev.event === "Started" && ev.data.contentLength) total = ev.data.contentLength;
+        if (ev.event === "Progress") {
+          done += ev.data.chunkLength;
+          setProgress(total > 0 ? Math.min(100, Math.round((done / total) * 100)) : 0);
+        }
+        if (ev.event === "Finished") setProgress(100);
+      });
+      setPhase("ready");
+    } catch (e: unknown) {
+      setErr(e instanceof Error ? e.message : String(e));
+      setPhase("error");
+    }
+  }
+
+  async function doRestart() {
+    try {
+      await relaunch();
+    } catch {
+      setErr("Bitte die App manuell schließen und neu starten.");
+      setPhase("error");
+    }
+  }
+
+  return (
+    <div className="mt-2">
+      {(phase === "idle" ||
+        phase === "checking" ||
+        phase === "uptodate" ||
+        phase === "error") && (
+        <button
+          onClick={doCheck}
+          disabled={phase === "checking"}
+          className="w-full surface hover:border-[color:var(--brand-primary)] rounded-md px-3 py-2 text-[12px] font-semibold flex items-center justify-center gap-1.5 text-[color:var(--brand-fg)] transition disabled:opacity-60"
+        >
+          {phase === "checking" ? (
+            <Loader2 size={12} className="animate-spin" />
+          ) : (
+            <RefreshCw size={12} />
+          )}
+          {phase === "checking" ? "Suche nach Updates …" : "Nach Updates suchen"}
+        </button>
+      )}
+
+      {phase === "uptodate" && (
+        <div className="mt-1.5 rounded-md px-3 py-2 text-[12px] flex items-center gap-2 bg-emerald-600/15 text-emerald-900 border border-emerald-600/40">
+          <CheckCircle2 size={14} className="shrink-0" />
+          <span className="font-medium">
+            Du hast die neueste Version ({currentVersion}).
+          </span>
+        </div>
+      )}
+
+      {phase === "available" && (
+        <div className="mt-1.5 rounded-md px-3 py-2 bg-[color:var(--brand-primary)]/10 border border-[color:var(--brand-primary)]/40">
+          <div className="text-[12px] font-bold text-[color:var(--brand-fg)] flex items-center gap-1.5 mb-1.5">
+            <Download size={13} className="text-[color:var(--brand-primary)]" />
+            Update auf {newVersion} verfügbar
+          </div>
+          <button
+            onClick={doInstall}
+            className="w-full rounded-md py-2 text-[12px] font-bold text-white bg-[color:var(--brand-primary)] hover:bg-[color:var(--brand-primary-hover)] transition"
+          >
+            Jetzt installieren
+          </button>
+        </div>
+      )}
+
+      {phase === "downloading" && (
+        <div className="mt-1.5 rounded-md px-3 py-2 surface">
+          <div className="text-[12px] font-semibold text-[color:var(--brand-fg)] flex items-center gap-1.5 mb-1.5">
+            <Loader2 size={12} className="animate-spin" />
+            Lädt Update … {progress}%
+          </div>
+          <div className="h-1.5 rounded-full bg-[color:var(--brand-fg)]/15 overflow-hidden">
+            <div
+              className="h-full bg-[color:var(--brand-primary)] transition-all"
+              style={{ width: `${progress}%` }}
+            />
+          </div>
+        </div>
+      )}
+
+      {phase === "ready" && (
+        <div className="mt-1.5 rounded-md px-3 py-2 bg-emerald-600/15 border border-emerald-600/40">
+          <div className="text-[12px] font-bold text-emerald-900 flex items-center gap-1.5 mb-1.5">
+            <CheckCircle2 size={13} />
+            Update installiert
+          </div>
+          <button
+            onClick={doRestart}
+            className="w-full rounded-md py-2 text-[12px] font-bold text-white bg-emerald-700 hover:bg-emerald-800 transition flex items-center justify-center gap-1.5"
+          >
+            <RotateCcw size={13} strokeWidth={2.4} />
+            Jetzt neu starten
+          </button>
+        </div>
+      )}
+
+      {phase === "error" && err && (
+        <div className="mt-1.5 rounded-md px-3 py-2 text-[12px] flex items-start gap-2 bg-red-600/15 text-red-900 border border-red-600/40">
+          <XCircle size={14} className="mt-0.5 shrink-0" />
+          <div className="flex-1 min-w-0">
+            <div className="font-bold">Update fehlgeschlagen</div>
+            <div className="font-medium break-words">{err}</div>
+          </div>
+        </div>
+      )}
     </div>
   );
 }
