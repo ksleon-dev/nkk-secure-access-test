@@ -526,24 +526,54 @@ type UpdPhase =
   | "ready"
   | "error";
 
+// Map low-level updater/transport errors to a calm German message; the raw
+// string is kept as secondary detail so support can still see it.
+function friendlyUpdateError(raw: string): string {
+  const s = raw.toLowerCase();
+  if (/network|sending request|connection|connect|timed out|timeout|dns|resolve|unreachable|tls|certificate|fetch|socket/.test(s))
+    return "Keine Verbindung zum Update-Server. Bist du online (ggf. mit dem VPN verbunden)?";
+  if (/signature|verify|pubkey|public key|minisign/.test(s))
+    return "Update-Signatur konnte nicht geprüft werden. Bitte den Support informieren.";
+  if (/json|manifest|parse|deserialize|decode/.test(s))
+    return "Update-Informationen sind gerade nicht lesbar. Bitte später erneut versuchen.";
+  return "Update fehlgeschlagen. Bitte später erneut versuchen.";
+}
+
 /**
  * Manual "check for updates" in Settings. Uses the same updater plugin as the
- * automatic startup check, but on demand. Every async path is wrapped so a
- * missing network / VPN or a broken manifest shows a calm message instead of
- * throwing. Works on every OS the manifest has an entry for.
+ * automatic startup check, but on demand. Bulletproof by design: re-entrancy
+ * guards, unmount-safe state, indeterminate progress when the size is unknown,
+ * a calm localized error message, a "Später" back-out, and a restart that can
+ * be retried (a failed relaunch does NOT lose the installed update).
  */
 function UpdateChecker({ currentVersion }: { currentVersion: string }) {
   const [phase, setPhase] = useState<UpdPhase>("idle");
   const [newVersion, setNewVersion] = useState<string | null>(null);
   const [progress, setProgress] = useState(0);
+  const [hasTotal, setHasTotal] = useState(false);
   const [err, setErr] = useState<string | null>(null);
+  const [errDetail, setErrDetail] = useState<string | null>(null);
+  const [restartErr, setRestartErr] = useState<string | null>(null);
   const updateRef = useRef<Update | null>(null);
+  const busyRef = useRef(false);
+  const mountedRef = useRef(true);
+
+  useEffect(() => {
+    mountedRef.current = true;
+    return () => {
+      mountedRef.current = false;
+    };
+  }, []);
 
   async function doCheck() {
+    if (busyRef.current || phase === "checking") return;
+    busyRef.current = true;
     setPhase("checking");
     setErr(null);
+    setErrDetail(null);
     try {
       const upd = await check();
+      if (!mountedRef.current) return;
       if (!upd) {
         setPhase("uptodate");
         return;
@@ -552,46 +582,84 @@ function UpdateChecker({ currentVersion }: { currentVersion: string }) {
       setNewVersion(upd.version);
       setPhase("available");
     } catch (e: unknown) {
-      setErr(e instanceof Error ? e.message : String(e));
+      if (!mountedRef.current) return;
+      const raw = e instanceof Error ? e.message : String(e);
+      setErr(friendlyUpdateError(raw));
+      setErrDetail(raw);
       setPhase("error");
+    } finally {
+      busyRef.current = false;
     }
   }
 
   async function doInstall() {
+    if (busyRef.current) return;
     const upd = updateRef.current;
     if (!upd) return;
+    busyRef.current = true;
     setPhase("downloading");
     setProgress(0);
+    setHasTotal(false);
     setErr(null);
+    setErrDetail(null);
     try {
       let total = 0;
       let done = 0;
       await upd.downloadAndInstall((ev) => {
-        if (ev.event === "Started" && ev.data.contentLength) total = ev.data.contentLength;
+        if (ev.event === "Started" && ev.data.contentLength) {
+          total = ev.data.contentLength;
+          if (mountedRef.current) setHasTotal(true);
+        }
         if (ev.event === "Progress") {
           done += ev.data.chunkLength;
-          setProgress(total > 0 ? Math.min(100, Math.round((done / total) * 100)) : 0);
+          if (total > 0 && mountedRef.current)
+            setProgress(Math.min(100, Math.round((done / total) * 100)));
         }
-        if (ev.event === "Finished") setProgress(100);
+        if (ev.event === "Finished" && mountedRef.current) {
+          setProgress(100);
+          setHasTotal(true);
+        }
       });
-      setPhase("ready");
+      if (mountedRef.current) setPhase("ready");
     } catch (e: unknown) {
-      setErr(e instanceof Error ? e.message : String(e));
-      setPhase("error");
+      if (mountedRef.current) {
+        const raw = e instanceof Error ? e.message : String(e);
+        setErr(friendlyUpdateError(raw));
+        setErrDetail(raw);
+        setPhase("error");
+      }
+    } finally {
+      busyRef.current = false;
     }
   }
 
   async function doRestart() {
+    if (busyRef.current) return;
+    busyRef.current = true;
+    setRestartErr(null);
     try {
       await relaunch();
+      // Process is being torn down on success; nothing else to do.
     } catch {
-      setErr("Bitte die App manuell schließen und neu starten.");
-      setPhase("error");
+      // Stay in "ready" so the restart button remains for a retry — the update
+      // is already on disk and applies on the next manual launch.
+      if (mountedRef.current)
+        setRestartErr(
+          "Neustart hat nicht geklappt. Schließe die App manuell und öffne sie neu — das Update ist bereits installiert."
+        );
+    } finally {
+      busyRef.current = false;
     }
   }
 
+  function dismiss() {
+    updateRef.current = null;
+    setNewVersion(null);
+    setPhase("idle");
+  }
+
   return (
-    <div className="mt-2">
+    <div className="mt-2" role="status" aria-live="polite">
       {(phase === "idle" ||
         phase === "checking" ||
         phase === "uptodate" ||
@@ -599,6 +667,7 @@ function UpdateChecker({ currentVersion }: { currentVersion: string }) {
         <button
           onClick={doCheck}
           disabled={phase === "checking"}
+          aria-busy={phase === "checking"}
           className="w-full surface hover:border-[color:var(--brand-primary)] rounded-md px-3 py-2 text-[12px] font-semibold flex items-center justify-center gap-1.5 text-[color:var(--brand-fg)] transition disabled:opacity-60"
         >
           {phase === "checking" ? (
@@ -631,6 +700,12 @@ function UpdateChecker({ currentVersion }: { currentVersion: string }) {
           >
             Jetzt installieren
           </button>
+          <button
+            onClick={dismiss}
+            className="mt-1.5 w-full rounded-md py-1.5 text-[11px] font-semibold text-[color:var(--brand-fg)]/70 hover:text-[color:var(--brand-fg)] hover:bg-black/5 transition"
+          >
+            Später
+          </button>
         </div>
       )}
 
@@ -638,13 +713,17 @@ function UpdateChecker({ currentVersion }: { currentVersion: string }) {
         <div className="mt-1.5 rounded-md px-3 py-2 surface">
           <div className="text-[12px] font-semibold text-[color:var(--brand-fg)] flex items-center gap-1.5 mb-1.5">
             <Loader2 size={12} className="animate-spin" />
-            Lädt Update … {progress}%
+            {hasTotal ? `Lädt Update … ${progress}%` : "Lädt Update …"}
           </div>
           <div className="h-1.5 rounded-full bg-[color:var(--brand-fg)]/15 overflow-hidden">
-            <div
-              className="h-full bg-[color:var(--brand-primary)] transition-all"
-              style={{ width: `${progress}%` }}
-            />
+            {hasTotal ? (
+              <div
+                className="h-full bg-[color:var(--brand-primary)] transition-all"
+                style={{ width: `${progress}%` }}
+              />
+            ) : (
+              <div className="h-full w-1/3 rounded-full bg-[color:var(--brand-primary)] animate-pulse" />
+            )}
           </div>
         </div>
       )}
@@ -662,6 +741,11 @@ function UpdateChecker({ currentVersion }: { currentVersion: string }) {
             <RotateCcw size={13} strokeWidth={2.4} />
             Jetzt neu starten
           </button>
+          {restartErr && (
+            <div className="mt-1.5 text-[11px] font-medium text-emerald-900/80 break-words">
+              {restartErr}
+            </div>
+          )}
         </div>
       )}
 
@@ -671,6 +755,9 @@ function UpdateChecker({ currentVersion }: { currentVersion: string }) {
           <div className="flex-1 min-w-0">
             <div className="font-bold">Update fehlgeschlagen</div>
             <div className="font-medium break-words">{err}</div>
+            {errDetail && errDetail !== err && (
+              <div className="mt-0.5 text-[10px] opacity-70 break-words">{errDetail}</div>
+            )}
           </div>
         </div>
       )}

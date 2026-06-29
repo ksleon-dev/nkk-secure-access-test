@@ -6,6 +6,13 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), [SemVer](https
 
 ## [Unreleased]
 
+## [0.3.4] - 2026-06-29
+
+Haertung nach internem Review.
+
+- Update-Pruefer in den Einstellungen abgehaertet: ein fehlgeschlagener Neustart verliert das installierte Update nicht (wiederholbar), Schutz gegen Doppelklick auf Installieren/Neustarten, "Spaeter"-Knopf zum Abbrechen, unbekannte Downloadgroesse zeigt einen laufenden statt eingefrorenen Balken, und Verbindungsfehler erscheinen als ruhige deutsche Meldung statt als roher Fehlertext.
+- Release-Pipeline gehaertet: die Windows-Updater-URL spiegelt jetzt die GitHub-Namensnormalisierung (Leerzeichen zu Punkten), sonst lief der Auto-Update-Download in einen 404 bei gruenem Check. Die CHANGELOG-Pruefung ist an echte Versionsueberschriften gebunden und der Zeitstempel ist echtes UTC.
+
 ## [0.3.3] - 2026-06-29
 
 Auto-Update fuer jedes OS und ein Update-Pruefer in den Einstellungen.

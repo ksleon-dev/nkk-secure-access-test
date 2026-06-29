@@ -94,8 +94,11 @@ jobs:
               Write-Error "Tag $tag does not match manifest version $pkg."
               exit 1
             }
-            if (-not (Select-String -Path CHANGELOG.md -SimpleMatch "[$pkg]")) {
-              Write-Error "CHANGELOG.md has no entry for $pkg."
+            # Anchor to a real "## [x.y.z]" section header — the same shape the
+            # notes-extractor needs (else the guard passes but notes fall back to
+            # generic placeholder text).
+            if (-not (Select-String -Path CHANGELOG.md -Pattern "^## \[$([regex]::Escape($pkg))\]")) {
+              Write-Error "CHANGELOG.md has no '## [$pkg]' section header."
               exit 1
             }
           }
@@ -228,7 +231,7 @@ jobs:
           $manifest = @{
             version = $version
             notes = $notes
-            pub_date = (Get-Date -Format "yyyy-MM-ddTHH:mm:ssZ")
+            pub_date = ([System.DateTime]::UtcNow.ToString("yyyy-MM-ddTHH:mm:ssZ"))
             platforms = @{
               "windows-x86_64" = @{
                 signature = $sigContent.Trim()
@@ -257,7 +260,7 @@ jobs:
 
             **Neuinstallation Windows:** `${{ steps.find_installer.outputs.name }}` herunterladen und doppelklicken.
 
-            **Neuinstallation macOS:** `NKK Secure Access_${{ github.ref_name }}_universal.dmg` herunterladen, doppelklicken, App in Programme ziehen.
+            **Neuinstallation macOS:** die `.dmg` aus den Assets unten herunterladen, doppelklicken, App in Programme ziehen.
 
             Support: support@ticket.kronsolutions.de
 
