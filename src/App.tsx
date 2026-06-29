@@ -55,6 +55,16 @@ function AppInner() {
   const toast = useToast();
   const updater = useUpdater();
 
+  // Light startup report so the admin panel shows the current version right
+  // after an update (the app relaunches into the new version) without waiting
+  // for a connect. Fire-and-forget, a few seconds after the app settles.
+  useEffect(() => {
+    const t = setTimeout(() => {
+      invoke("report_version").catch(() => {});
+    }, 10000);
+    return () => clearTimeout(t);
+  }, []);
+
   const refreshProfiles = useCallback(async () => {
     try {
       const list = await invoke<CredentialProfileMeta[]>("creds_list");

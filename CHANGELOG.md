@@ -6,6 +6,10 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), [SemVer](https
 
 ## [Unreleased]
 
+## [0.3.9] - 2026-06-29
+
+- Die App schickt direkt beim Start einen leichten Report (Version, IPs) an die Verwaltung. So zeigt das Admin-Panel die neue Version sofort nach einem Update, ohne auf den naechsten Connect zu warten. Der Server fuehrt die Reports pro Geraet zusammen, sodass der leichte Startup-Report Ping und Speed aus dem letzten vollen Report nicht ueberschreibt.
+
 ## [0.3.8] - 2026-06-29
 
 - Die App meldet ihren Stand (Version, IPs, Ping, Speed) jetzt bei JEDEM Connect an die Verwaltung, nicht mehr nur beim ersten Enrollment. Dadurch zeigt das Admin-Panel die echte aktuelle App-Version nach einem Update statt fuer immer der Version vom Einrichtungszeitpunkt.

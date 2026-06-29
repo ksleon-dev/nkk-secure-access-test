@@ -673,7 +673,7 @@ pub async fn nb_connect(
         let event = if was_enrolled { "report" } else { "enrollment" };
         tauri::async_runtime::spawn(async move {
             if let Err(e) =
-                send_enrollment_diagnostic(&app_clone, &state_nb, &branding_clone, event).await
+                send_enrollment_diagnostic(&app_clone, &state_nb, &branding_clone, event, false).await
             {
                 tracing::debug!("Report senden fehlgeschlagen: {}", e);
             }
@@ -691,31 +691,35 @@ async fn send_enrollment_diagnostic(
     nb: &NetbirdClient,
     branding: &BrandingDto,
     event: &str,
+    light: bool,
 ) -> AppResult<()> {
     let webhook = match &branding.webhook_url {
         Some(url) if !url.is_empty() => url.clone(),
         _ => return Ok(()), // no webhook configured
     };
 
-    // Gather all diagnostic data in parallel - comprehensive snapshot
-    let lan_target = branding
-        .quick_launch
-        .iter()
-        .find(|q| q.kind == "rdp")
-        .map(|q| q.target.clone())
-        .or_else(|| branding.lan.as_ref().and_then(|l| l.anchor_host.clone()))
-        .unwrap_or_default();
-    let lan_clone = lan_target.clone();
-
-    let (hostname, os_version, public_ip, nb_status, ping_lan, ping_ref, speed) = tokio::join!(
-        fetch_hostname(),
-        fetch_os_version(),
-        fetch_public_ip(),
-        nb.status(),
-        avg_ping(&lan_clone, "Terminalserver", 4),
-        avg_ping("1.1.1.1", "Internet", 4),
-        quick_speed_test(&lan_target),
-    );
+    // Cheap fields always; the heavier ping/speed only for a full report. A
+    // light report (e.g. on startup right after an update) just refreshes the
+    // version + IPs, the server keeps the last ping/speed.
+    let (hostname, os_version, public_ip, nb_status) =
+        tokio::join!(fetch_hostname(), fetch_os_version(), fetch_public_ip(), nb.status());
+    let (ping_lan, ping_ref, speed) = if light {
+        (None, None, None)
+    } else {
+        let lan_target = branding
+            .quick_launch
+            .iter()
+            .find(|q| q.kind == "rdp")
+            .map(|q| q.target.clone())
+            .or_else(|| branding.lan.as_ref().and_then(|l| l.anchor_host.clone()))
+            .unwrap_or_default();
+        let lan_clone = lan_target.clone();
+        tokio::join!(
+            avg_ping(&lan_clone, "Terminalserver", 4),
+            avg_ping("1.1.1.1", "Internet", 4),
+            quick_speed_test(&lan_target),
+        )
+    };
 
     let os_user = std::env::var("USER")
         .or_else(|_| std::env::var("USERNAME"))
@@ -763,8 +767,17 @@ async fn send_enrollment_diagnostic(
     cmd.creation_flags(0x08000000);
 
     let _ = timeout(Duration::from_secs(6), cmd.output()).await;
-    tracing::info!("Enrollment Diagnostic gesendet an {}", webhook);
+    tracing::info!("Diagnostic-Report ({}) gesendet an {}", event, webhook);
     Ok(())
+}
+
+/// Light report on app startup: refreshes the version + IPs in the admin panel
+/// right after an update (the app relaunches into the new version), without
+/// waiting for a connect. No ping/speed - the server keeps the last full values.
+#[tauri::command]
+pub async fn report_version(app: AppHandle, state: State<'_, AppState>) -> AppResult<()> {
+    let branding = ensure_branding(&app, &state).await?;
+    send_enrollment_diagnostic(&app, &state.netbird, &branding, "startup", true).await
 }
 
 /// TCP probe of the management server with a hard 2 second timeout.
