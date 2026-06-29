@@ -214,7 +214,12 @@ jobs:
           $sig = Get-ChildItem -Path src-tauri/target/release/bundle/nsis -Filter "*.sig" | Select-Object -First 1
           $sigContent = if ($sig) { Get-Content $sig.FullName -Raw } else { "" }
           # Repo-relative so latest.json follows wherever the release is hosted.
-          $downloadUrl = "https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/$($exe.Name)"
+          # GitHub normalizes spaces to dots in release asset names; mirror that
+          # here so the updater URL matches the published asset (a space-URL 404s
+          # and the Windows auto-update download fails silently). patch-manifest
+          # additionally re-derives this URL from the GitHub API as a backstop.
+          $assetName = $exe.Name -replace ' ', '.'
+          $downloadUrl = "https://github.com/${{ github.repository }}/releases/download/${{ github.ref_name }}/$assetName"
           # Pull the changelog section for this version into the updater notes so
           # the in-app "Was ist neu" shows the real changelog.
           $changelog = Get-Content CHANGELOG.md -Raw
@@ -385,27 +390,35 @@ jobs:
           set -euo pipefail
           TAG="${{ github.ref_name }}"
           REPO="${{ github.repository }}"
-          TARGZ_URL=$(gh api "repos/$REPO/releases/tags/$TAG" --jq '.assets[] | select(.name | endswith(".app.tar.gz")) | .browser_download_url' | head -1)
-          SIG_URL=$(gh api "repos/$REPO/releases/tags/$TAG" --jq '.assets[] | select(.name | endswith(".app.tar.gz.sig")) | .browser_download_url' | head -1)
-          if [ -z "$TARGZ_URL" ] || [ -z "$SIG_URL" ]; then
-            echo "::warning::macOS updater artifact not on release — latest.json stays windows-only"
-            exit 0
-          fi
-          MAC_SIG=$(curl -fsSL "$SIG_URL")
+          API="repos/$REPO/releases/tags/$TAG"
+          # Authoritative asset URLs from the API (GitHub normalizes filenames,
+          # e.g. spaces -> dots; never construct these from local names).
+          EXE_URL=$(gh api "$API" --jq '.assets[] | select(.name | endswith(".exe")) | .browser_download_url' | head -1)
+          TARGZ_URL=$(gh api "$API" --jq '.assets[] | select(.name | endswith(".app.tar.gz")) | .browser_download_url' | head -1)
+          SIG_URL=$(gh api "$API" --jq '.assets[] | select(.name | endswith(".app.tar.gz.sig")) | .browser_download_url' | head -1)
+          MAC_SIG=""
+          if [ -n "$SIG_URL" ]; then MAC_SIG=$(curl -fsSL "$SIG_URL"); fi
           curl -fsSL -o latest.json "https://github.com/$REPO/releases/download/$TAG/latest.json"
-          TARGZ_URL="$TARGZ_URL" MAC_SIG="$MAC_SIG" node -e '
+          EXE_URL="$EXE_URL" TARGZ_URL="$TARGZ_URL" MAC_SIG="$MAC_SIG" node -e '
             const fs = require("fs");
             const m = JSON.parse(fs.readFileSync("latest.json", "utf8"));
             if (!m.platforms || !m.platforms["windows-x86_64"]) {
               throw new Error("windows-x86_64 missing - refusing to clobber latest.json");
             }
-            const url = process.env.TARGZ_URL;
+            // Correct the Windows URL to the real (normalized) asset name; the
+            // build step derives it from the local filename, which keeps spaces.
+            if (process.env.EXE_URL) m.platforms["windows-x86_64"].url = process.env.EXE_URL;
+            // One universal .app.tar.gz serves both macOS arches; add if present.
+            const targz = process.env.TARGZ_URL;
             const sig = (process.env.MAC_SIG || "").trim();
-            if (!sig) throw new Error("empty macOS signature");
-            m.platforms["darwin-aarch64"] = { signature: sig, url: url };
-            m.platforms["darwin-x86_64"] = { signature: sig, url: url };
+            if (targz && sig) {
+              m.platforms["darwin-aarch64"] = { signature: sig, url: targz };
+              m.platforms["darwin-x86_64"] = { signature: sig, url: targz };
+            } else {
+              console.log("::warning::macOS updater artifact absent - manifest stays windows-only");
+            }
             fs.writeFileSync("latest.json", JSON.stringify(m, null, 2));
             console.log("platforms now: " + Object.keys(m.platforms).join(", "));
           '
           gh release upload "$TAG" latest.json --repo "$REPO" --clobber
-          echo "latest.json now covers windows + darwin."
+          echo "latest.json finalized (windows url corrected; darwin merged when present)."
