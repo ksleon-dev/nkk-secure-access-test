@@ -24,3 +24,11 @@ Thumbs.db
 *.tsbuildinfo
 vite.config.d.ts
 vite.config.js
+
+# Secrets / Signing-Keys — NIEMALS committen (kritisch bei oeffentlichem Repo)
+src-tauri/keys/
+*.key
+*.pem
+*.token
+.env
+.env.*

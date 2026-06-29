@@ -2,7 +2,7 @@
 
 **Stand:** April 2026
 **Erstellt von:** KronSolutions GmbH
-**Repo:** https://github.com/leonkro-test/nkk-secure-access-test
+**Repo:** https://github.com/ksleon-dev/nkk-secure-access-test
 
 ---
 

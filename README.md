@@ -70,7 +70,7 @@ Der Windows Installer bündelt den offiziellen NetBird Client und installiert ih
 ## Lokale Entwicklung
 
 ```bash
-git clone https://github.com/leonkro-test/nkk-secure-access-test.git
+git clone https://github.com/ksleon-dev/nkk-secure-access-test.git
 cd nkk-secure-access-test
 npm install
 npm run tauri dev

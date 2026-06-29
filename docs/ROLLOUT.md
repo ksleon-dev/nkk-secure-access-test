@@ -17,7 +17,7 @@ Das CI baut bei jedem Push auf `main` oder Tag `v*.*.*` automatisch eine Windows
 
 ```bash
 # Manuell triggern
-gh workflow run build-windows.yml --repo leonkro-test/nkk-secure-access-test
+gh workflow run build-windows.yml --repo ksleon-dev/nkk-secure-access-test
 
 # Oder Tag pushen für ein Release
 git tag v0.2.0
@@ -25,8 +25,8 @@ git push --tags
 ```
 
 Download:
-- Aus GitHub Actions: https://github.com/leonkro-test/nkk-secure-access-test/actions
-- Oder bei Tag-Builds aus GitHub Releases: https://github.com/leonkro-test/nkk-secure-access-test/releases
+- Aus GitHub Actions: https://github.com/ksleon-dev/nkk-secure-access-test/actions
+- Oder bei Tag-Builds aus GitHub Releases: https://github.com/ksleon-dev/nkk-secure-access-test/releases
 
 Datei: `NKK Secure Access_X.Y.Z_x64-setup.exe` (~34 MB)
 

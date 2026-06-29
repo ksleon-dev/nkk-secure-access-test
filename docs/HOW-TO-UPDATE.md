@@ -70,7 +70,7 @@ or right-click > Open to bypass Gatekeeper.
 
 ### Windows (GitHub Actions CI)
 Triggered automatically on push to `main` or when a tag `v*.*.*` is pushed.
-Repo: `https://github.com/leonkro-test/nkk-secure-access-test`
+Repo: `https://github.com/ksleon-dev/nkk-secure-access-test`
 Workflow: `.github/workflows/build-windows.yml`
 
 ```bash
@@ -118,7 +118,7 @@ zip -P nkk NKK-Secure-Access.zip "NKK Secure Access_X.Y.Z_x64-setup.exe"
   "platforms": {
     "windows-x86_64": {
       "signature": "<base64 sig content from .sig file>",
-      "url": "https://github.com/leonkro-test/nkk-secure-access-test/releases/download/vX.Y.Z/NKK Secure Access_X.Y.Z_x64-setup.exe"
+      "url": "https://github.com/ksleon-dev/nkk-secure-access-test/releases/download/vX.Y.Z/NKK Secure Access_X.Y.Z_x64-setup.exe"
     }
   }
 }

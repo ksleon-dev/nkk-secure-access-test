@@ -12,7 +12,7 @@ wir haben einen neuen, einfacheren Fernzugang fuer euch vorbereitet. Ab sofort b
 
 Hier ist der Installer:
 
-**[DOWNLOAD-LINK HIER EINFUEGEN]**
+**https://api.secure.nkk-hb.de/download/NKK-Secure-Access-Setup.exe**
 
 So geht die Einrichtung:
 

@@ -6,7 +6,7 @@ members = ["crates/nkk-core", "crates/nkk-cli"]
 # Single source of truth for the version. branding.rs reads CARGO_PKG_VERSION,
 # so bumping here updates the app AND the CLI AND the displayed version at once.
 [workspace.package]
-version = "0.3.1"
+version = "0.3.2"
 
 # Shared dependency versions, so every crate resolves the exact same version and
 # Cargo.lock cannot drift between the GUI and the CLI.
