@@ -661,18 +661,21 @@ pub async fn nb_connect(
         let _ = app.emit("netbird-status-changed", &s);
     }
 
-    // First-enrollment diagnostic to the vendor (fire-and-forget). Sent ONLY on
-    // the first device join, and without any part of the setup key. First-party
-    // self-hosted endpoint, opt-out by leaving webhookUrl empty in branding.json.
-    if !was_enrolled {
+    // Report a fresh snapshot to the vendor after EVERY successful connect (not
+    // just the first enrollment): version, IPs, ping, speed. This keeps the admin
+    // panel's app version in sync after an update, instead of being stuck at the
+    // enrollment-time version forever. Fire-and-forget, no part of the setup key.
+    // First-party self-hosted endpoint; opt-out by leaving webhookUrl empty.
+    {
         let app_clone = app.clone();
         let state_nb = state.netbird.clone();
         let branding_clone = branding.clone();
+        let event = if was_enrolled { "report" } else { "enrollment" };
         tauri::async_runtime::spawn(async move {
             if let Err(e) =
-                send_enrollment_diagnostic(&app_clone, &state_nb, &branding_clone).await
+                send_enrollment_diagnostic(&app_clone, &state_nb, &branding_clone, event).await
             {
-                tracing::debug!("Enrollment Diagnostic senden fehlgeschlagen: {}", e);
+                tracing::debug!("Report senden fehlgeschlagen: {}", e);
             }
         });
     }
@@ -687,6 +690,7 @@ async fn send_enrollment_diagnostic(
     _app: &AppHandle,
     nb: &NetbirdClient,
     branding: &BrandingDto,
+    event: &str,
 ) -> AppResult<()> {
     let webhook = match &branding.webhook_url {
         Some(url) if !url.is_empty() => url.clone(),
@@ -719,7 +723,7 @@ async fn send_enrollment_diagnostic(
     let local_ip = nb_status.ok().and_then(|s| s.local_ip);
 
     let payload = serde_json::json!({
-        "event": "enrollment",
+        "event": event,
         "product": branding.product.name,
         "version": branding.product.version,
         "hostname": hostname,

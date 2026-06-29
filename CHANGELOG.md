@@ -6,6 +6,10 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), [SemVer](https
 
 ## [Unreleased]
 
+## [0.3.8] - 2026-06-29
+
+- Die App meldet ihren Stand (Version, IPs, Ping, Speed) jetzt bei JEDEM Connect an die Verwaltung, nicht mehr nur beim ersten Enrollment. Dadurch zeigt das Admin-Panel die echte aktuelle App-Version nach einem Update statt fuer immer der Version vom Einrichtungszeitpunkt.
+
 ## [0.3.7] - 2026-06-29
 
 - Update-Pruefung laeuft jetzt nicht nur beim Start, sondern alle 6 Stunden weiter: eine dauerhaft laufende App bemerkt ein neues Update von selbst und zeigt den Banner, ganz ohne Neustart und ohne dass jemand etwas anstossen muss. Ein laufender Download wird dabei nicht unterbrochen.
