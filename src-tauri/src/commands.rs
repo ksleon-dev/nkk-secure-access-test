@@ -4117,6 +4117,16 @@ pub async fn admin_restart_app(app: AppHandle, state: State<'_, AppState>) -> Ap
     Ok(())
 }
 
+/// Restart the app to apply a downloaded update. Ungated (unlike
+/// admin_restart_app) so the updater can call it for any user. Uses the native
+/// app.restart() because the process plugin is not registered.
+#[tauri::command]
+#[allow(unreachable_code)]
+pub async fn relaunch_app(app: AppHandle) -> AppResult<()> {
+    app.restart();
+    Ok(())
+}
+
 #[tauri::command]
 pub async fn admin_restart_service(state: State<'_, AppState>) -> AppResult<String> {
     if !state.admin_unlocked.load(Ordering::Relaxed) {

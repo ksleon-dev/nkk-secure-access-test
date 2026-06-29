@@ -1,5 +1,5 @@
 import { check, type Update } from "@tauri-apps/plugin-updater";
-import { relaunch } from "@tauri-apps/plugin-process";
+import { invoke } from "@tauri-apps/api/core";
 import { useCallback, useEffect, useRef, useState } from "react";
 
 export interface UpdateState {
@@ -96,7 +96,7 @@ export function useUpdater() {
 
   const restart = useCallback(async () => {
     try {
-      await relaunch();
+      await invoke("relaunch_app");
     } catch (e) {
       console.error("Neustart nach Update fehlgeschlagen:", e);
       // Fallback: just tell user to restart manually

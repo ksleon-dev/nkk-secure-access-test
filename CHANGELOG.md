@@ -6,6 +6,13 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), [SemVer](https
 
 ## [Unreleased]
 
+## [0.3.5] - 2026-06-29
+
+Update-Neustart funktioniert jetzt wirklich und ist ueberspringbar.
+
+- "Jetzt neu starten" nach einem Update startet die App jetzt zuverlaessig: nativer App-Neustart statt eines nie registrierten Prozess-Plugins, dessen Aufruf vorher still ins Leere lief. Gilt fuer den Update-Banner und den Pruefer in den Einstellungen.
+- Der Update-Banner laesst sich mit "Spaeter" wegklicken — das Update bleibt installiert und greift beim naechsten Start der App.
+
 ## [0.3.4] - 2026-06-29
 
 Haertung nach internem Review.

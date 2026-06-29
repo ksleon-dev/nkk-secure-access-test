@@ -1,6 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
 import { check, type Update } from "@tauri-apps/plugin-updater";
-import { relaunch } from "@tauri-apps/plugin-process";
 import {
   ArrowLeft,
   CheckCircle2,
@@ -638,7 +637,7 @@ function UpdateChecker({ currentVersion }: { currentVersion: string }) {
     busyRef.current = true;
     setRestartErr(null);
     try {
-      await relaunch();
+      await invoke("relaunch_app");
       // Process is being torn down on success; nothing else to do.
     } catch {
       // Stay in "ready" so the restart button remains for a retry — the update

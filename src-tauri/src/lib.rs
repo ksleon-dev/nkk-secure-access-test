@@ -146,6 +146,7 @@ pub fn run() {
             commands::admin_force_reconnect,
             commands::admin_open_app_data,
             commands::admin_restart_app,
+            commands::relaunch_app,
             commands::admin_restart_service,
             commands::admin_check_netbird_version,
             commands::admin_update_netbird,

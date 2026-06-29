@@ -105,12 +105,20 @@ export function UpdateBanner({ state, footer, onInstall, onRestart, onDismiss }:
           {/* Actions */}
           <div className="mt-4 flex gap-2">
             {state.ready ? (
-              <button
-                onClick={onRestart}
-                className="flex-1 bg-white text-emerald-700 font-bold text-[13px] rounded-xl py-2.5 hover:bg-white/90 active:scale-[0.98] transition-all shadow-lg"
-              >
-                Jetzt neu starten
-              </button>
+              <>
+                <button
+                  onClick={onDismiss}
+                  className="flex-1 bg-white/20 hover:bg-white/30 font-bold text-[13px] rounded-xl py-2.5 transition"
+                >
+                  Später
+                </button>
+                <button
+                  onClick={onRestart}
+                  className="flex-[2] bg-white text-emerald-700 font-bold text-[13px] rounded-xl py-2.5 hover:bg-white/90 active:scale-[0.98] transition-all shadow-lg"
+                >
+                  Jetzt neu starten
+                </button>
+              </>
             ) : state.downloading ? (
               <div className="flex-1 text-[11px] text-white/60 py-2">
                 Bitte einen Moment Geduld …
