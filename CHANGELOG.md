@@ -6,6 +6,10 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), [SemVer](https
 
 ## [Unreleased]
 
+## [0.3.7] - 2026-06-29
+
+- Update-Pruefung laeuft jetzt nicht nur beim Start, sondern alle 6 Stunden weiter: eine dauerhaft laufende App bemerkt ein neues Update von selbst und zeigt den Banner, ganz ohne Neustart und ohne dass jemand etwas anstossen muss. Ein laufender Download wird dabei nicht unterbrochen.
+
 ## [0.3.6] - 2026-06-29
 
 - Autostart auf macOS zeigt bei fehlenden Rechten jetzt einen ruhigen Hinweis (Tipp: App nach Programme verschieben) statt eines rohen Systemfehlers. Die vollstaendige Loesung bleibt die App-Signierung.

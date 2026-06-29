@@ -34,27 +34,37 @@ export function useUpdater() {
 
   useEffect(() => {
     let cancelled = false;
-    // Wait 5 seconds after app start before checking - let the user settle in
-    const timer = setTimeout(async () => {
+
+    async function runCheck() {
       try {
         const update = await check();
         if (cancelled || !update) return;
         updateRef.current = update;
-        setState((s) => ({
-          ...s,
-          available: true,
-          version: update.version,
-          notes: update.body ?? null,
-        }));
+        setState((s) =>
+          // Einen laufenden Download / fertigen Stand NICHT durch einen
+          // Re-Check ueberschreiben.
+          s.downloading || s.ready
+            ? s
+            : { ...s, available: true, version: update.version, notes: update.body ?? null },
+        );
       } catch (e) {
         // Not user-relevant, but log so a persistently failing updater is
         // visible during a 24/7 run instead of silently swallowed.
         console.warn("Update-Check fehlgeschlagen:", e);
       }
-    }, 5000);
+    }
+
+    // Erst 5s nach Start (Nutzer ankommen lassen), dann periodisch alle 6h —
+    // so bemerkt auch eine dauerhaft laufende App ein Update von allein,
+    // ohne Neustart und ohne dass jemand etwas anstossen muss.
+    const timer = setTimeout(runCheck, 5000);
+    const SIX_HOURS = 6 * 60 * 60 * 1000;
+    const interval = setInterval(runCheck, SIX_HOURS);
+
     return () => {
       cancelled = true;
       clearTimeout(timer);
+      clearInterval(interval);
     };
   }, []);
 
