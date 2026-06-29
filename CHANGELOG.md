@@ -6,6 +6,10 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), [SemVer](https
 
 ## [Unreleased]
 
+## [0.3.6] - 2026-06-29
+
+- Autostart auf macOS zeigt bei fehlenden Rechten jetzt einen ruhigen Hinweis (Tipp: App nach Programme verschieben) statt eines rohen Systemfehlers. Die vollstaendige Loesung bleibt die App-Signierung.
+
 ## [0.3.5] - 2026-06-29
 
 Update-Neustart funktioniert jetzt wirklich und ist ueberspringbar.

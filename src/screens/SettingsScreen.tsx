@@ -85,7 +85,14 @@ export function SettingsScreen({
       await invoke("set_autostart", { enable });
       setAutostart(enable);
     } catch (e: unknown) {
-      toast.error(e instanceof Error ? e.message : String(e));
+      const raw = e instanceof Error ? e.message : String(e);
+      const denied = /denied|permission|os error 13|not permitted/i.test(raw);
+      toast.error(
+        denied
+          ? "Autostart braucht zusätzliche macOS-Rechte. Tipp: App nach Programme verschieben und einmal neu öffnen."
+          : "Autostart konnte nicht geändert werden."
+      );
+      setAutostart(!enable); // Visuelle Stellung zurücksetzen
     }
   }
 
