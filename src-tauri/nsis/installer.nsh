@@ -440,9 +440,16 @@ nkk_svc_ready:
       FileWrite $9 "NKK Secure Access Setup Hinweise$\r$\n$NkkErrors"
       FileClose $9
     ${EndIf}
-    ; Bei Silent-/Passive-Install (Auto-Update, Level) NIE eine Box zeigen - sie
-    ; wuerde das Update blockieren und den Nutzer erschrecken. Nur bei sichtbarer
-    ; manueller Erstinstallation und nur fuer ECHTE Fehler (z.B. Defender-Ausnahme).
+    ; Bei Silent-/Passive-Install NIE eine Box - sie wuerde das Update blockieren und
+    ; den Nutzer erschrecken. IfSilent (/S, Level) reicht NICHT, weil der Tauri-Updater
+    ; "passive" mit /P startet (kein /S). Daher die Kommandozeile zusaetzlich auf /P
+    ; pruefen. Nur bei sichtbarer manueller Erstinstallation + ECHTEM Fehler (Defender).
+    ${GetParameters} $R5
+    ClearErrors
+    ${GetOptions} $R5 "/P" $R6
+    ${IfNot} ${Errors}
+      Goto nkk_skip_msgbox
+    ${EndIf}
     IfSilent nkk_skip_msgbox
     MessageBox MB_ICONEXCLAMATION|MB_OK "NKK Secure Access wurde installiert, aber mit Hinweisen:$\r$\n$\r$\n$NkkErrors$\r$\nLog: ${NKK_LOG_DIR}$\r$\n$\r$\nBitte ein Foto dieser Meldung an support@ticket.kronsolutions.de"
     nkk_skip_msgbox:

@@ -147,8 +147,8 @@ function AppInner() {
         await refreshProfiles();
         toast.info("Profil gelöscht.");
       } catch (e: unknown) {
-        const msg = e instanceof Error ? e.message : String(e);
-        toast.error(msg);
+        console.error("profile delete:", e);
+        toast.error("Profil konnte nicht gelöscht werden. Bitte erneut versuchen.");
       }
     },
     [refreshProfiles, toast]

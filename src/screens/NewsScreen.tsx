@@ -135,7 +135,9 @@ export function NewsScreen({ branding, onBack }: Props) {
               typeof o.id === "string" &&
               typeof o.type === "string" &&
               validTypes.has(o.type) && // guards against typeConfig[type] crash
-              typeof o.body === "string"
+              typeof o.body === "string" &&
+              typeof o.title === "string" &&
+              typeof o.date === "string"
             );
           });
           if (items.length > 0) setNews(items);

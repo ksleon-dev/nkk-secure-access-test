@@ -1,7 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { open as openDialog } from "@tauri-apps/plugin-dialog";
 import { check } from "@tauri-apps/plugin-updater";
-import { relaunch } from "@tauri-apps/plugin-process";
 import {
   ArrowLeft,
   ChevronDown,
@@ -298,7 +297,9 @@ export function AdminScreen({ branding, onClose }: Props) {
                 if (!update) return "Die App ist aktuell.";
                 setOutput(`App-Update ${update.version} wird geladen …`);
                 await update.downloadAndInstall();
-                await relaunch();
+                // relaunch_app (nativer app.restart in Rust) statt plugin-process,
+                // das nicht registriert ist und sonst wirft -> falsche Fehlermeldung.
+                await invoke("relaunch_app");
                 return "App-Update installiert, die App startet neu.";
               } catch (e: unknown) {
                 console.error("App-Update:", e);

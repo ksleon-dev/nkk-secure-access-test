@@ -623,24 +623,34 @@ pub async fn nb_connect(
     setup_key: Option<String>,
     state: State<'_, AppState>,
 ) -> AppResult<()> {
-    // Doppelverbindung verhindern: laeuft schon ein Connect, sofort zurueck (statt
-    // hinterm op_lock den vollen Versuch erneut zu durchlaufen). Der Guard setzt das
-    // Flag auf JEDEM Rueckweg zurueck (auch bei ?-Fehler), via Drop.
-    if state
-        .connect_in_flight
-        .compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed)
-        .is_err()
-    {
-        tracing::info!("Connect laeuft bereits, doppelter Aufruf ignoriert.");
-        return Ok(());
-    }
+    // Doppel-Connect verhindern - aber NUR fuer Hintergrund-/Auto-Connects OHNE Key.
+    // Ein vom Nutzer ausgeloester Connect MIT Setup-Key darf NIE verschluckt werden
+    // (er traegt den Enrollment-Key und wuerde sonst faelschlich "Ok" melden, ohne zu
+    // enrollen). Er laeuft immer und wird durch das op_lock im Core serialisiert.
+    let has_key = setup_key
+        .as_ref()
+        .map(|k| !k.trim().is_empty())
+        .unwrap_or(false);
     struct ConnectGuard<'a>(&'a AtomicBool);
     impl Drop for ConnectGuard<'_> {
         fn drop(&mut self) {
             self.0.store(false, Ordering::Release);
         }
     }
-    let _connect_guard = ConnectGuard(&state.connect_in_flight);
+    let _connect_guard = if has_key {
+        // Keyed: nicht abkuerzen, kein Flag setzen (der Hintergrund-Guard bleibt intakt).
+        None
+    } else if state
+        .connect_in_flight
+        .compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed)
+        .is_err()
+    {
+        tracing::info!("Connect laeuft bereits, doppelter Hintergrund-Aufruf ignoriert.");
+        return Ok(());
+    } else {
+        // Wir haben das Flag gesetzt -> Guard setzt es auf JEDEM Rueckweg (auch ?-Fehler) zurueck.
+        Some(ConnectGuard(&state.connect_in_flight))
+    };
 
     // User explicitly connecting - clear the disconnect flag so auto-reconnect works again
     state.user_disconnected.store(false, Ordering::Relaxed);
@@ -2762,7 +2772,10 @@ pub async fn open_rdp(
         // and the user time to authenticate if cmdkey didn't inject credentials)
         let target_cleanup = target.clone();
         tauri::async_runtime::spawn(async move {
-            sleep(Duration::from_secs(60)).await;
+            // 15s statt 60s: mstsc liest die Credential beim Connect in 1-2s. Das
+            // verkleinert das Fenster, in dem eine generische TERMSRV-Credential im
+            // Credential Manager liegt (Sicherheit), mit Reserve fuer langsame Verbindungen.
+            sleep(Duration::from_secs(15)).await;
             let _ = std::process::Command::new("cmdkey")
                 .arg(format!("/delete:TERMSRV/{}", target_cleanup))
                 .creation_flags(0x08000000)
