@@ -10,7 +10,7 @@ import { Label } from "@/components/ui/label"
 import { Skeleton } from "@/components/ui/skeleton"
 import { cn } from "@/lib/utils"
 import { copyText } from "@/lib/clipboard"
-import { winInstallCmd } from "@/lib/installcmd"
+import { macInstallCmd, winInstallCmd } from "@/lib/installcmd"
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog"
@@ -219,12 +219,8 @@ function RolloutCommands({ keyValue }: { keyValue: string }) {
   const exe = data?.downloads?.windows_exe ?? FALLBACK_EXE
   const dmg = data?.downloads?.macos_dmg ?? FALLBACK_DMG
   const win = winInstallCmd(exe, `"/S","/SETUPKEY=${keyValue}"`, { progress: true })
-  const mac =
-    `curl -fL --retry 5 --retry-all-errors -C - -o /tmp/nkk.dmg "${dmg}" && hdiutil attach -nobrowse -quiet /tmp/nkk.dmg && ` +
-    `mkdir -p ~/Applications && cp -R "/Volumes/NKK Secure Access/NKK Secure Access.app" ~/Applications/ && ` +
-    `hdiutil detach -quiet "/Volumes/NKK Secure Access"; xattr -dr com.apple.quarantine ~/Applications/"NKK Secure Access.app" 2>/dev/null; ` +
-    `mkdir -p ~/.config/nkk-secure-access && printf '%s' "${keyValue}" > ~/.config/nkk-secure-access/setup-key && ` +
-    `chmod 600 ~/.config/nkk-secure-access/setup-key && open ~/Applications/"NKK Secure Access.app"`
+  // Bulletproof Universal-Installer/Updater + Zero-Touch-Key (ein gehostetes Skript).
+  const mac = macInstallCmd({ setupKey: keyValue, dmgUrl: dmg })
   return (
     <div className="space-y-3 rounded-lg border bg-card/40 p-3">
       <div className="text-[13px] font-medium">Gerät onboarden mit diesem Key</div>
@@ -260,25 +256,10 @@ function LevelRolloutBlock({ keyValue, keyType }: { keyValue: string; keyType: s
     `$nb="$env:ProgramFiles\\NetBird\\netbird.exe"`,
     `if(Test-Path $nb){for($j=0;$j -lt 3;$j++){if((& $nb status 2>$null) -match "Management:\\s*Connected"){break}; & $nb up --setup-key $k --management-url "https://vpn.secure.nkk-hb.de" 2>$null; Start-Sleep 6}}`,
   ].join("\n")
-  const macLevel = [
-    `set -u; K="${keyValue}"; APP="/Applications/NKK Secure Access.app"; VOL="/Volumes/NKK Secure Access"`,
-    `V=""; [ -d "$APP" ] && V=$(defaults read "$APP/Contents/Info.plist" CFBundleShortVersionString 2>/dev/null)`,
-    `if [ -z "$V" ] || [ "$(printf '%s\\n%s\\n' "$V" "${cur}" | sort -V | tail -1)" != "$V" ]; then`,
-    `  D="$(mktemp /tmp/nkk.XXXXXX).dmg"; OK=0`,
-    `  for i in 1 2 3; do curl -fsSL --connect-timeout 20 --max-time 180 -o "$D" "${dmg}" && [ "$(stat -f%z "$D" 2>/dev/null || echo 0)" -gt 1000000 ] && { OK=1; break; }; sleep $((5 * i)); done`,
-    `  [ "$OK" -ne 1 ] && { echo "[NKK] Download fehlgeschlagen"; rm -f "$D"; exit 2; }`,
-    `  hdiutil detach "$VOL" >/dev/null 2>&1 || true`,
-    `  hdiutil attach "$D" -nobrowse -quiet || { echo "[NKK] Mount fehlgeschlagen"; rm -f "$D"; exit 3; }`,
-    `  rm -rf "$APP"; /usr/bin/ditto "$VOL/NKK Secure Access.app" "$APP" || { hdiutil detach "$VOL" >/dev/null 2>&1; rm -f "$D"; exit 3; }`,
-    `  hdiutil detach "$VOL" >/dev/null 2>&1 || true; rm -f "$D"; xattr -dr com.apple.quarantine "$APP" 2>/dev/null || true`,
-    `fi`,
-    `U=$(stat -f%Su /dev/console 2>/dev/null)`,
-    `if [ -n "$U" ] && [ "$U" != "root" ] && [ "$U" != "loginwindow" ]; then`,
-    `  H=$(dscl . -read /Users/"$U" NFSHomeDirectory 2>/dev/null | awk '{print $2}'); [ -z "$H" ] && H="/Users/$U"`,
-    `  mkdir -p "$H/.config/nkk-secure-access"; printf '%s' "$K" > "$H/.config/nkk-secure-access/setup-key"`,
-    `  chmod 700 "$H/.config/nkk-secure-access"; chmod 600 "$H/.config/nkk-secure-access/setup-key"; chown -R "$U" "$H/.config/nkk-secure-access"`,
-    `else echo "[NKK] Kein interaktiver Nutzer, Key wird beim naechsten Lauf gesetzt"; exit 4; fi`,
-  ].join("\n")
+  // Dasselbe gehostete, gegengeprüfte Skript - root-fähig (Level läuft als System):
+  // installiert/updatet idempotent (NKK_MIN_VERSION überspringt wenn aktuell) und
+  // legt den Key beim Konsolennutzer ab. Eine Quelle, kein Drift.
+  const macLevel = macInstallCmd({ setupKey: keyValue, minVersion: cur, dmgUrl: dmg })
   return (
     <div className="space-y-3 rounded-lg border bg-card/40 p-3">
       <div className="flex items-center gap-2 text-[13px] font-medium">

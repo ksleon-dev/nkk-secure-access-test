@@ -5,6 +5,26 @@
 // Laeuft also nicht nur auf modernem Windows. Installiert nur bei Erfolg.
 // installArgs z.B. '"/S"' oder '"/S","/SETUPKEY=abc"'. indent fuer Einbettung
 // in einen if-Block (Level-Skript).
+// Bulletproof + universeller macOS-Install/Update-Einzeiler. Laedt das EINE
+// serverseitig gehostete, gegengepruefte Skript (scripts/macos-install.sh) und
+// fuehrt es aus: immer aktuell, idempotent (install ODER update), selbstheilend
+// (alter/kaputter Stand wird komplett ersetzt), Gatekeeper entschaerft (xattr +
+// Ad-hoc-Signatur), laeuft auf JEDEM Mac (Intel + Apple Silicon, macOS 12-26+).
+// Eine einzige Quelle -> kein Drift. Mit setupKey = Zero-Touch.
+// Form `bash -c "$(curl ...)"`: schlaegt der Download fehl, bleibt es ein No-Op
+// (keine Teilausfuehrung), statt halb durchzulaufen.
+const MAC_INSTALL_URL = "https://api.secure.nkk-hb.de/download/macos-install.sh"
+export function macInstallCmd(opts?: { setupKey?: string; minVersion?: string; dmgUrl?: string }): string {
+  const env: string[] = []
+  if (opts?.setupKey) env.push(`NKK_SETUP_KEY='${opts.setupKey}'`)
+  if (opts?.minVersion) env.push(`NKK_MIN_VERSION='${opts.minVersion}'`)
+  // Backend-aufgeloeste DMG-URL durchreichen (Mirror mit GitHub-Fallback), sonst
+  // nimmt das Skript seinen eingebauten Default.
+  if (opts?.dmgUrl) env.push(`NKK_DMG_URL='${opts.dmgUrl}'`)
+  const prefix = env.length ? env.join(" ") + " " : ""
+  return `${prefix}bash -c "$(curl -fsSL '${MAC_INSTALL_URL}')"`
+}
+
 export function winInstallCmd(
   url: string,
   installArgs: string,

@@ -5,7 +5,7 @@ import { Skeleton } from "@/components/ui/skeleton"
 import { Button } from "@/components/ui/button"
 import { CheckCircle2, XCircle, Download, FileText, Copy, Check } from "lucide-react"
 import { copyText } from "@/lib/clipboard"
-import { winInstallCmd } from "@/lib/installcmd"
+import { macInstallCmd, winInstallCmd } from "@/lib/installcmd"
 import { cn } from "@/lib/utils"
 import changelogRaw from "@/data/changelog.md?raw"
 
@@ -69,9 +69,8 @@ export function ReleasesPage() {
   const channelOk = !!uc?.ok
   const dl = data.downloads ?? { windows_exe: DL_EXE, windows_zip: DL_ZIP, macos_dmg: null }
   const winCmd = winInstallCmd(dl.windows_exe, '"/S"', { progress: true })
-  const macCmd = dl.macos_dmg
-    ? `curl -fL --retry 5 --retry-all-errors -C - -o /tmp/nkk.dmg "${dl.macos_dmg}" && hdiutil attach -nobrowse -quiet /tmp/nkk.dmg && cp -R "/Volumes/NKK Secure Access/NKK Secure Access.app" /Applications/ && hdiutil detach -quiet "/Volumes/NKK Secure Access" && open -a "NKK Secure Access"`
-    : null
+  // Bulletproof Universal-Installer/Updater (ein gehostetes Skript, kein Drift).
+  const macCmd = macInstallCmd()
 
   return (
     <div>
