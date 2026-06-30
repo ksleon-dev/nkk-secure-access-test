@@ -54,7 +54,7 @@ export function KeysPage() {
         <EmptyState title="Keine Setup-Keys" hint="Lege den ersten Key für das Onboarding an." />
       ) : (
         <div className="overflow-hidden rounded-xl border bg-card">
-          <Table>
+          <Table className="nkk-table">
             <TableHeader>
               <TableRow>
                 <TableHead>Name</TableHead>
@@ -71,8 +71,8 @@ export function KeysPage() {
                 const du = daysUntil(k.expires)
                 return (
                   <TableRow key={k.id}>
-                    <TableCell className="font-medium">{k.name}</TableCell>
-                    <TableCell>
+                    <TableCell className="font-medium" data-label="Name">{k.name}</TableCell>
+                    <TableCell data-label="Status">
                       {k.valid ? (
                         <span className="rounded-full bg-ok/10 px-2 py-0.5 text-xs font-medium text-ok">gültig</span>
                       ) : (
@@ -81,14 +81,14 @@ export function KeysPage() {
                         </span>
                       )}
                     </TableCell>
-                    <TableCell className="text-muted-foreground">{k.type ?? "—"}</TableCell>
-                    <TableCell className="text-right tabular-nums">{k.used ?? 0} / {k.limit ?? "∞"}</TableCell>
-                    <TableCell className={cn("tabular-nums", k.valid && du != null && du <= 30 && "text-warn")}>
+                    <TableCell className="text-muted-foreground" data-label="Typ">{k.type ?? "—"}</TableCell>
+                    <TableCell className="text-right tabular-nums" data-label="Verwendet">{k.used ?? 0} / {k.limit ?? "∞"}</TableCell>
+                    <TableCell className={cn("tabular-nums", k.valid && du != null && du <= 30 && "text-warn")} data-label="Läuft ab">
                       {k.expires || "—"}
                       {k.valid && du != null && du <= 30 && <span className="ml-1 text-xs">({du} T.)</span>}
                     </TableCell>
-                    <TableCell className="text-muted-foreground">{k.groups.join(", ") || "—"}</TableCell>
-                    <TableCell>
+                    <TableCell className="text-muted-foreground" data-label="Gruppen">{k.groups.join(", ") || "—"}</TableCell>
+                    <TableCell data-label="">
                       <div className="flex justify-end gap-1">
                         <Button variant="ghost" size="sm" onClick={() => setRevealT(k)}>
                           <Eye className="size-3.5" /> Anzeigen

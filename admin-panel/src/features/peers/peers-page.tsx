@@ -34,7 +34,7 @@ export function PeersPage() {
         <EmptyState title="Keine Peers" hint="Erstelle einen Setup-Key, um Geräte aufzunehmen." />
       ) : (
         <div className="overflow-hidden rounded-xl border bg-card">
-          <Table>
+          <Table className="nkk-table">
             <TableHeader>
               <TableRow>
                 <TableHead>Name</TableHead>
@@ -49,13 +49,13 @@ export function PeersPage() {
             <TableBody>
               {peers.map((p) => (
                 <TableRow key={p.id}>
-                  <TableCell className="font-medium">{p.name}</TableCell>
-                  <TableCell><ConnBadge connected={p.connected} /></TableCell>
-                  <TableCell className="font-mono text-[12.5px] text-muted-foreground tabular-nums">{p.ip ?? "—"}</TableCell>
-                  <TableCell className="font-mono text-[12.5px] text-muted-foreground tabular-nums">{p.version ?? "—"}</TableCell>
-                  <TableCell className="capitalize text-muted-foreground">{p.os ?? "—"}</TableCell>
-                  <TableCell className="text-muted-foreground tabular-nums">{relativeTime(p.last_seen)}</TableCell>
-                  <TableCell>
+                  <TableCell className="font-medium" data-label="Name">{p.name}</TableCell>
+                  <TableCell data-label="Status"><ConnBadge connected={p.connected} /></TableCell>
+                  <TableCell className="font-mono text-[12.5px] text-muted-foreground tabular-nums" data-label="NetBird-IP">{p.ip ?? "—"}</TableCell>
+                  <TableCell className="font-mono text-[12.5px] text-muted-foreground tabular-nums" data-label="Agent">{p.version ?? "—"}</TableCell>
+                  <TableCell className="capitalize text-muted-foreground" data-label="OS">{p.os ?? "—"}</TableCell>
+                  <TableCell className="text-muted-foreground tabular-nums" data-label="Last seen">{relativeTime(p.last_seen)}</TableCell>
+                  <TableCell data-label="">
                     <div className="flex justify-end gap-1">
                       <Button variant="ghost" size="sm" onClick={() => setRenameT(p)}>
                         <Pencil className="size-3.5" /> Umbenennen

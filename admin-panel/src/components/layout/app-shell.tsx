@@ -4,6 +4,7 @@ import { NAV } from "@/config/nav"
 import { useData } from "@/lib/data-context"
 import { api } from "@/lib/api"
 import { cn } from "@/lib/utils"
+import { useVersionWatch } from "@/lib/use-version-watch"
 import { Button } from "@/components/ui/button"
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet"
 import { ShieldCheck, RefreshCw, LogOut, Menu, ExternalLink } from "lucide-react"
@@ -66,6 +67,7 @@ export function AppShell() {
   const { refresh, loading, lastUpdated, onUnauthorized } = useData()
   const [mobileOpen, setMobileOpen] = useState(false)
   const location = useLocation()
+  useVersionWatch() // bei neuer Panel-Version automatisch neu laden (kein Stale-Cache)
 
   async function logout() {
     try {

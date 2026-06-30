@@ -161,3 +161,60 @@
     font-variant-numeric: tabular-nums;
   }
 }
+
+/* ----------------------------------------------------------------------------
+   Responsive Tabellen: auf schmalen Screens (< md) wird jede Zeile zu einer
+   sauberen "Label: Wert"-Karte. Tablet/Desktop bleiben echte Tabellen (mit
+   horizontalem Scroll als Fallback). Auf <Table className="nkk-table"> setzen
+   und jeder <TableCell data-label="Spalte"> geben (Aktionszelle data-label="").
+---------------------------------------------------------------------------- */
+@media (max-width: 767px) {
+  .nkk-table thead {
+    display: none;
+  }
+  .nkk-table tbody tr {
+    display: block;
+    padding: 0.35rem 0.15rem;
+  }
+  .nkk-table tbody tr + tr {
+    border-top: 1px solid var(--border);
+  }
+  .nkk-table tbody td {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 1rem;
+    width: auto;
+    border: 0 !important;
+    padding: 0.45rem 0.85rem !important;
+    text-align: right;
+    white-space: normal;
+  }
+  .nkk-table tbody td::before {
+    content: attr(data-label);
+    font-weight: 500;
+    color: var(--muted-foreground);
+    text-align: left;
+    flex: 0 0 auto;
+  }
+  /* Erste Zelle = Karten-Titel: links, fett, Trennlinie, kein Label */
+  .nkk-table tbody td:first-child {
+    justify-content: flex-start;
+    text-align: left;
+    font-weight: 600;
+    border-bottom: 1px solid var(--border) !important;
+    margin-bottom: 0.15rem;
+    padding-bottom: 0.55rem !important;
+  }
+  .nkk-table tbody td:first-child::before {
+    content: none;
+  }
+  /* Aktionszelle: kein Label, Buttons rechts, etwas mehr Luft oben */
+  .nkk-table tbody td[data-label=""] {
+    justify-content: flex-end;
+    padding-top: 0.6rem !important;
+  }
+  .nkk-table tbody td[data-label=""]::before {
+    content: none;
+  }
+}

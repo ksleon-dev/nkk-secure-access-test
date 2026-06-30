@@ -198,7 +198,7 @@ export function DevicesPage() {
         <EmptyState title="Keine Geräte gefunden" hint={q ? "Suche anpassen." : "Noch keine Enrollment-Meldungen."} />
       ) : (
         <div className="overflow-x-auto rounded-xl border bg-card">
-          <Table>
+          <Table className="nkk-table">
             <TableHeader>
               <TableRow className="hover:bg-transparent">
                 <SortHead label="Gerät" k="hostname" sort={sort} onSort={toggleSort} className="h-11 pl-4" />
@@ -215,7 +215,7 @@ export function DevicesPage() {
             <TableBody>
               {rows.map((d) => (
                 <TableRow key={d.hostname} className="group">
-                  <TableCell className="py-2.5 pl-4">
+                  <TableCell className="py-2.5 pl-4" data-label="Gerät">
                     <div className="flex items-center gap-3">
                       <div className="relative grid size-9 shrink-0 place-items-center rounded-lg border bg-secondary/60 text-muted-foreground transition-colors group-hover:border-primary/30 group-hover:text-primary">
                         <Laptop className="size-[18px]" />
@@ -248,28 +248,28 @@ export function DevicesPage() {
                       </div>
                     </div>
                   </TableCell>
-                  <TableCell>{data && <VersionBadge version={d.app_version} current={data.current_version} />}</TableCell>
-                  <TableCell>
+                  <TableCell data-label="App">{data && <VersionBadge version={d.app_version} current={data.current_version} />}</TableCell>
+                  <TableCell data-label="NetBird">
                     {d.netbird?.version ? (
                       <VersionBadge version={d.netbird.version} current={netbirdCurrent} />
                     ) : (
                       <span className="text-xs text-muted-foreground">—</span>
                     )}
                   </TableCell>
-                  <TableCell>
+                  <TableCell data-label="Zuletzt gemeldet">
                     <span className="inline-flex items-center gap-2 text-muted-foreground tabular-nums">
                       <span className={cn("size-1.5 rounded-full", freshness(d.last_seen))} />
                       {relativeTime(d.last_seen)}
                     </span>
                   </TableCell>
-                  <TableCell className="text-right font-mono text-[12.5px] tabular-nums">
+                  <TableCell className="text-right font-mono text-[12.5px] tabular-nums" data-label="Ping">
                     {d.ping_internet != null ? `${fmtNum(d.ping_internet, 0)} ms` : "—"}
                   </TableCell>
-                  <TableCell className="text-right font-mono text-[12.5px] tabular-nums">
+                  <TableCell className="text-right font-mono text-[12.5px] tabular-nums" data-label="Speed">
                     {d.speed_mbps != null ? `${fmtNum(d.speed_mbps)} M` : "—"}
                   </TableCell>
-                  <TableCell className="font-mono text-[12.5px] text-muted-foreground tabular-nums">{d.local_ip ?? "—"}</TableCell>
-                  <TableCell className="max-w-[200px]">
+                  <TableCell className="font-mono text-[12.5px] text-muted-foreground tabular-nums" data-label="Lokale IP">{d.local_ip ?? "—"}</TableCell>
+                  <TableCell className="max-w-[200px]" data-label="ISP / Standort">
                     {d.isp?.isp ? (
                       <div className="truncate">
                         <span className="text-foreground/80">{d.isp.isp}</span>
@@ -279,7 +279,7 @@ export function DevicesPage() {
                       <span className="font-mono text-[12.5px] text-muted-foreground tabular-nums">{d.public_ip ?? "—"}</span>
                     )}
                   </TableCell>
-                  <TableCell className="pr-4 text-right">
+                  <TableCell className="pr-4 text-right" data-label="">
                     <DeviceActions d={d} automations={automations} onPing={doPing} onAutomation={doAutomation} />
                   </TableCell>
                 </TableRow>
