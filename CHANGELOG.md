@@ -6,6 +6,10 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), [SemVer](https
 
 ## [Unreleased]
 
+## [0.3.12] - 2026-06-30
+
+- RDP-Warnungen weg: App signiert .rdp und richtet das Vertrauen automatisch ein; Admin-Menue oeffnet auf Windows zuverlaessig (Strg+Shift+0 robust + Logo-5x-Klick)
+
 ## [0.3.11] - 2026-06-30
 
 - Installer richtet den NetBird-Dienst zuverlaessig ein (kein FEHLER 1060 bei vorhandenem oder fremdem NetBird)
