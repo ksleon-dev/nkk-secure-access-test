@@ -6,6 +6,10 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), [SemVer](https
 
 ## [Unreleased]
 
+## [0.3.15] - 2026-06-30
+
+- Sammel-Release: alle Fixes seit 0.3.9 landen jetzt WIRKLICH im Build (RDP-Signierung+Trust, Admin-Menue, schneller idiotensicherer Erst-Connect, keine rohen Fehlertexte mehr, Tray-Hinweis, sanfte Update-Abfrage). Ursache war ein Release-Skript das den Quellcode nie mit committet hat - jetzt behoben (git add -A)
+
 ## [0.3.14] - 2026-06-30
 
 - Endnutzer-Feinschliff: keine rohen Fehlertexte mehr (Tray-Verbinden/Trennen, Statusfehler, Installation, Schnellzugriff, Sitzung abgelaufen) sondern ruhige Klartext-Meldungen; Schliessen-zu-Tray zeigt einmaligen Hinweis dass die App im Hintergrund weiterlaeuft; Update-Abfrage (UAC) sanft statt Fehler; Stil-Feinschliff (keine Gedankenstriche)
