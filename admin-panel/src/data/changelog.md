@@ -6,6 +6,10 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), [SemVer](https
 
 ## [Unreleased]
 
+## [0.3.17] - 2026-06-30
+
+- Letzte Sammelversion: Admin-Menue Windows zusaetzlich gehaertet (Tasten-Handler auf window UND document, 5x-Logo-Tap mit großzuegigem 2s-Fenster als garantierter, WebView2-sicherer Weg). Enthaelt alle 0.3.16-Fixes (Auto-Update passiv ohne Wizard, keine NB-FOREIGN-Box)
+
 ## [0.3.16] - 2026-06-30
 
 - Update-/Installer-Politur (stabile Sammelversion): Auto-Update laeuft passiv ohne Wizard; KEINE erschreckende Hinweis-Box mehr beim Update (NB-FOREIGN und NB-UP sind nur Infos, nicht mehr in der Support-Box); Foreign-NetBird-Check nur noch bei echtem Enrollment mit Key (Ursache der NB-FOREIGN-Meldung beim Update behoben); NetBird-Server-Erkennung via status -d zuverlaessig; Hinweis-Box wird im Silent-Update unterdrueckt

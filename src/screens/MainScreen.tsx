@@ -65,13 +65,15 @@ export function MainScreen({
   const [busy, setBusy] = useState(false);
   const pendingToggle = useRef(false); // prevent double-click race condition
   const toast = useToast();
-  // Tastatur-unabhaengiger Zweitweg ins Service-Menue: 5x aufs Logo in unter 1,2s.
-  // Funktioniert auf Windows + macOS identisch (reiner Klick, keine Keycode-Falle).
+  // Tastatur-unabhaengiger, GARANTIERTER Weg ins Service-Menue: 5x aufs Logo in
+  // unter 2s. Funktioniert auf Windows + macOS identisch (reiner Klick, keine
+  // Keycode-/WebView2-Falle). Das ist der verlaessliche Weg, falls die Tastenkombi
+  // vom WebView2 geschluckt wird.
   const adminTapRef = useRef({ n: 0, t: 0 });
   function handleLogoTap() {
     const now = Date.now();
     const s = adminTapRef.current;
-    s.n = now - s.t < 1200 ? s.n + 1 : 1;
+    s.n = now - s.t < 2000 ? s.n + 1 : 1;
     s.t = now;
     if (s.n >= 5) {
       s.n = 0;

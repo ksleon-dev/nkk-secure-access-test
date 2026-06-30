@@ -285,8 +285,14 @@ function AppInner() {
         setScreen("admin");
       }
     };
+    // Auf window UND document hoeren (capture), damit Fokus-/WebView2-Eigenheiten
+    // die Kombi nicht verschlucken. Garantierter Weg bleibt der 5x-Logo-Tap.
     window.addEventListener("keydown", onKey, true);
-    return () => window.removeEventListener("keydown", onKey, true);
+    document.addEventListener("keydown", onKey, true);
+    return () => {
+      window.removeEventListener("keydown", onKey, true);
+      document.removeEventListener("keydown", onKey, true);
+    };
   }, []);
 
   if (bootstrapping || !branding) {
