@@ -6,6 +6,10 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), [SemVer](https
 
 ## [Unreleased]
 
+## [0.3.16] - 2026-06-30
+
+- Update-/Installer-Politur (stabile Sammelversion): Auto-Update laeuft passiv ohne Wizard; KEINE erschreckende Hinweis-Box mehr beim Update (NB-FOREIGN und NB-UP sind nur Infos, nicht mehr in der Support-Box); Foreign-NetBird-Check nur noch bei echtem Enrollment mit Key (Ursache der NB-FOREIGN-Meldung beim Update behoben); NetBird-Server-Erkennung via status -d zuverlaessig; Hinweis-Box wird im Silent-Update unterdrueckt
+
 ## [0.3.15] - 2026-06-30
 
 - Sammel-Release: alle Fixes seit 0.3.9 landen jetzt WIRKLICH im Build (RDP-Signierung+Trust, Admin-Menue, schneller idiotensicherer Erst-Connect, keine rohen Fehlertexte mehr, Tray-Hinweis, sanfte Update-Abfrage). Ursache war ein Release-Skript das den Quellcode nie mit committet hat - jetzt behoben (git add -A)

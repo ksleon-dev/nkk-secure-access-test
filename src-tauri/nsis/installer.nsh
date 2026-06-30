@@ -342,43 +342,44 @@ nkk_svc_ready:
     nkk_no_baked_post:
   ${EndIf}
 
-  ; --- Foreign-NetBird guard ------------------------------------------------
-  ; If we did NOT install NetBird (no owned flag) and the NetBird already on the
-  ; machine is enrolled to a DIFFERENT management server (e.g. a private or other
-  ; tenant NetBird on a BYOD device), do NOT run "netbird up" - it would switch
-  ; that server and hijack the foreign connection. powershell returns 8 when the
-  ; running NetBird does not report OUR management URL. Skipped entirely when we
-  ; own NetBird (owned flag present), so our own re-key always proceeds.
-  StrCpy $2 "ours"
-  IfFileExists "${NKK_DATA_DIR}\netbird-owned.flag" nkk_enroll_decided 0
-    nsExec::ExecToLog 'powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -WindowStyle Hidden -Command "try { $s = & \"${NKK_NETBIRD_BIN}\" status 2>$null | Out-String; if ($s -match [regex]::Escape(\"${NKK_MGMT_URL}\")) { exit 0 } else { exit 8 } } catch { exit 8 }"'
-    Pop $NkkExitCode
-    ${If} $NkkExitCode == 8
-      StrCpy $2 "foreign"
-    ${EndIf}
-  nkk_enroll_decided:
+  ; --- NetBird Enrollment (NUR mit Setup-Key) -------------------------------
+  ; Ohne Key gibt es nichts zu enrollen (z.B. ein Auto-Update): der gesamte Block
+  ; wird uebersprungen - KEIN Foreign-Check, KEINE Warnung. Das war die Ursache
+  ; der NB-FOREIGN-Meldung beim Update. Der Key existiert nur bei einer echten
+  ; Erstaufnahme (/SETUPKEY= oder baked setup.conf).
+  ${If} $NkkSetupKey != ""
+    ; Foreign-NetBird guard: wenn wir NetBird NICHT selbst installiert haben (kein
+    ; owned-Flag) und das vorhandene NetBird auf einen ANDEREN Server zeigt, nicht
+    ; uebernehmen (sonst wuerden wir eine fremde Verbindung kapern). "status -d"
+    ; (Detail) zeigt die Management-URL zuverlaessig; der kurze "status" nicht.
+    StrCpy $2 "ours"
+    IfFileExists "${NKK_DATA_DIR}\netbird-owned.flag" nkk_enroll_decided 0
+      nsExec::ExecToLog 'powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -WindowStyle Hidden -Command "try { $s = & \"${NKK_NETBIRD_BIN}\" status -d 2>$null | Out-String; if ($s -match [regex]::Escape(\"${NKK_MGMT_URL}\")) { exit 0 } else { exit 8 } } catch { exit 8 }"'
+      Pop $NkkExitCode
+      ${If} $NkkExitCode == 8
+        StrCpy $2 "foreign"
+      ${EndIf}
+    nkk_enroll_decided:
 
-  ; --- Inject the setup key + management URL --------------------------------
-  ; Hard 45s timeout so an unreachable management server can never freeze the
-  ; installer: nsExec kills the child and pushes "timeout" on timeout. The key
-  ; is quoted in case a baked setup.conf ever carries stray characters. This
-  ; step is best effort anyway - the app re-runs enrollment with its own 30s
-  ; timeout on first launch, so a non-zero/timeout result here is harmless.
-  ${If} $2 == "foreign"
-    DetailPrint "NKK: Vorgefundenes NetBird mit anderem Server - Enrollment uebersprungen."
-    StrCpy $NkkErrors "$NkkErrors[NB-FOREIGN] Fremdes NetBird (anderer Server) - nicht uebernommen$\r$\n"
-  ${ElseIf} $NkkSetupKey != ""
-    DetailPrint "NKK: Konfiguriere NetBird mit NKK Management Server ..."
-    nsExec::ExecToLog /TIMEOUT=45000 '"${NKK_NETBIRD_BIN}" up --setup-key "$NkkSetupKey" --management-url ${NKK_MGMT_URL}'
-    Pop $NkkExitCode
-    ${If} $NkkExitCode == 0
-      DetailPrint "NKK: NetBird Enrollment erfolgreich."
+    ${If} $2 == "foreign"
+      ; Reine Info, KEIN Fehler und KEIN Support-Hinweis: ein fremdes NetBird
+      ; lassen wir bewusst unangetastet.
+      DetailPrint "NKK: Vorgefundenes NetBird mit anderem Server - bewusst nicht uebernommen."
     ${Else}
-      DetailPrint "NKK: NetBird Enrollment Exit Code $NkkExitCode (nicht blockierend, App holt es nach)."
-      StrCpy $NkkErrors "$NkkErrors[NB-UP] NetBird Enrollment Exit $NkkExitCode$\r$\n"
+      ; Hard 45s timeout, damit ein nicht erreichbarer Server den Installer nie
+      ; einfriert. Best effort - die App holt das Enrollment beim ersten Start
+      ; mit eigenem Timeout nach, ein non-zero Ergebnis ist daher harmlos.
+      DetailPrint "NKK: Konfiguriere NetBird mit NKK Management Server ..."
+      nsExec::ExecToLog /TIMEOUT=45000 '"${NKK_NETBIRD_BIN}" up --setup-key "$NkkSetupKey" --management-url ${NKK_MGMT_URL}'
+      Pop $NkkExitCode
+      ${If} $NkkExitCode == 0
+        DetailPrint "NKK: NetBird Enrollment erfolgreich."
+      ${Else}
+        DetailPrint "NKK: NetBird Enrollment Exit $NkkExitCode (nicht blockierend, App holt es nach)."
+      ${EndIf}
     ${EndIf}
   ${Else}
-    DetailPrint "NKK: Kein /SETUPKEY= uebergeben - User aktiviert spaeter aus der App."
+    DetailPrint "NKK: Kein /SETUPKEY= - Update oder spaetere Aktivierung aus der App."
   ${EndIf}
 
   ; --- Hide the bundled NetBird UI: employees use the NKK app, not NetBird ----
@@ -439,7 +440,12 @@ nkk_svc_ready:
       FileWrite $9 "NKK Secure Access Setup Hinweise$\r$\n$NkkErrors"
       FileClose $9
     ${EndIf}
+    ; Bei Silent-/Passive-Install (Auto-Update, Level) NIE eine Box zeigen - sie
+    ; wuerde das Update blockieren und den Nutzer erschrecken. Nur bei sichtbarer
+    ; manueller Erstinstallation und nur fuer ECHTE Fehler (z.B. Defender-Ausnahme).
+    IfSilent nkk_skip_msgbox
     MessageBox MB_ICONEXCLAMATION|MB_OK "NKK Secure Access wurde installiert, aber mit Hinweisen:$\r$\n$\r$\n$NkkErrors$\r$\nLog: ${NKK_LOG_DIR}$\r$\n$\r$\nBitte ein Foto dieser Meldung an support@ticket.kronsolutions.de"
+    nkk_skip_msgbox:
   ${EndIf}
 !macroend
 
