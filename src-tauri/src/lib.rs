@@ -14,6 +14,13 @@ struct TrayAvailable(bool);
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     logging::init();
+    // Panic-Hook: ein Panic im Backend landet so IMMER in der Logdatei, statt still
+    // einen Thread zu killen - erleichtert die Ferndiagnose auf den 24/7-Clients.
+    let default_panic = std::panic::take_hook();
+    std::panic::set_hook(Box::new(move |info| {
+        tracing::error!("PANIC: {}", info);
+        default_panic(info);
+    }));
     tracing::info!(
         "NKK Secure Access {} startet …",
         env!("CARGO_PKG_VERSION")
