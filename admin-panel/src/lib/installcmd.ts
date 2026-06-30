@@ -25,6 +25,17 @@ export function macInstallCmd(opts?: { setupKey?: string; minVersion?: string; d
   return `${prefix}bash -c "$(curl -fsSL '${MAC_INSTALL_URL}')"`
 }
 
+// Bulletproof Windows-Komplett-Rollout fuer das Level-Terminal (Run as System):
+// laedt das EINE gehostete, gegengepruefte Skript (update-all-windows.ps1) und
+// fuehrt es aus -> App updaten + NetBird-Client updaten + NetBird-SSH scharf.
+// Maximal robust: TLS1.2 erzwingen (aelteres Windows), per Invoke-WebRequest laden
+// (keine curl.exe-Abhaengigkeit), mit ExecutionPolicy-Bypass starten (umgeht
+// Policy + MOTW). Eine Quelle = kein Drift; Skript-Verbesserungen wirken sofort.
+const WIN_ROLLOUT_URL = "https://api.secure.nkk-hb.de/download/update-all-windows.ps1"
+export function winRolloutCmd(): string {
+  return `[Net.ServicePointManager]::SecurityProtocol=3072;$f="$env:TEMP\\nkk-rollout.ps1";iwr '${WIN_ROLLOUT_URL}' -OutFile $f -UseBasicParsing;powershell -ExecutionPolicy Bypass -NoProfile -File $f`
+}
+
 export function winInstallCmd(
   url: string,
   installArgs: string,

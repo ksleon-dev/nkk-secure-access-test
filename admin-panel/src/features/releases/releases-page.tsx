@@ -5,7 +5,7 @@ import { Skeleton } from "@/components/ui/skeleton"
 import { Button } from "@/components/ui/button"
 import { CheckCircle2, XCircle, Download, FileText, Copy, Check } from "lucide-react"
 import { copyText } from "@/lib/clipboard"
-import { macInstallCmd, winInstallCmd } from "@/lib/installcmd"
+import { macInstallCmd, winInstallCmd, winRolloutCmd } from "@/lib/installcmd"
 import { cn } from "@/lib/utils"
 import changelogRaw from "@/data/changelog.md?raw"
 
@@ -117,6 +117,18 @@ export function ReleasesPage() {
         </div>
         <p className="mt-3 text-[12px] text-muted-foreground">
           Windows-Befehl in PowerShell (Silent-Install), macOS-Befehl im Terminal. Danach den Setup-Key eingeben — oder per Level / Mehrfach-Key zero-touch ausrollen.
+        </p>
+      </div>
+
+      {/* Komplett-Rollout via Level: App + NetBird updaten + SSH scharf, alles silent */}
+      <div className="mb-7 rounded-xl border bg-card p-5">
+        <h2 className="mb-1 text-[15px] font-semibold">Komplett-Rollout via Level (Windows)</h2>
+        <p className="mb-4 text-[13px] text-muted-foreground">
+          Ein Befehl im Level-Terminal (Run as System): aktualisiert NKK Secure Access <span className="font-medium">und</span> den NetBird-Client und schaltet NetBird-SSH am Client scharf. Silent, idempotent, kein Setup-Key nötig. Auf ein Gerät oder eine Gerätegruppe anwenden.
+        </p>
+        <CodeCopy code={winRolloutCmd()} label="Level · Run as System" />
+        <p className="mt-3 text-[12px] text-muted-foreground">
+          Lädt das eine gehostete, gegengeprüfte Skript (kein Drift — Verbesserungen wirken sofort). Hinweis: nicht eingeloggte Geräte bekommen SSH erst beim nächsten App-Connect; die SSH-Access-Policy im NetBird-Management ist getrennt und einmalig.
         </p>
       </div>
 
