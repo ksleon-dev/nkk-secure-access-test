@@ -6,6 +6,10 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), [SemVer](https
 
 ## [Unreleased]
 
+## [0.3.18] - 2026-06-30
+
+- Audit-Fixes (8 Bugs aus dem Komplett-Check): Enrollment-Regression behoben (Connect MIT Key wird nie verschluckt); Admin 'Nach Update suchen' startet korrekt neu (relaunch_app statt nicht-registriertem Plugin); Auto-Update-Hinweisbox auch bei passive-Install (/P) unterdrueckt; RDP cmdkey-Credential 60->15s; Profil-Loeschen + NewsScreen ruhige/robuste Behandlung; Auto-Reconnect-Abbruch-Race geschlossen; open_rdp blockiert den Async-Worker nicht mehr (spawn_blocking). Feature-Vollstaendigkeit im Audit bestaetigt (50/50 Befehle verdrahtet)
+
 ## [0.3.17] - 2026-06-30
 
 - Letzte Sammelversion: Admin-Menue Windows zusaetzlich gehaertet (Tasten-Handler auf window UND document, 5x-Logo-Tap mit großzuegigem 2s-Fenster als garantierter, WebView2-sicherer Weg). Enthaelt alle 0.3.16-Fixes (Auto-Update passiv ohne Wizard, keine NB-FOREIGN-Box)

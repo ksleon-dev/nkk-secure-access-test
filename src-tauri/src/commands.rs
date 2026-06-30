@@ -2755,18 +2755,25 @@ pub async fn open_rdp(
             rdp_content.push_str("\r\n");
         }
 
-        std::fs::write(&rdp_path, &rdp_content)
-            .map_err(|e| AppError::Internal(format!("rdp file: {}", e)))?;
-
-        // NACH dem letzten Schreiben signieren (sonst invalidiert eine spaetere
-        // Aenderung die Signatur) -> keine "Unbekannter Herausgeber"-Warnung.
-        sign_rdp_file(&rdp_path);
-
-        std::process::Command::new("mstsc.exe")
-            .arg(rdp_path.to_string_lossy().to_string())
-            .creation_flags(0x08000000)
-            .spawn()
-            .map_err(|e| AppError::Internal(format!("mstsc start: {}", e)))?;
+        // Schreiben + Signieren (rdpsign) + mstsc-Start sind blockierend -> in
+        // spawn_blocking, damit der async-Worker nicht haengt (UI bleibt fluessig).
+        let rdp_path_b = rdp_path.clone();
+        let rdp_content_b = rdp_content;
+        tokio::task::spawn_blocking(move || -> AppResult<()> {
+            std::fs::write(&rdp_path_b, &rdp_content_b)
+                .map_err(|e| AppError::Internal(format!("rdp file: {}", e)))?;
+            // NACH dem letzten Schreiben signieren (sonst invalidiert eine spaetere
+            // Aenderung die Signatur) -> keine "Unbekannter Herausgeber"-Warnung.
+            sign_rdp_file(&rdp_path_b);
+            std::process::Command::new("mstsc.exe")
+                .arg(rdp_path_b.to_string_lossy().to_string())
+                .creation_flags(0x08000000)
+                .spawn()
+                .map_err(|e| AppError::Internal(format!("mstsc start: {}", e)))?;
+            Ok(())
+        })
+        .await
+        .map_err(|e| AppError::Internal(format!("rdp task: {}", e)))??;
 
         // Clean up cmdkey + temp file after 60s (gives mstsc time to read the file
         // and the user time to authenticate if cmdkey didn't inject credentials)
@@ -3412,6 +3419,23 @@ async fn poll_loop(app: AppHandle) {
                                         tracing::info!("Auto-Reconnect: versuche Wiederverbindung ...");
                                         match reconnect_nb.up(&url, key.as_deref()).await {
                                             Ok(_) => {
+                                                // up() kann mehrere Sekunden dauern. Hat der Nutzer
+                                                // INZWISCHEN getrennt, den gerade aufgebauten Tunnel
+                                                // sofort wieder schliessen - sonst kommt er ungewollt zurueck.
+                                                let aborted_now = RECONNECT_PAUSED
+                                                    .load(Ordering::Relaxed)
+                                                    || reconnect_app
+                                                        .try_state::<AppState>()
+                                                        .map(|s| {
+                                                            s.user_disconnected.load(Ordering::Relaxed)
+                                                        })
+                                                        .unwrap_or(false);
+                                                if aborted_now {
+                                                    tracing::info!("Auto-Reconnect: Nutzer hat waehrend des Aufbaus getrennt, schliesse wieder.");
+                                                    let _ = reconnect_nb.down().await;
+                                                    RECONNECT_IN_FLIGHT.store(false, Ordering::Relaxed);
+                                                    return;
+                                                }
                                                 ok = true;
                                                 if let Ok(s) = reconnect_nb.status().await {
                                                     let _ = reconnect_app
