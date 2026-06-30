@@ -6,6 +6,10 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), [SemVer](https
 
 ## [Unreleased]
 
+## [0.3.11] - 2026-06-30
+
+- Installer richtet den NetBird-Dienst zuverlaessig ein (kein FEHLER 1060 bei vorhandenem oder fremdem NetBird)
+
 ## [0.3.10] - 2026-06-30
 
 - Viel kleinerer Windows-Installer (WebView2 als Bootstrapper) und abbruchsicherer Download (Resume + Retry)
