@@ -79,6 +79,9 @@ pub fn run() {
             commands::init_user_disconnected(app.handle());
             commands::cleanup_stale_credentials(&rdp_targets);
             commands::start_status_polling(app.handle().clone());
+            // RDP-Vertrauen (Zertifikat + Registry) im Hintergrund einrichten, damit der
+            // erste Terminalserver-Klick keine Windows-Warnung zeigt und nicht traege ist.
+            commands::warm_rdp_trust();
 
             // Load admin settings into the runtime, and honour "connect on start"
             // by triggering the same path the tray uses, unless the user has
@@ -165,6 +168,23 @@ pub fn run() {
                 if has_tray {
                     let _ = window.hide();
                     api.prevent_close();
+                    // Einmal pro Sitzung erklaeren, dass die App (und damit das VPN) im
+                    // Hintergrund weiterlaeuft - sonst denkt der Nutzer beim X-Klick, er
+                    // sei getrennt, und der Tunnel bleibt unbemerkt offen.
+                    use std::sync::atomic::{AtomicBool, Ordering};
+                    static TRAY_HINT_SHOWN: AtomicBool = AtomicBool::new(false);
+                    if !TRAY_HINT_SHOWN.swap(true, Ordering::Relaxed) {
+                        let _ = tauri_plugin_notification::NotificationExt::notification(
+                            window.app_handle(),
+                        )
+                        .builder()
+                        .title("NKK Secure Access laeuft weiter")
+                        .body(
+                            "Die Verbindung bleibt im Hintergrund aktiv. Zum vollstaendigen \
+                             Beenden: Tray-Symbol unten rechts, dann Beenden.",
+                        )
+                        .show();
+                    }
                 } else {
                     // No tray - real close. Disconnect VPN first, then quit.
                     api.prevent_close();

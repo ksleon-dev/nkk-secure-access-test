@@ -234,6 +234,15 @@ nkk_wintun_ok:
 
 nkk_netbird_already:
   DetailPrint "NKK: NetBird ist bereits installiert - ueberspringe MSI."
+  ; Binary da, aber evtl. kein Windows-Dienst (portables/fremdes NetBird ohne
+  ; Service). Dann den Dienst nachinstallieren, damit der Tunnel als Dienst laeuft.
+  nsExec::Exec 'sc.exe query netbird'
+  Pop $1
+  ${If} $1 != 0
+    DetailPrint "NKK: NetBird-Binary ohne Dienst - installiere Windows-Dienst ..."
+    nsExec::ExecToLog '"${NKK_NETBIRD_BIN}" service install'
+    Pop $NkkExitCode
+  ${EndIf}
   Goto nkk_netbird_done
 
 nkk_netbird_install:
@@ -300,11 +309,19 @@ nkk_svc_ready:
 
   ; --- Force the NetBird service to start automatically on boot -------------
   ; (Required so the tunnel is up BEFORE the user logs in and our app starts.)
-  DetailPrint "NKK: Setze NetBird Service auf Autostart ..."
-  nsExec::ExecToLog 'sc.exe config netbird start= auto'
-  Pop $NkkExitCode
-  nsExec::ExecToLog 'sc.exe start netbird'
-  Pop $NkkExitCode
+  ; Nur wenn der Dienst existiert - sonst FEHLER-1060-Rauschen; die App richtet
+  ; ihn beim ersten Start ohnehin selbst ein.
+  nsExec::Exec 'sc.exe query netbird'
+  Pop $1
+  ${If} $1 == 0
+    DetailPrint "NKK: Setze NetBird Service auf Autostart ..."
+    nsExec::ExecToLog 'sc.exe config netbird start= auto'
+    Pop $NkkExitCode
+    nsExec::ExecToLog 'sc.exe start netbird'
+    Pop $NkkExitCode
+  ${Else}
+    DetailPrint "NKK: Kein NetBird-Dienst aktiv - App richtet ihn beim ersten Start ein."
+  ${EndIf}
 
   ; --- Read baked-in setup key (now that files are extracted) ----------------
   ${If} $NkkSetupKey == ""

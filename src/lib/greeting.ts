@@ -48,7 +48,7 @@ const BIO_TIPS = [
   "Tipp: Wurzelpetersilie ist jetzt im Frühjahr am besten.",
   "Frisch verpackt, regional gehostet.",
   "Kurze Wege, knackige Latenz.",
-  "Tunnel grün - wie unsere Möhren.",
+  "Tunnel grün, wie unsere Möhren.",
   "Bio Stack. Hand made in Bremen.",
   "Schmeckt nach kurzer Latenz.",
   "Hopfen und Malz, Tunnel ist da.",

@@ -26,6 +26,7 @@ export function EnrollmentScreen({ branding, onEnrolled }: Props) {
   const [busy, setBusy] = useState(false);
   const [phase, setPhase] = useState<"idle" | "connecting" | "success" | "error">("idle");
   const [error, setError] = useState<string | null>(null);
+  const [slowHint, setSlowHint] = useState(false);
   const toast = useToast();
   const enrolledRef = useRef(false);
 
@@ -80,22 +81,28 @@ export function EnrollmentScreen({ branding, onEnrolled }: Props) {
     }
     setBusy(true);
     setPhase("connecting");
+    setSlowHint(false);
+    // Wächter: wirkt der Connect nach 18s noch wie haengend, klaren Hinweis zeigen
+    // (statt stillem Spinner). Der Connect laeuft im Hintergrund weiter.
+    const slowTimer = setTimeout(() => setSlowHint(true), 18000);
     try {
       await invoke("nb_connect", { setupKey: key.trim() });
       if (enrolledRef.current) return; // listener already handled it
       enrolledRef.current = true;
       setPhase("success");
       toast.success(de.toast.connected);
-      await new Promise((r) => setTimeout(r, 1800));
+      await new Promise((r) => setTimeout(r, 600));
       onEnrolled();
     } catch (e: unknown) {
       setPhase("error");
       // Keep the technical detail in the log for support, show a calm message.
       console.error("Enrollment fehlgeschlagen:", e);
       setError("Anmeldung fehlgeschlagen. Bitte Setup-Key prüfen und erneut versuchen.");
-      await new Promise((r) => setTimeout(r, 2000));
+      await new Promise((r) => setTimeout(r, 1000));
       setPhase("idle");
     } finally {
+      clearTimeout(slowTimer);
+      setSlowHint(false);
       setBusy(false);
     }
   }
@@ -193,6 +200,11 @@ export function EnrollmentScreen({ branding, onEnrolled }: Props) {
                   </>
                 )}
               </button>
+              {busy && slowHint && (
+                <div className="text-[11px] text-[color:var(--brand-fg)]/55 text-center mt-1 animate-fade-up">
+                  Das dauert etwas länger, wir versuchen es weiter …
+                </div>
+              )}
             </form>
           </>
         )}

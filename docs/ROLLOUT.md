@@ -32,7 +32,7 @@ Datei: `NKK Secure Access_X.Y.Z_x64-setup.exe` (~34 MB)
 
 ## 2. Setup Key generieren
 
-Im selbst-gehosteten NetBird Management Dashboard auf `https://netbird.nkkhb.de` einloggen:
+Im selbst-gehosteten NetBird Management Dashboard auf `https://vpn.secure.nkk-hb.de` einloggen:
 
 1. Settings → Setup Keys
 2. „Create Setup Key"
@@ -119,12 +119,12 @@ Nach dem Doppelklick (oder silent install):
 
 1. **NSIS Wizard** öffnet sich (deutsch, KronSolutions Branding)
 2. **Defender Exclusion** wird für NetBird Pfade gesetzt (verhindert Probleme bei Wintun Driver Install)
-3. **ESET Network Protection** wird pausiert falls installiert (best effort, ESET kann Wintun blockieren)
+3. **Bitdefender Echtzeitschutz** wird pausiert falls installiert (best effort, Bitdefender kann Wintun blockieren)
 4. **NKK Secure Access Binary** wird nach `C:\Program Files\NKK Secure Access\` installiert
 5. **NetBird Client** wird silent mit installiert (~30 s)
 6. **NetBird Service** wird auf **Automatisch** gesetzt und gestartet
-7. **Setup Key** wird via `netbird up --setup-key ... --management-url https://netbird.nkkhb.de:33073` injiziert (falls übergeben)
-8. **ESET** wird wieder aktiviert
+7. **Setup Key** wird via `netbird up --setup-key ... --management-url https://vpn.secure.nkk-hb.de` injiziert (falls übergeben)
+8. **Bitdefender** wird wieder aktiviert
 9. **Startmenü Einträge** unter `KronSolutions → NKK Secure Access`
 10. **Programs & Features** Eintrag für Uninstall
 
@@ -155,7 +155,7 @@ Der Custom Uninstaller:
 | Problem | Lösung |
 |---|---|
 | SmartScreen warnt | Verteilung über internes File Share statt Browser Download |
-| ESET blockiert NetBird | Im Wizard Log nach „eset-pause" suchen, ggf. ESET Admin manuell pausieren lassen |
+| Bitdefender blockiert NetBird | Im Wizard Log nach „bitdefender-pause" suchen, ggf. Bitdefender Admin manuell pausieren lassen |
 | Setup Key abgelaufen | Im NetBird Dashboard einen neuen erstellen, Mitarbeiter macht Re-Install |
 | Mitarbeiter weiß Key nicht mehr | Aus dem Diagnose Panel der App: User-Identität ist sichtbar |
 | App startet nicht | `C:\ProgramData\KronSolutions\NKK-Secure-Access\logs\` an support@ticket.kronsolutions.de schicken |

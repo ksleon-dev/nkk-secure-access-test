@@ -647,11 +647,11 @@ function UpdateChecker({ currentVersion }: { currentVersion: string }) {
       await invoke("relaunch_app");
       // Process is being torn down on success; nothing else to do.
     } catch {
-      // Stay in "ready" so the restart button remains for a retry — the update
+      // Stay in "ready" so the restart button remains for a retry. The update
       // is already on disk and applies on the next manual launch.
       if (mountedRef.current)
         setRestartErr(
-          "Neustart hat nicht geklappt. Schließe die App manuell und öffne sie neu — das Update ist bereits installiert."
+          "Neustart hat nicht geklappt. Schließe die App manuell und öffne sie neu. Das Update ist bereits installiert."
         );
     } finally {
       busyRef.current = false;

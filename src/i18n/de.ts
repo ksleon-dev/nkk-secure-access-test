@@ -14,7 +14,7 @@ export const de = {
     "100 % Bio Stack 🌱",
     "Verbunden mit Naturkost Kontor 🌿",
     "Frisch verbunden, regional gehostet",
-    "Tunnel grün - wie unsere Möhren",
+    "Tunnel grün, wie unsere Möhren",
     "Kurze Wege, knackige Latenz",
     "Schmeckt nach kurzer Latenz",
   ],
@@ -33,7 +33,7 @@ export const de = {
       username: "Benutzername",
       password: "Passwort",
     },
-    storedHint: "Verschlüsselt im System Tresor - verlässt diesen Rechner nicht.",
+    storedHint: "Verschlüsselt im System-Tresor, verlässt diesen Rechner nicht.",
     requiredForRdp: "Trag einmalig deine Anmeldedaten ein.",
   },
   status: {

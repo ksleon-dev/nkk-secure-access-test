@@ -54,7 +54,7 @@ export function useUpdater() {
       }
     }
 
-    // Erst 5s nach Start (Nutzer ankommen lassen), dann periodisch alle 6h —
+    // Erst 5s nach Start (Nutzer ankommen lassen), dann periodisch alle 6h,
     // so bemerkt auch eine dauerhaft laufende App ein Update von allein,
     // ohne Neustart und ohne dass jemand etwas anstossen muss.
     const timer = setTimeout(runCheck, 5000);
@@ -96,10 +96,17 @@ export function useUpdater() {
       });
     } catch (e: unknown) {
       console.error("Update-Installation fehlgeschlagen:", e);
+      const raw = e instanceof Error ? e.message : String(e);
+      // Bricht der Nutzer die Windows-UAC-Abfrage ab (Code 1223), ist das kein echter
+      // Fehler - nur ein Hinweis, die Abfrage beim naechsten Mal mit Ja zu bestaetigen.
+      // Sonst eine ruhige Meldung, niemals den rohen technischen Fehler.
+      const uacCancelled = /1223|elevation|cancell|abgebrochen|consent/i.test(raw);
       setState((s) => ({
         ...s,
         downloading: false,
-        error: e instanceof Error ? e.message : String(e),
+        error: uacCancelled
+          ? "Für das Update bitte die Windows-Abfrage einmal mit 'Ja' bestätigen."
+          : "Update fehlgeschlagen. Bitte später erneut versuchen oder beim Support melden.",
       }));
     }
   }, []);

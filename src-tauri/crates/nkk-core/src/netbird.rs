@@ -314,7 +314,15 @@ impl NetbirdClient {
             ) {
                 self.log("NetBird Service nicht erreichbar, starte Service ...");
                 self.start_service().await;
-                tokio::time::sleep(Duration::from_secs(3)).await;
+                // Auf Bereitschaft pollen (max 12s) statt blind zu warten: sobald der
+                // Dienst antwortet, sofort weiter -> Versuch 1 klappt meist und der
+                // langsame Restart-Retry entfaellt. Bei langsamem Start (AV-Scan) bis 12s.
+                for _ in 0..12 {
+                    tokio::time::sleep(Duration::from_secs(1)).await;
+                    if self.status().await.is_ok() {
+                        break;
+                    }
+                }
             }
         }
 
@@ -344,11 +352,17 @@ impl NetbirdClient {
             let mut sc_stop = Command::new("sc.exe");
             sc_stop.args(["stop", "netbird"]).creation_flags(0x08000000);
             let _ = timeout(Duration::from_secs(3), sc_stop.output()).await;
-            tokio::time::sleep(Duration::from_secs(1)).await;
+            tokio::time::sleep(Duration::from_millis(800)).await;
             let mut sc_start = Command::new("sc.exe");
             sc_start.args(["start", "netbird"]).creation_flags(0x08000000);
             let _ = timeout(Duration::from_secs(5), sc_start.output()).await;
-            tokio::time::sleep(Duration::from_secs(3)).await;
+            // Auf Bereitschaft pollen (max 4s) statt blind 3s zu warten.
+            for _ in 0..4 {
+                tokio::time::sleep(Duration::from_secs(1)).await;
+                if self.status().await.is_ok() {
+                    break;
+                }
+            }
         }
         #[cfg(target_os = "macos")]
         {

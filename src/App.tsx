@@ -14,6 +14,7 @@ import { MainScreen } from "./screens/MainScreen";
 import { SetupScreen } from "./screens/SetupScreen";
 import { NewsScreen } from "./screens/NewsScreen";
 import { SettingsScreen } from "./screens/SettingsScreen";
+import { de } from "./i18n/de";
 import type { BrandingDto, QuickLaunchEntry } from "./types/branding";
 import type { CredentialProfileMeta } from "./types/credentials";
 import type { StatusDto } from "./types/netbird";
@@ -94,8 +95,15 @@ function AppInner() {
         await invoke(cmd, launchArgs);
         toast.success(`${item.label} wird gestartet …`);
       } catch (e: unknown) {
-        const msg = e instanceof Error ? e.message : String(e);
-        toast.error(msg);
+        // Rohen Backend-Fehler nur loggen, dem Nutzer eine ruhige Klartext-Meldung zeigen.
+        console.error("launch failed:", e);
+        const fail =
+          item.type === "rdp"
+            ? de.quickLaunch.rdp.failed
+            : item.type === "smb"
+            ? de.quickLaunch.smb.failed
+            : de.quickLaunch.url.failed;
+        toast.error(fail);
       }
     },
     [toast]
@@ -197,16 +205,18 @@ function AppInner() {
           try {
             await invoke("nb_connect", {});
           } catch (e: unknown) {
-            const msg = e instanceof Error ? e.message : String(e);
-            toast.error(msg);
+            console.error("tray-connect:", e);
+            toast.error(
+              "Verbindung fehlgeschlagen. Bitte erneut versuchen, sonst beim Support melden."
+            );
           }
         });
         const u4 = await listen("tray-disconnect", async () => {
           try {
             await invoke("nb_disconnect");
           } catch (e: unknown) {
-            const msg = e instanceof Error ? e.message : String(e);
-            toast.error(msg);
+            console.error("tray-disconnect:", e);
+            toast.error("Trennen hat nicht geklappt. Bitte erneut versuchen.");
           }
         });
         const u5 = await listen<number>("tray-launch-index", async (ev) => {
@@ -216,8 +226,8 @@ function AppInner() {
             const item = b.quickLaunch[idx];
             if (item) await requestLaunch(item);
           } catch (e: unknown) {
-            const msg = e instanceof Error ? e.message : String(e);
-            toast.error(msg);
+            console.error("tray-launch-index:", e);
+            toast.error("Konnte nicht gestartet werden. Bitte erneut versuchen.");
           }
         });
         const u6 = await listen("tray-open-diagnose", () => {
@@ -227,9 +237,10 @@ function AppInner() {
           setScreen("settings");
         });
         const u8 = await listen("netbird-needs-login", () => {
-          toast.error(
-            "Sitzung abgelaufen. Bitte neu anmelden über Einstellungen, Neu einrichten."
-          );
+          // Neutraler Hinweis ohne falschen Pfad - die genaue Anleitung steht im
+          // Situations-Banner auf dem Hauptscreen. Hier nur ein kurzer Stupser,
+          // damit auch Nutzer auf anderen Screens es mitbekommen.
+          toast.info("Sitzung abgelaufen. Bitte neu verbinden.");
         });
         unlisteners = [u1, u2, u3, u4, u5, u6, u7, u8];
       } catch (e: unknown) {
@@ -256,8 +267,21 @@ function AppInner() {
   // employees; the password gate lives in AdminScreen (verified in Rust).
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
-      if (e.shiftKey && (e.ctrlKey || e.metaKey) && e.code === "Digit0") {
+      if (!(e.ctrlKey || e.metaKey) || !e.shiftKey) return;
+      // Windows-robust: e.code (Digit0/Numpad0) reicht auf WebView2 + DE-Layout mit
+      // Shift nicht zuverlaessig, daher zusaetzlich e.key und das layout-unabhaengige
+      // e.keyCode (48 Top-Row, 96 Numpad).
+      const isZero =
+        e.code === "Digit0" ||
+        e.code === "Numpad0" ||
+        e.key === "0" ||
+        e.key === ")" ||
+        e.key === "=" ||
+        e.keyCode === 48 ||
+        e.keyCode === 96;
+      if (isZero) {
         e.preventDefault();
+        e.stopPropagation();
         setScreen("admin");
       }
     };
@@ -330,6 +354,7 @@ function AppInner() {
           onOpenSettings={() => setScreen("settings")}
           onOpenAbout={() => setScreen("diagnose")}
           onOpenNews={() => setScreen("news")}
+          onOpenAdmin={() => setScreen("admin")}
         />
       )}
       {screen === "news" && (

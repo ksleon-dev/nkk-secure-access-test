@@ -48,6 +48,7 @@ interface Props {
   onOpenSettings: () => void;
   onOpenAbout: () => void;
   onOpenNews: () => void;
+  onOpenAdmin: () => void;
 }
 
 export function MainScreen({
@@ -59,10 +60,24 @@ export function MainScreen({
   onOpenSettings,
   onOpenAbout,
   onOpenNews,
+  onOpenAdmin,
 }: Props) {
   const [busy, setBusy] = useState(false);
   const pendingToggle = useRef(false); // prevent double-click race condition
   const toast = useToast();
+  // Tastatur-unabhaengiger Zweitweg ins Service-Menue: 5x aufs Logo in unter 1,2s.
+  // Funktioniert auf Windows + macOS identisch (reiner Klick, keine Keycode-Falle).
+  const adminTapRef = useRef({ n: 0, t: 0 });
+  function handleLogoTap() {
+    const now = Date.now();
+    const s = adminTapRef.current;
+    s.n = now - s.t < 1200 ? s.n + 1 : 1;
+    s.t = now;
+    if (s.n >= 5) {
+      s.n = 0;
+      onOpenAdmin();
+    }
+  }
   const showMenu = useContextMenu();
   const state: ConnectionState = status?.state ?? "Disconnected";
   const isConnected = state === "Connected";
@@ -423,7 +438,7 @@ export function MainScreen({
           <div
             className="relative flex items-center justify-center cursor-pointer"
             style={{ width: 120, height: 120 }}
-            onClick={() => { /* logo tap - no action */ }}
+            onClick={handleLogoTap}
           >
             {/* Professional particles - cherry red dots + subtle BIO labels */}
             {isBusy && (

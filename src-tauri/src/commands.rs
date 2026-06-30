@@ -415,6 +415,10 @@ pub struct AppState {
     /// True once the hidden service menu was unlocked this session. Gates the
     /// admin_* commands. In-memory only, never persisted.
     pub admin_unlocked: AtomicBool,
+    /// True waehrend ein Connect laeuft. Ein zweiter nb_connect (z.B. connect_on_start
+    /// + Nutzer-Klick gleichzeitig) kehrt sofort zurueck, statt hinterm op_lock den
+    /// vollen Versuch erneut zu durchlaufen (gefuehlt doppelt so lang).
+    pub connect_in_flight: AtomicBool,
 }
 
 impl Default for AppState {
@@ -432,6 +436,7 @@ impl AppState {
             setup_key_cache: AsyncMutex::new(None),
             user_disconnected: AtomicBool::new(false),
             admin_unlocked: AtomicBool::new(false),
+            connect_in_flight: AtomicBool::new(false),
         }
     }
 }
@@ -618,6 +623,25 @@ pub async fn nb_connect(
     setup_key: Option<String>,
     state: State<'_, AppState>,
 ) -> AppResult<()> {
+    // Doppelverbindung verhindern: laeuft schon ein Connect, sofort zurueck (statt
+    // hinterm op_lock den vollen Versuch erneut zu durchlaufen). Der Guard setzt das
+    // Flag auf JEDEM Rueckweg zurueck (auch bei ?-Fehler), via Drop.
+    if state
+        .connect_in_flight
+        .compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed)
+        .is_err()
+    {
+        tracing::info!("Connect laeuft bereits, doppelter Aufruf ignoriert.");
+        return Ok(());
+    }
+    struct ConnectGuard<'a>(&'a AtomicBool);
+    impl Drop for ConnectGuard<'_> {
+        fn drop(&mut self) {
+            self.0.store(false, Ordering::Release);
+        }
+    }
+    let _connect_guard = ConnectGuard(&state.connect_in_flight);
+
     // User explicitly connecting - clear the disconnect flag so auto-reconnect works again
     state.user_disconnected.store(false, Ordering::Relaxed);
     set_user_disconnected_marker(&app, false);
@@ -2398,6 +2422,7 @@ pub async fn create_desktop_rdp_shortcut(
         let _ = std::fs::create_dir_all(&data_dir);
         let rdp_path = data_dir.join(format!("{} Terminalserver.rdp", name));
         std::fs::write(&rdp_path, content).map_err(|e| AppError::Io(e.to_string()))?;
+        sign_rdp_file(&rdp_path); // signieren -> keine RDP-Herausgeber-Warnung
 
         let desktop = app
             .path()
@@ -2500,6 +2525,94 @@ fn ts2_icon_path(app: &AppHandle) -> Option<std::path::PathBuf> {
     )));
     candidates.into_iter().find(|p| p.exists())
 }
+
+// ── RDP-Vertrauen + Signatur (Windows, gegen die April-2026-RDP-Warnungen) ──
+// Die App richtet pro Client ein nicht-exportierbares Signatur-Zertifikat ein,
+// vertraut ihm als .rdp-Publisher und bestaetigt den neuen Consent-Dialog vorab;
+// jede generierte .rdp wird damit signiert -> Windows zeigt keine Warnung mehr.
+#[cfg(target_os = "windows")]
+static RDP_TP: std::sync::OnceLock<Option<String>> = std::sync::OnceLock::new();
+
+#[cfg(target_os = "windows")]
+fn ensure_rdp_trust() -> Option<String> {
+    use std::os::windows::process::CommandExt;
+    let script = r#"$ErrorActionPreference='SilentlyContinue'
+$fp='NKK RDP Signing'
+$cert = Get-ChildItem Cert:\CurrentUser\My | Where-Object { $_.FriendlyName -eq $fp -and $_.NotAfter -gt (Get-Date) } | Select-Object -First 1
+if (-not $cert) { $cert = New-SelfSignedCertificate -Type CodeSigningCert -Subject 'CN=NKK Secure Access, O=Naturkost Kontor Bremen GmbH' -KeyUsage DigitalSignature -KeyExportPolicy NonExportable -FriendlyName $fp -CertStoreLocation 'Cert:\CurrentUser\My' -NotAfter (Get-Date).AddYears(10) }
+if (-not $cert) { exit 1 }
+$tp = $cert.Thumbprint
+$pub = Join-Path $env:TEMP 'nkk-rdp.cer'
+Export-Certificate -Cert $cert -FilePath $pub -Type CERT | Out-Null
+Import-Certificate -FilePath $pub -CertStoreLocation Cert:\CurrentUser\TrustedPublisher | Out-Null
+Import-Certificate -FilePath $pub -CertStoreLocation Cert:\CurrentUser\Root | Out-Null
+Remove-Item $pub -Force -ErrorAction SilentlyContinue
+$tsk='HKCU:\Software\Policies\Microsoft\Windows NT\Terminal Services'
+New-Item -Path $tsk -Force | Out-Null
+$cur=(Get-ItemProperty -Path $tsk -Name TrustedCertThumbprints -ErrorAction SilentlyContinue).TrustedCertThumbprints
+if (-not $cur) { $cur='' }
+if ($cur -notmatch [regex]::Escape($tp)) { Set-ItemProperty -Path $tsk -Name TrustedCertThumbprints -Value (($cur.TrimEnd(';')+";$tp").TrimStart(';')) | Out-Null }
+$tsc='HKCU:\Software\Microsoft\Terminal Server Client'
+New-Item -Path $tsc -Force | Out-Null
+New-ItemProperty -Path $tsc -Name 'RdpLaunchConsentAccepted' -PropertyType DWord -Value 1 -Force | Out-Null
+$lrk='HKCU:\Software\Microsoft\Windows\CurrentVersion\Policies\Associations'
+New-Item -Path $lrk -Force | Out-Null
+$lrf=(Get-ItemProperty -Path $lrk -Name LowRiskFileTypes -ErrorAction SilentlyContinue).LowRiskFileTypes
+if (-not $lrf) { $lrf='' }
+if ($lrf -notmatch '\.rdp') { Set-ItemProperty -Path $lrk -Name LowRiskFileTypes -Value (($lrf.TrimEnd(';')+';.rdp').TrimStart(';')) | Out-Null }
+Write-Output $tp
+"#;
+    let tmp = std::env::temp_dir().join("nkk-rdp-trust.ps1");
+    if std::fs::write(&tmp, script).is_err() {
+        return None;
+    }
+    let out = std::process::Command::new("powershell")
+        .args(["-NoProfile", "-NonInteractive", "-ExecutionPolicy", "Bypass", "-File"])
+        .arg(&tmp)
+        .creation_flags(0x08000000)
+        .output()
+        .ok();
+    let _ = std::fs::remove_file(&tmp);
+    let out = out?;
+    let tp = String::from_utf8_lossy(&out.stdout).trim().to_string();
+    if tp.len() >= 40 && tp.chars().all(|c| c.is_ascii_hexdigit()) {
+        tracing::info!("RDP-Signaturzertifikat bereit ({}...).", &tp[..8]);
+        Some(tp)
+    } else {
+        None
+    }
+}
+
+#[cfg(target_os = "windows")]
+fn rdp_thumbprint() -> Option<String> {
+    RDP_TP.get_or_init(ensure_rdp_trust).clone()
+}
+
+#[cfg(target_os = "windows")]
+fn sign_rdp_file(rdp_path: &std::path::Path) {
+    use std::os::windows::process::CommandExt;
+    if let Some(tp) = rdp_thumbprint() {
+        // rdpsign erwartet trotz /sha256 den SHA1-Thumbprint. Best effort: schlaegt
+        // es fehl, bleibt nur die Warnung, die Verbindung geht trotzdem.
+        let _ = std::process::Command::new("rdpsign.exe")
+            .arg("/sha256")
+            .arg(&tp)
+            .arg(rdp_path)
+            .creation_flags(0x08000000)
+            .output();
+    }
+}
+
+/// Beim App-Start (Windows) einmal das RDP-Vertrauen einrichten + Thumbprint cachen,
+/// damit der erste Terminalserver-Klick nicht traege ist. Fire-and-forget.
+#[cfg(target_os = "windows")]
+pub fn warm_rdp_trust() {
+    std::thread::spawn(|| {
+        let _ = rdp_thumbprint();
+    });
+}
+#[cfg(not(target_os = "windows"))]
+pub fn warm_rdp_trust() {}
 
 #[tauri::command]
 pub async fn open_rdp(
@@ -2634,6 +2747,10 @@ pub async fn open_rdp(
 
         std::fs::write(&rdp_path, &rdp_content)
             .map_err(|e| AppError::Internal(format!("rdp file: {}", e)))?;
+
+        // NACH dem letzten Schreiben signieren (sonst invalidiert eine spaetere
+        // Aenderung die Signatur) -> keine "Unbekannter Herausgeber"-Warnung.
+        sign_rdp_file(&rdp_path);
 
         std::process::Command::new("mstsc.exe")
             .arg(rdp_path.to_string_lossy().to_string())
@@ -3144,8 +3261,14 @@ async fn poll_loop(app: AppHandle) {
                             StatusDto::disconnected(false)
                         }
                         Err(e) => {
+                            // Rohen Fehler (CLI-stderr / JSON-Parse) nur ins Log, der UI eine
+                            // ruhige Klartext-Meldung schicken - einmalig (dedupe).
                             if !LAST_STATE_ERROR.swap(true, Ordering::Relaxed) {
-                                let _ = app.emit("netbird-error", e.to_string());
+                                tracing::warn!("Status-Fehler: {}", e);
+                                let _ = app.emit(
+                                    "netbird-error",
+                                    "Verbindungsstatus konnte nicht gelesen werden.".to_string(),
+                                );
                             }
                             StatusDto::error()
                         }

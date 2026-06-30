@@ -1,0 +1,163 @@
+@import "tailwindcss";
+@import "tw-animate-css";
+
+@custom-variant dark (&:is(.dark *));
+
+/*
+  NKK Secure Access — Theme.
+  Creme/Tan als neutrale Flaechen, Kirsche als EINZIGE Akzentfarbe.
+  Funktionale Semantik separat: ok=gruen, warn=amber, destructive=rot.
+  Tiefe ueber Surface-Stufen + Hairlines, keine Card-Schatten.
+*/
+:root {
+  --radius: 0.5rem;
+
+  --background: #faf6ee;
+  --foreground: #2c2520;
+
+  --card: #fffdf9;
+  --card-foreground: #2c2520;
+  --popover: #fffdf9;
+  --popover-foreground: #2c2520;
+
+  --primary: #a01f2d;
+  --primary-foreground: #fdf3f1;
+
+  --secondary: #efe6d6;
+  --secondary-foreground: #463b31;
+
+  --muted: #f2ecdf;
+  --muted-foreground: #897c6e;
+
+  --accent: #f6e6e7;
+  --accent-foreground: #8f1c28;
+
+  --destructive: #b3261e;
+  --destructive-foreground: #ffffff;
+
+  --border: #e7dccb;
+  --input: #e7dccb;
+  --ring: #a01f2d;
+
+  /* funktionale Status-Semantik */
+  --ok: #2e7d52;
+  --ok-foreground: #1c4d33;
+  --warn: #9a6a12;
+  --warn-foreground: #5c3f0a;
+
+  --chart-1: #a01f2d;
+  --chart-2: #caa978;
+  --chart-3: #2e7d52;
+  --chart-4: #9a6a12;
+  --chart-5: #6a5f54;
+
+  --sidebar: #f5efe3;
+  --sidebar-foreground: #2c2520;
+  --sidebar-primary: #a01f2d;
+  --sidebar-primary-foreground: #fdf3f1;
+  --sidebar-accent: #ece2d0;
+  --sidebar-accent-foreground: #463b31;
+  --sidebar-border: #e7dccb;
+  --sidebar-ring: #a01f2d;
+}
+
+.dark {
+  --background: #1b1714;
+  --foreground: #ede4d6;
+  --card: #221d19;
+  --card-foreground: #ede4d6;
+  --popover: #221d19;
+  --popover-foreground: #ede4d6;
+  --primary: #d8455a;
+  --primary-foreground: #1b1714;
+  --secondary: #2c2620;
+  --secondary-foreground: #ede4d6;
+  --muted: #2c2620;
+  --muted-foreground: #a89a89;
+  --accent: #3a2a2c;
+  --accent-foreground: #f0c9ce;
+  --destructive: #e0524a;
+  --destructive-foreground: #1b1714;
+  --border: #342d27;
+  --input: #342d27;
+  --ring: #d8455a;
+  --ok: #4caf7d;
+  --ok-foreground: #d7efe1;
+  --warn: #c79433;
+  --warn-foreground: #f3e4c4;
+  --sidebar: #221d19;
+  --sidebar-foreground: #ede4d6;
+  --sidebar-primary: #d8455a;
+  --sidebar-primary-foreground: #1b1714;
+  --sidebar-accent: #2c2620;
+  --sidebar-accent-foreground: #ede4d6;
+  --sidebar-border: #342d27;
+  --sidebar-ring: #d8455a;
+}
+
+@theme inline {
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+
+  --color-ok: var(--ok);
+  --color-ok-foreground: var(--ok-foreground);
+  --color-warn: var(--warn);
+  --color-warn-foreground: var(--warn-foreground);
+
+  --color-chart-1: var(--chart-1);
+  --color-chart-2: var(--chart-2);
+  --color-chart-3: var(--chart-3);
+  --color-chart-4: var(--chart-4);
+  --color-chart-5: var(--chart-5);
+
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+
+  --radius-sm: calc(var(--radius) - 4px);
+  --radius-md: calc(var(--radius) - 2px);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) + 4px);
+
+  --font-sans: "Inter", ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, sans-serif;
+  --font-mono: ui-monospace, "SF Mono", "JetBrains Mono", Menlo, Consolas, monospace;
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  body {
+    @apply bg-background text-foreground;
+    margin: 0;
+    font-feature-settings: "tnum" 1, "cv11" 1, "ss01" 1;
+    -webkit-font-smoothing: antialiased;
+    -moz-osx-font-smoothing: grayscale;
+    text-rendering: optimizeLegibility;
+  }
+  .tnum {
+    font-variant-numeric: tabular-nums;
+  }
+}

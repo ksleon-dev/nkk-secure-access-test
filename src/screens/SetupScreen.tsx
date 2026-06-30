@@ -32,10 +32,17 @@ export function SetupScreen({ branding, onComplete }: Props) {
       toast.success("Einrichtung abgeschlossen!");
       setTimeout(() => onComplete(), 1500);
     } catch (e: unknown) {
-      const msg = e instanceof Error ? e.message : String(e);
+      console.error("install_netbird:", e);
+      const raw = e instanceof Error ? e.message : String(e);
+      // Kuratierte Backend-Meldungen (z.B. "Installation abgebrochen ...") behalten,
+      // nur den rohen stderr-Leak ("Installation fehlgeschlagen: <stderr>") durch
+      // ruhigen Klartext ersetzen - kein technischer Fehler auf dem ersten Screen.
+      const friendly = raw.startsWith("Installation fehlgeschlagen")
+        ? "Die Einrichtung hat nicht geklappt. Bitte erneut versuchen oder beim Support melden."
+        : raw;
       setPhase("error");
-      setStatusText(msg);
-      toast.error(msg);
+      setStatusText(friendly);
+      toast.error(friendly);
     } finally {
       busyRef.current = false;
     }
