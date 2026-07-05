@@ -24,7 +24,7 @@ if (-not $cert) {
     -FriendlyName $fp -CertStoreLocation 'Cert:\CurrentUser\My' `
     -NotAfter (Get-Date).AddYears(10)
 }
-$tp = $cert.Thumbprint   # SHA1, Grossbuchstaben, ohne Leerzeichen
+$tp = ($cert.Thumbprint.ToUpper() -replace '[^0-9A-F]','')   # SHA1, UPPERCASE, ohne Leerzeichen
 
 # 2) Oeffentlichen Teil als vertrauenswuerdig hinterlegen (TrustedPublisher + Root)
 $pub = Join-Path $env:TEMP 'nkk-rdp.cer'
@@ -36,6 +36,8 @@ Remove-Item $pub -Force -ErrorAction SilentlyContinue
 # 3) Thumbprint als vertrauenswuerdiger .rdp-Publisher (killt Warnung 2 ganz) - append-sicher
 $tsk = 'HKCU:\Software\Policies\Microsoft\Windows NT\Terminal Services'
 New-Item -Path $tsk -Force | Out-Null
+# AllowSignedFiles=1 ist der eigentliche Schalter, der die April-2026-Warnung fuer signierte .rdp abstellt
+New-ItemProperty -Path $tsk -Name 'AllowSignedFiles' -PropertyType DWord -Value 1 -Force | Out-Null
 $cur = (Get-ItemProperty -Path $tsk -Name TrustedCertThumbprints -ErrorAction SilentlyContinue).TrustedCertThumbprints
 if (-not $cur) { $cur = '' }
 if ($cur -notmatch [regex]::Escape($tp)) {

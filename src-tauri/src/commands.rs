@@ -2358,10 +2358,37 @@ pub async fn app_settings_save(
     Ok(())
 }
 
+/// Standard-Windows-Domaene fuer die RDP-Anmeldung. Ohne Domaene im Profil waehlt
+/// Windows sonst die falsche (lokale) Domaene vor - viele Mitarbeiter melden sich
+/// dann an der falschen an. NKK-Domaene = NKKHB. (White-Label: spaeter aus Branding.)
+const RDP_DEFAULT_DOMAIN: &str = "NKKHB";
+
+/// Effektive Anmelde-Domaene: die im Profil gesetzte, sonst der Standard (NKKHB).
+fn rdp_domain(p: &CredentialProfile) -> String {
+    p.domain
+        .as_deref()
+        .map(str::trim)
+        .filter(|d| !d.is_empty())
+        .unwrap_or(RDP_DEFAULT_DOMAIN)
+        .to_string()
+}
+
+/// Anmelde-User IMMER als DOMAIN\user (Domaene erzwungen -> Windows waehlt die
+/// richtige Domaene vor, statt der lokalen Maschine). Leerer Username -> None.
+fn rdp_login(p: &CredentialProfile) -> Option<String> {
+    if p.username.trim().is_empty() {
+        None
+    } else {
+        Some(format!("{}\\{}", rdp_domain(p), p.username.trim()))
+    }
+}
+
 fn rdp_file_content(target: &str, s: &RdpSettings, username: Option<&str>) -> String {
     let mut lines = vec![
         format!("full address:s:{}", target),
-        "authentication level:i:2".to_string(),
+        // Level 0: Server-Zert nicht pruefen (Verbindung laeuft ueber das vertraute
+        // Overlay bzw. den public-CA-Gateway) -> keine Server-Identitaets-Warnung.
+        "authentication level:i:0".to_string(),
         "screen mode id:i:2".to_string(),
         "smart sizing:i:1".to_string(),
         format!("audiomode:i:{}", if s.audio { 0 } else { 2 }),
@@ -2376,10 +2403,19 @@ fn rdp_file_content(target: &str, s: &RdpSettings, username: Option<&str>) -> St
     if s.microphone {
         lines.push("audiocapturemode:i:1".to_string());
     }
-    if let Some(u) = username {
-        if !u.is_empty() {
-            lines.push(format!("username:s:{}", u));
-        }
+    // Domaene fuer den Anmelde-Prompt IMMER vorwaehlen (aus dem qualifizierten
+    // DOMAIN\user, sonst Default NKKHB), damit Windows nie die lokale Domaene nimmt.
+    let dom = username
+        .and_then(|u| u.split_once('\\').map(|(d, _)| d))
+        .filter(|d| !d.is_empty())
+        .unwrap_or(RDP_DEFAULT_DOMAIN);
+    lines.push(format!("domain:s:{}", dom));
+    match username {
+        Some(u) if !u.is_empty() => lines.push(format!("username:s:{}", u)),
+        // Kein bekannter User -> nur die Domaene vorwaehlen: "DOMAIN\" mit leerem User.
+        // Der Windows-Prompt zeigt dann NKKHB vorgewaehlt und der Mitarbeiter tippt nur
+        // seinen Namen dahinter (der zuverlaessigste Weg, die Domaene zu erzwingen).
+        _ => lines.push(format!("username:s:{}\\", dom)),
     }
     lines.join("\r\n") + "\r\n"
 }
@@ -2406,10 +2442,7 @@ pub async fn create_desktop_rdp_shortcut(
 
     let s = load_rdp_settings(&app);
     let profiles = cached_profiles(&state).await.unwrap_or_default();
-    let username = profiles.first().map(|p| match &p.domain {
-        Some(d) if !d.is_empty() => format!("{}\\{}", d, p.username),
-        _ => p.username.clone(),
-    });
+    let username = profiles.first().and_then(rdp_login);
 
     let content = rdp_file_content(&target, &s, username.as_deref());
     let name = branding
@@ -2551,7 +2584,7 @@ $fp='NKK RDP Signing'
 $cert = Get-ChildItem Cert:\CurrentUser\My | Where-Object { $_.FriendlyName -eq $fp -and $_.NotAfter -gt (Get-Date) } | Select-Object -First 1
 if (-not $cert) { $cert = New-SelfSignedCertificate -Type CodeSigningCert -Subject 'CN=NKK Secure Access, O=Naturkost Kontor Bremen GmbH' -KeyUsage DigitalSignature -KeyExportPolicy NonExportable -FriendlyName $fp -CertStoreLocation 'Cert:\CurrentUser\My' -NotAfter (Get-Date).AddYears(10) }
 if (-not $cert) { exit 1 }
-$tp = $cert.Thumbprint
+$tp = ($cert.Thumbprint.ToUpper() -replace '[^0-9A-F]','')
 $pub = Join-Path $env:TEMP 'nkk-rdp.cer'
 Export-Certificate -Cert $cert -FilePath $pub -Type CERT | Out-Null
 Import-Certificate -FilePath $pub -CertStoreLocation Cert:\CurrentUser\TrustedPublisher | Out-Null
@@ -2559,6 +2592,7 @@ Import-Certificate -FilePath $pub -CertStoreLocation Cert:\CurrentUser\Root | Ou
 Remove-Item $pub -Force -ErrorAction SilentlyContinue
 $tsk='HKCU:\Software\Policies\Microsoft\Windows NT\Terminal Services'
 New-Item -Path $tsk -Force | Out-Null
+New-ItemProperty -Path $tsk -Name 'AllowSignedFiles' -PropertyType DWord -Value 1 -Force | Out-Null
 $cur=(Get-ItemProperty -Path $tsk -Name TrustedCertThumbprints -ErrorAction SilentlyContinue).TrustedCertThumbprints
 if (-not $cur) { $cur='' }
 if ($cur -notmatch [regex]::Escape($tp)) { Set-ItemProperty -Path $tsk -Name TrustedCertThumbprints -Value (($cur.TrimEnd(';')+";$tp").TrimStart(';')) | Out-Null }
@@ -2602,14 +2636,26 @@ fn rdp_thumbprint() -> Option<String> {
 fn sign_rdp_file(rdp_path: &std::path::Path) {
     use std::os::windows::process::CommandExt;
     if let Some(tp) = rdp_thumbprint() {
-        // rdpsign erwartet trotz /sha256 den SHA1-Thumbprint. Best effort: schlaegt
-        // es fehl, bleibt nur die Warnung, die Verbindung geht trotzdem.
-        let _ = std::process::Command::new("rdpsign.exe")
-            .arg("/sha256")
-            .arg(&tp)
-            .arg(rdp_path)
-            .creation_flags(0x08000000)
-            .output();
+        // rdpsign nimmt trotz /sha256 den SHA1-Store-Thumbprint (/sha256 = Signatur-Hash).
+        // Absoluter Pfad statt PATH; rdpsign MUSS der letzte Schreibvorgang auf die .rdp
+        // sein, sonst bricht die Signatur -> "Unbekannter Herausgeber". Bei Fehler 1x retry.
+        let rdpsign = format!(
+            "{}\\System32\\rdpsign.exe",
+            std::env::var("SystemRoot").unwrap_or_else(|_| "C:\\Windows".into())
+        );
+        let run = || {
+            std::process::Command::new(&rdpsign)
+                .arg("/sha256")
+                .arg(&tp)
+                .arg(rdp_path)
+                .creation_flags(0x08000000)
+                .output()
+                .map(|o| o.status.success())
+                .unwrap_or(false)
+        };
+        if !run() && !run() {
+            tracing::warn!("rdpsign fehlgeschlagen, .rdp evtl. unsigniert (Herausgeber-Warnung moeglich).");
+        }
     }
 }
 
@@ -2693,8 +2739,13 @@ pub async fn open_rdp(
 
         // .rdp files MUST use \r\n line endings - mstsc.exe on some Windows
         // versions silently ignores settings with \n-only line endings.
+        // authentication level:i:0 = keine Server-Zert-Pruefung. Ueber das authentifizierte
+        // NetBird-Overlay (fester interner Ziel-IP, kein Gateway ins Internet) ist die RDP-
+        // Server-Zert-Pruefung redundant; Level 0 stellt die "Identitaet kann nicht ueberprueft
+        // werden"-Warnung beim self-signed TS-Zert bulletproof still (thumbprint-unabhaengig,
+        // immun gegen die ~6-Monats-Rotation des Serverzerts).
         let mut lines: Vec<String> = vec![
-            "authentication level:i:2".into(),
+            "authentication level:i:0".into(),
             "screen mode id:i:2".into(),
             "smart sizing:i:1".into(),
             "redirectcomports:i:0".into(),
@@ -2726,23 +2777,29 @@ pub async fn open_rdp(
         let mut owned_lines: Vec<String> = vec![full_addr];
 
         if let Some(p) = profiles.first() {
-            // Inject credentials via cmdkey BEFORE mstsc reads the .rdp file
-            let user = match &p.domain {
-                Some(d) if !d.is_empty() => format!("{}\\{}", d, p.username),
-                _ => p.username.clone(),
-            };
-            tracing::info!("RDP: Injiziere Credentials fuer {} via cmdkey", user);
-            let _ = std::process::Command::new("cmdkey")
-                .args([
-                    &format!("/generic:TERMSRV/{}", target),
-                    &format!("/user:{}", user),
-                    &format!("/pass:{}", p.password),
-                ])
-                .creation_flags(0x08000000)
-                .output();
-            if !p.username.is_empty() {
+            if let Some(user) = rdp_login(p) {
+                // Credentials via cmdkey injizieren BEVOR mstsc die .rdp liest -> im
+                // Idealfall gar kein Prompt. user ist immer DOMAIN\user (Default NKKHB).
+                tracing::info!("RDP: Injiziere Credentials fuer {} via cmdkey", user);
+                let _ = std::process::Command::new("cmdkey")
+                    .args([
+                        &format!("/generic:TERMSRV/{}", target),
+                        &format!("/user:{}", user),
+                        &format!("/pass:{}", p.password),
+                    ])
+                    .creation_flags(0x08000000)
+                    .output();
+                // Domaene + User im .rdp vorwaehlen: falls doch ein Prompt kommt, ist
+                // die Domaene IMMER NKKHB (nicht die lokale Maschine).
+                owned_lines.push(format!("domain:s:{}", rdp_domain(p)));
                 owned_lines.push(format!("username:s:{}", user));
             }
+        }
+        // Falls kein Username im .rdp landete (kein/leeres Profil): trotzdem die Domaene
+        // vorwaehlen, damit der Windows-Prompt NKKHB zeigt statt der lokalen Maschine.
+        if !owned_lines.iter().any(|l| l.starts_with("username:s:")) {
+            owned_lines.push(format!("domain:s:{}", RDP_DEFAULT_DOMAIN));
+            owned_lines.push(format!("username:s:{}\\", RDP_DEFAULT_DOMAIN));
         }
 
         let mut rdp_content = String::new();
@@ -2820,10 +2877,8 @@ pub async fn open_rdp(
                 } else {
                     "xfreerdp"
                 };
-                let user = match &p.domain {
-                    Some(d) if !d.is_empty() => format!("{}\\{}", d, p.username),
-                    _ => p.username.clone(),
-                };
+                // Immer DOMAIN\user (Default NKKHB), sonst waehlt Windows die falsche Domaene.
+                let user = rdp_login(p).unwrap_or_else(|| p.username.clone());
                 let is_v3 = bin == "xfreerdp3";
                 let home = std::env::var("HOME").unwrap_or_else(|_| "/Users/Shared".to_string());
                 let mut args: Vec<String> = vec![
@@ -2863,7 +2918,7 @@ pub async fn open_rdp(
         // macOS: only pre-fill username (no domain - Apple RDP handles it automatically,
         // no password - Keychain injection not possible on macOS)
         let mut rdp_file = format!(
-            "full address:s:{target}\nauthentication level:i:2\nscreen mode id:i:2\nsmart sizing:i:1\naudiomode:i:{}\nredirectclipboard:i:{}\nuse multimon:i:{}\n",
+            "full address:s:{target}\nauthentication level:i:0\nscreen mode id:i:2\nsmart sizing:i:1\naudiomode:i:{}\nredirectclipboard:i:{}\nuse multimon:i:{}\n",
             if rdp.audio { 0 } else { 2 },
             if rdp.clipboard { 1 } else { 0 },
             if rdp.multimon { 1 } else { 0 },
@@ -2872,8 +2927,10 @@ pub async fn open_rdp(
             rdp_file.push_str("camerastoredirect:s:*\n");
         }
         if let Some(p) = profiles.first() {
-            if !p.username.is_empty() {
-                rdp_file.push_str(&format!("username:s:{}\n", p.username));
+            if let Some(user) = rdp_login(p) {
+                // Domaene erzwingen (Default NKKHB) statt nur den blossen Usernamen.
+                rdp_file.push_str(&format!("domain:s:{}\n", rdp_domain(p)));
+                rdp_file.push_str(&format!("username:s:{}\n", user));
             }
             rdp_file.push_str("prompt for credentials:i:0\n");
         } else {
@@ -4057,21 +4114,27 @@ async fn wired_already_preferred() -> bool {
     // metric is strictly lower than Wi-Fi's (a tie is treated as not preferred,
     // so the user still gets the option to fix it).
     let ps = "$e = Get-NetAdapter -Physical | Where-Object { $_.Status -eq 'Up' -and $_.PhysicalMediaType -notlike '*802.11*' } | Select-Object -First 1; $w = Get-NetAdapter -Physical | Where-Object { $_.Status -eq 'Up' -and $_.PhysicalMediaType -like '*802.11*' } | Select-Object -First 1; if ($e -and $w) { $em = (Get-NetIPInterface -InterfaceIndex $e.ifIndex -AddressFamily IPv4).InterfaceMetric; $wm = (Get-NetIPInterface -InterfaceIndex $w.ifIndex -AddressFamily IPv4).InterfaceMetric; if ($em -lt $wm) { 'WIRED' } else { 'OTHER' } } else { 'OTHER' }";
-    let out = TokioCommand::new("powershell")
-        .args([
-            "-NoProfile",
-            "-NonInteractive",
-            "-inputformat",
-            "none",
-            "-ExecutionPolicy",
-            "Bypass",
-            "-Command",
-            ps,
-        ])
-        .creation_flags(0x08000000)
-        .output()
-        .await;
-    matches!(out, Ok(o) if o.status.success() && String::from_utf8_lossy(&o.stdout).contains("WIRED"))
+    // Hartes Timeout: der PowerShell-Start ist langsam (~0,5-1s); haengt er, darf er
+    // die Netz-Erkennung NICHT blockieren. Bei Timeout gilt "nicht bevorzugt" (sicherer
+    // Default -> der Nutzer bekommt weiterhin die Fix-Option angeboten).
+    let out = timeout(
+        Duration::from_millis(2500),
+        TokioCommand::new("powershell")
+            .args([
+                "-NoProfile",
+                "-NonInteractive",
+                "-inputformat",
+                "none",
+                "-ExecutionPolicy",
+                "Bypass",
+                "-Command",
+                ps,
+            ])
+            .creation_flags(0x08000000)
+            .output(),
+    )
+    .await;
+    matches!(out, Ok(Ok(o)) if o.status.success() && String::from_utf8_lossy(&o.stdout).contains("WIRED"))
 }
 
 #[cfg(not(any(target_os = "macos", target_os = "windows")))]
