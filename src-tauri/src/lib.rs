@@ -55,9 +55,10 @@ pub fn run() {
             app.manage(TrayAvailable(tray_ok));
 
             // Eagerly load branding so a missing/broken branding.json shows up in
-            // the logs at startup, and collect the RDP targets so stale-credential
-            // cleanup is driven by branding instead of hardcoded tenant IPs.
+            // the logs at startup, and collect the RDP + SMB targets so stale-
+            // credential cleanup is driven by branding instead of hardcoded IPs.
             let mut rdp_targets: Vec<String> = Vec::new();
+            let mut smb_targets: Vec<String> = Vec::new();
             match app.path().resource_dir() {
                 Ok(resource_dir) => match branding::load(&resource_dir) {
                     Ok(b) => {
@@ -65,6 +66,12 @@ pub fn run() {
                             .quick_launch
                             .iter()
                             .filter(|q| q.kind == "rdp")
+                            .map(|q| q.target.clone())
+                            .collect();
+                        smb_targets = b
+                            .quick_launch
+                            .iter()
+                            .filter(|q| q.kind == "smb")
                             .map(|q| q.target.clone())
                             .collect();
                     }
@@ -84,7 +91,7 @@ pub fn run() {
             // Honour a persisted "Trennen" before the poller starts, so a
             // deliberate disconnect is not auto-reconnected after a restart.
             commands::init_user_disconnected(app.handle());
-            commands::cleanup_stale_credentials(&rdp_targets);
+            commands::cleanup_stale_credentials(&rdp_targets, &smb_targets);
             commands::start_status_polling(app.handle().clone());
             // RDP-Vertrauen (Zertifikat + Registry) im Hintergrund einrichten, damit der
             // erste Terminalserver-Klick keine Windows-Warnung zeigt und nicht traege ist.

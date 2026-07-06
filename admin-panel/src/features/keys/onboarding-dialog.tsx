@@ -1,5 +1,6 @@
 import { useState } from "react"
 import { toast } from "sonner"
+import { useData } from "@/lib/data-context"
 import { api } from "@/lib/api"
 import { copyText } from "@/lib/clipboard"
 import { Button } from "@/components/ui/button"
@@ -10,16 +11,16 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@
 import { Loader2, Copy, Check, UserPlus } from "lucide-react"
 import type { Group } from "@/lib/types"
 
-const DOWNLOAD = "https://api.secure.nkk-hb.de/download/NKK-Secure-Access-Setup.exe"
+const FALLBACK_EXE = "https://api.secure.nkk-hb.de/download/NKK-Secure-Access-Setup.exe"
 
-function mailText(key: string): string {
+function mailText(key: string, exeUrl: string): string {
   return `Betreff: Euer neuer Fernzugang ist da
 
 Hallo zusammen,
 
 wir haben einen neuen, einfacheren Fernzugang vorbereitet. Hier ist der Installer:
 
-${DOWNLOAD}
+${exeUrl}
 
 So geht die Einrichtung:
 1. Den Link oben anklicken und die Datei speichern.
@@ -31,7 +32,7 @@ So geht die Einrichtung:
 
    ${key}
 
-6. Auf "Terminalserver 2" klicken und wie gewohnt arbeiten.
+6. Den gewuenschten Server auswaehlen und wie gewohnt arbeiten.
 
 Bei Problemen: in der App oben rechts auf das Kopfhoerer-Symbol,
 dann "Diagnose kopieren" und an support@ticket.kronsolutions.de senden.
@@ -42,6 +43,8 @@ KronSolutions GmbH`
 }
 
 export function OnboardingDialog({ groups, onClose, onDone }: { groups: Group[]; onClose: () => void; onDone: () => void }) {
+  const { data } = useData()
+  const exeUrl = data?.downloads?.windows_exe ?? FALLBACK_EXE
   const homeoffice = groups.find((g) => /homeoffice/i.test(g.name))
   const [name, setName] = useState("")
   const [group, setGroup] = useState(homeoffice?.id ?? "")
@@ -71,7 +74,7 @@ export function OnboardingDialog({ groups, onClose, onDone }: { groups: Group[];
 
   async function copy(what: "key" | "mail") {
     if (!key) return
-    const ok = await copyText(what === "key" ? key : mailText(key), what === "key" ? "Schlüssel kopiert" : "Mailtext kopiert")
+    const ok = await copyText(what === "key" ? key : mailText(key, exeUrl), what === "key" ? "Schlüssel kopiert" : "Mailtext kopiert", { allowPrompt: false })
     if (ok) {
       setCopied(what)
       setTimeout(() => setCopied(null), 1500)
@@ -96,9 +99,9 @@ export function OnboardingDialog({ groups, onClose, onDone }: { groups: Group[];
               </div>
               {groups.length > 0 && (
                 <div>
-                  <Label className="mb-1.5">Gruppe</Label>
+                  <Label htmlFor="og" className="mb-1.5">Gruppe</Label>
                   <Select value={group} onValueChange={setGroup}>
-                    <SelectTrigger><SelectValue placeholder="Gruppe wählen" /></SelectTrigger>
+                    <SelectTrigger id="og"><SelectValue placeholder="Gruppe wählen" /></SelectTrigger>
                     <SelectContent>
                       {groups.map((g) => (
                         <SelectItem key={g.id} value={g.id}>{g.name}</SelectItem>
@@ -121,7 +124,7 @@ export function OnboardingDialog({ groups, onClose, onDone }: { groups: Group[];
               <DialogTitle className="flex items-center gap-2">
                 <Check className="size-4 text-ok" /> Bereit zum Versenden
               </DialogTitle>
-              <DialogDescription>Schlüssel wird nur einmal angezeigt. Mailtext enthält Link + Schlüssel + Anleitung.</DialogDescription>
+              <DialogDescription>Kannst du später über „Anzeigen“ erneut einsehen. Mailtext enthält Link + Schlüssel + Anleitung.</DialogDescription>
             </DialogHeader>
             <div className="space-y-3">
               <div>
@@ -135,7 +138,7 @@ export function OnboardingDialog({ groups, onClose, onDone }: { groups: Group[];
               </div>
               <div>
                 <Label className="mb-1.5">Einladungstext (Mail)</Label>
-                <pre className="max-h-48 overflow-auto whitespace-pre-wrap rounded-lg border bg-secondary/40 p-3 text-[12px] leading-relaxed">{mailText(key)}</pre>
+                <pre className="max-h-48 overflow-auto whitespace-pre-wrap rounded-lg border bg-secondary/40 p-3 text-[12px] leading-relaxed">{mailText(key, exeUrl)}</pre>
               </div>
             </div>
             <DialogFooter>

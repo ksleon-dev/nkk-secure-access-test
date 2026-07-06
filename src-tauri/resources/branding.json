@@ -5,7 +5,7 @@
     "tagline": "Dein Bio-Großhandel",
     "logoText": ["Naturkost", "Kontor", "BREMEN"],
     "networkName": "NKK Netz",
-    "version": "0.3.21"
+    "version": "0.3.22"
   },
   "vendor": {
     "name": "KronSolutions GmbH",
@@ -67,7 +67,7 @@
       "type": "rdp",
       "target": "192.168.0.36",
       "icon": "server",
-      "role": "it_admin",
+      "role": "it_admin,infact",
       "hotkey": "4"
     },
     {
@@ -103,7 +103,7 @@
       "type": "smb",
       "target": "\\\\serv-file\\Daten",
       "icon": "folder",
-      "role": "admin"
+      "role": "admin,infact"
     },
     {
       "label": "Serv-Secure SSH",

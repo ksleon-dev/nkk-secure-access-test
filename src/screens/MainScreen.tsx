@@ -39,6 +39,7 @@ import { de } from "../i18n/de";
 import { copyText } from "../lib/clipboard";
 import { italicAccent, timeOfDayGreeting } from "../lib/greeting";
 import type { BrandingDto, QuickLaunchEntry } from "../types/branding";
+import { roleCanSee, normalizeRole, ROLE_LABELS } from "../lib/roles";
 import { displayName, type CredentialProfileMeta } from "../types/credentials";
 import type {
   AppSettings,
@@ -154,16 +155,11 @@ export function MainScreen({
   const [role, setRole] = useState<UserRole>("user");
   useEffect(() => {
     invoke<AppSettings>("app_settings_get")
-      .then((s) =>
-        // WICHTIG: "it_admin" mit durchreichen, sonst faellt der Admin-Modus still
-        // auf "user" zurueck und erscheint nie.
-        setRole(
-          s.role === "manager" || s.role === "it_admin" ? s.role : "user"
-        )
-      )
+      // normalizeRole reicht alle bekannten Rollen durch (inkl. it_admin, infact)
+      // und faellt bei Unbekanntem sicher auf "user" zurueck.
+      .then((s) => setRole(normalizeRole(s.role)))
       .catch(() => {});
   }, []);
-  const isManager = role === "manager";
   const isItAdmin = role === "it_admin";
   const [fixing, setFixing] = useState(false);
   const [fixResult, setFixResult] = useState<SmartDebugResult | null>(null);
@@ -375,10 +371,7 @@ export function MainScreen({
       // keine role -> Shift+1 bleibt fuer alle.
       const item = branding.quickLaunch.find((q) => {
         if (q.hotkey !== m[1]) return false;
-        if (q.role === "manager") return isManager;
-        if (q.role === "it_admin") return isItAdmin;
-        if (q.role === "admin") return isManager || isItAdmin;
-        return true;
+        return roleCanSee(q.role, role);
       });
       if (item) {
         e.preventDefault();
@@ -387,7 +380,7 @@ export function MainScreen({
     };
     window.addEventListener("keydown", onKey);
     return () => window.removeEventListener("keydown", onKey);
-  }, [branding.quickLaunch, onRequestLaunch, isManager, isItAdmin]);
+  }, [branding.quickLaunch, onRequestLaunch, role]);
 
   const greetingName = displayName(profile);
   const greeting = timeOfDayGreeting();
@@ -432,12 +425,9 @@ export function MainScreen({
   const launches = [...branding.quickLaunch]
     .filter((q) => {
       if (q.hidden) return false;
-      // Rollen-Gate: manager-only, it_admin-only, oder "admin" (beide privilegierten
-      // Rollen). Ungegatete Ziele sieht jeder.
-      if (q.role === "manager") return isManager;
-      if (q.role === "it_admin") return isItAdmin;
-      if (q.role === "admin") return isManager || isItAdmin;
-      return true;
+      // Rollen-Gate zentral in lib/roles.ts (kommagetrennte Tokenliste; IT Admin
+      // sieht alles). Ungegatete Ziele sieht jeder.
+      return roleCanSee(q.role, role);
     })
     .sort((a, b) => Number(!!b.default) - Number(!!a.default));
 
@@ -727,9 +717,9 @@ export function MainScreen({
           </div>
         </div>
 
-        {(isManager || isItAdmin) && (
+        {role !== "user" && (
           <div className="banner-in mt-1 px-3 py-1 rounded-full border border-[color:var(--brand-primary)]/35 text-[color:var(--brand-primary)] text-[10.5px] font-semibold tracking-wide">
-            {isManager ? "Geschäftsführer" : "IT Admin"}
+            {ROLE_LABELS[role]}
           </div>
         )}
 
@@ -892,7 +882,7 @@ export function MainScreen({
         {/* Privilegierte Rollen (Geschäftsführer + IT Admin) sehen im verbundenen
             Zustand eine ruhige Übersichtskarte: welches Netz, statt die IP aus der
             unteren Statusleiste zu doppeln. */}
-        {(isManager || isItAdmin) && isConnected && (
+        {role !== "user" && isConnected && (
           <div className="fade-soft w-full surface rounded-xl px-3 py-2 mt-1 flex items-center justify-between text-[11px]">
             <span className="flex items-center gap-1.5 font-semibold text-emerald-700">
               <ShieldCheck size={13} />

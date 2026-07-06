@@ -21,13 +21,19 @@ export function computeAlerts(d: DashboardData): Alert[] {
   const normV = (v?: string | null) => (v && v !== "None" ? v : null)
   const outdated = d.devices.filter((x) => normV(x.app_version) && normV(x.app_version) !== cur).length
   if (outdated > 0) {
+    // Wenn Level-Automations vorhanden sind, gibt es einen echten Rollout-Weg
+    // (Releases-Seite, Komplett-Rollout via Level). Sonst ehrlich formulieren
+    // statt faelschlich "beim naechsten Start automatisch" zu versprechen.
+    const canRollout = !!(d.level_automations && d.level_automations.length > 0)
     out.push({
       id: "outdated",
       severity: "high",
       title: `${outdated} Geräte auf veralteter Version`,
-      detail: `${outdated} von ${d.devices.length} Geräten sind nicht auf ${cur}. Sie aktualisieren sich beim nächsten Start automatisch.`,
-      actionLabel: "Geräte ansehen",
-      actionTo: "/devices",
+      detail: canRollout
+        ? `${outdated} von ${d.devices.length} Geräten sind nicht auf ${cur}. Ueber Level lassen sie sich in einem Zug ausrollen.`
+        : `${outdated} von ${d.devices.length} Geräten sind nicht auf ${cur}. Update ueber Releases anstossen, ein automatischer Neustart kommt nicht garantiert.`,
+      actionLabel: canRollout ? "Update ausrollen" : "Geräte ansehen",
+      actionTo: canRollout ? "/releases" : "/devices",
     })
   }
 
@@ -57,6 +63,22 @@ export function computeAlerts(d: DashboardData): Alert[] {
     }
   }
 
+  // Akut offline: Geraete, die per NetBird getrennt sind oder deren Level-Agent
+  // offline meldet. Zeigt aktuelle Ausfaelle, nicht nur die aggregierte KPI.
+  const offline = d.devices.filter(
+    (x) => x.netbird?.connected === false || (x.level && x.level.online === false),
+  ).length
+  if (offline > 0) {
+    out.push({
+      id: "devices-offline",
+      severity: "warn",
+      title: `${offline} Geräte offline oder nicht erreichbar`,
+      detail: "Aktuell getrennte Geraete pruefen: VPN-Verbindung oder Gerät aus.",
+      actionLabel: "Geräte ansehen",
+      actionTo: "/devices",
+    })
+  }
+
   for (const p of d.peers) {
     if (p.connected) continue
     const ds = daysSince(p.last_seen)
@@ -66,6 +88,16 @@ export function computeAlerts(d: DashboardData): Alert[] {
         severity: "info",
         title: `Peer „${p.name}" seit ${ds} Tagen offline`,
         detail: "Falls das Gerät weg ist: offboarden, um Ordnung zu halten.",
+        actionLabel: "Peers",
+        actionTo: "/peers",
+      })
+    } else if (ds != null && ds < 7) {
+      // Akuter Verbindungsabbruch (getrennt vom 45-Tage-Offboarding).
+      out.push({
+        id: "peer-off-" + p.id,
+        severity: "warn",
+        title: `Peer „${p.name}" ist offline`,
+        detail: ds === 0 ? "Zuletzt heute gesehen, aktuell nicht verbunden." : `Zuletzt vor ${ds} ${ds === 1 ? "Tag" : "Tagen"} gesehen, aktuell nicht verbunden.`,
         actionLabel: "Peers",
         actionTo: "/peers",
       })

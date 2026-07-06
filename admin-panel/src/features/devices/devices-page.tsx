@@ -4,7 +4,7 @@ import { toast } from "sonner"
 import { useData } from "@/lib/data-context"
 import { api, AuthError } from "@/lib/api"
 import { fmtNum, relativeTime, daysSince } from "@/lib/format"
-import { PageHeader, VersionBadge, EmptyState, ErrorState, RolloutCard, ExportMdButton } from "@/components/common/bits"
+import { PageHeader, VersionBadge, AgentVersion, EmptyState, ErrorState, RolloutCard, ExportMdButton } from "@/components/common/bits"
 import { mdTable } from "@/lib/md-export"
 import { Input } from "@/components/ui/input"
 import { Skeleton } from "@/components/ui/skeleton"
@@ -21,10 +21,12 @@ import {
   DropdownMenuSubContent,
 } from "@/components/ui/dropdown-menu"
 import { cn } from "@/lib/utils"
-import { Search, Laptop, ExternalLink, ArrowUpDown, ChevronUp, ChevronDown, Activity, MoreHorizontal, RefreshCw } from "lucide-react"
+import { Search, Laptop, ExternalLink, ArrowUpDown, ChevronUp, ChevronDown, Activity, MoreHorizontal, RefreshCw, Copy } from "lucide-react"
+import { useContextMenu, type CtxMenuItem } from "@/components/row-context-menu"
+import { copyText } from "@/lib/clipboard"
 import type { Device, RunStatus } from "@/lib/types"
 
-type SortKey = "hostname" | "app_version" | "netbird" | "last_seen" | "ping_internet" | "speed_mbps" | "local_ip" | "isp"
+type SortKey = "hostname" | "app_version" | "netbird" | "last_seen" | "last_reported" | "ping_internet" | "speed_mbps" | "local_ip" | "isp"
 
 const STATUS_DE: Record<string, string> = {
   queued: "in Warteschlange",
@@ -45,6 +47,8 @@ function sortValue(d: Device, key: SortKey): string | number | null {
   switch (key) {
     case "last_seen":
       return d.last_seen ? Date.parse(d.last_seen) : null
+    case "last_reported":
+      return d.last_reported ? Date.parse(d.last_reported) : null
     case "ping_internet":
       return d.ping_internet ?? null
     case "speed_mbps":
@@ -196,6 +200,26 @@ export function DevicesPage() {
     return `# Geräte\n\nStand: ${new Date().toLocaleString("de-DE")} · ${rows.length} Geräte\n\n${table}\n`
   }
 
+  const ctx = useContextMenu()
+  const deviceMenu = (d: Device): CtxMenuItem[] => {
+    const items: CtxMenuItem[] = [
+      { kind: "header", label: d.hostname, sublabel: d.local_ip ?? undefined },
+      { kind: "sep" },
+      { label: "Ping-Test", icon: Activity, onSelect: () => doPing(d) },
+    ]
+    if (d.level?.open_url) {
+      const url = d.level.open_url
+      items.push({ label: "In Level öffnen", icon: ExternalLink, onSelect: () => window.open(url, "_blank", "noopener") })
+    }
+    items.push({ kind: "sep" })
+    if (d.local_ip) {
+      const ip = d.local_ip
+      items.push({ label: "Lokale IP kopieren", icon: Copy, onSelect: () => copyText(ip) })
+    }
+    items.push({ label: "Hostname kopieren", icon: Copy, onSelect: () => copyText(d.hostname) })
+    return items
+  }
+
   if (error && !data) return <ErrorState message={error} onRetry={refresh} />
 
   return (
@@ -232,7 +256,8 @@ export function DevicesPage() {
                 <SortHead label="Gerät" k="hostname" sort={sort} onSort={toggleSort} className="h-11 pl-4" />
                 <SortHead label="App" k="app_version" sort={sort} onSort={toggleSort} />
                 <SortHead label="NetBird" k="netbird" sort={sort} onSort={toggleSort} />
-                <SortHead label="Zuletzt gemeldet" k="last_seen" sort={sort} onSort={toggleSort} />
+                <SortHead label="Verbindung" k="last_seen" sort={sort} onSort={toggleSort} />
+                <SortHead label="Report" k="last_reported" sort={sort} onSort={toggleSort} />
                 <SortHead label="Ping" k="ping_internet" sort={sort} onSort={toggleSort} align="right" />
                 <SortHead label="Speed" k="speed_mbps" sort={sort} onSort={toggleSort} align="right" />
                 <SortHead label="Lokale IP" k="local_ip" sort={sort} onSort={toggleSort} />
@@ -242,7 +267,7 @@ export function DevicesPage() {
             </TableHeader>
             <TableBody>
               {rows.map((d) => (
-                <TableRow key={d.hostname} className="group">
+                <TableRow key={d.hostname} className="group" onContextMenu={(e) => ctx.open(e, deviceMenu(d))}>
                   <TableCell className="py-2.5 pl-4" data-label="Gerät">
                     <div className="flex items-center gap-3">
                       <div className="relative grid size-9 shrink-0 place-items-center rounded-lg border bg-secondary/60 text-muted-foreground transition-colors group-hover:border-primary/30 group-hover:text-primary">
@@ -278,16 +303,33 @@ export function DevicesPage() {
                   </TableCell>
                   <TableCell data-label="App">{data && <VersionBadge version={d.app_version} current={data.current_version} />}</TableCell>
                   <TableCell data-label="NetBird">
-                    {d.netbird?.version ? (
-                      <VersionBadge version={d.netbird.version} current={netbirdCurrent} />
-                    ) : (
-                      <span className="text-xs text-muted-foreground">—</span>
-                    )}
+                    <div className="flex items-center gap-2">
+                      {d.netbird?.connected != null && (
+                        <span
+                          className={cn(
+                            "size-1.5 shrink-0 rounded-full",
+                            d.netbird.connected ? "bg-ok" : "bg-muted-foreground/40",
+                          )}
+                          title={d.netbird.connected ? "VPN verbunden" : "VPN getrennt"}
+                        />
+                      )}
+                      {d.netbird?.version ? (
+                        <AgentVersion version={d.netbird.version} current={netbirdCurrent} />
+                      ) : (
+                        <span className="text-xs text-muted-foreground">—</span>
+                      )}
+                    </div>
                   </TableCell>
-                  <TableCell data-label="Zuletzt gemeldet">
+                  <TableCell data-label="Verbindung">
                     <span className="inline-flex items-center gap-2 text-muted-foreground tabular-nums">
                       <span className={cn("size-1.5 rounded-full", freshness(d.last_seen))} />
                       {relativeTime(d.last_seen)}
+                    </span>
+                  </TableCell>
+                  <TableCell data-label="Report">
+                    <span className="inline-flex items-center gap-2 text-muted-foreground tabular-nums">
+                      <span className={cn("size-1.5 rounded-full", freshness(d.last_reported))} />
+                      {relativeTime(d.last_reported)}
                     </span>
                   </TableCell>
                   <TableCell className="text-right font-mono text-[12.5px] tabular-nums" data-label="Ping">
@@ -316,6 +358,7 @@ export function DevicesPage() {
           </Table>
         </div>
       )}
+      {ctx.node}
     </div>
   )
 }

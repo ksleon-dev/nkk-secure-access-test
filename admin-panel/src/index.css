@@ -218,3 +218,25 @@
     content: none;
   }
 }
+
+/* ----------------------------------------------------------------------------
+   Desktop/Tablet: die Aktionsspalte (letzte Zelle) bleibt beim horizontalen
+   Scrollen RECHTS fixiert, damit die Aktionen nie abgeschnitten "wegrutschen".
+   Deckender Hintergrund + dezenter Schatten, damit darunterliegende Zellen
+   nicht durchscheinen. Im Karten-Modus (< md) irrelevant, daher nur ab md.
+---------------------------------------------------------------------------- */
+@media (min-width: 768px) {
+  .nkk-table thead th:last-child,
+  .nkk-table tbody td:last-child {
+    position: sticky;
+    right: 0;
+    z-index: 1;
+    background: var(--card);
+    box-shadow: -10px 0 10px -10px rgba(0, 0, 0, 0.18);
+  }
+  /* Beim Zeilen-Hover den fixierten Zellen-Hintergrund mitfaerben, sonst bleibt
+     ein heller Block stehen. */
+  .nkk-table tbody tr:hover td:last-child {
+    background: color-mix(in oklab, var(--card) 100%, var(--muted) 55%);
+  }
+}

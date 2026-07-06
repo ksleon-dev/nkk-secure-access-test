@@ -23,8 +23,9 @@ type OsKind = "windows" | "macos" | "linux" | "unknown"
 function detectOs(raw: string | null | undefined): OsKind {
   const s = (raw ?? "").toLowerCase()
   if (!s) return "unknown"
-  if (s.includes("windows") || s.includes("win")) return "windows"
+  // macOS ZUERST: 'darwin' enthaelt 'win' und wuerde sonst als Windows erkannt.
   if (s.includes("mac") || s.includes("darwin") || s.includes("apple") || s.includes("osx")) return "macos"
+  if (s.includes("windows") || /\bwin/.test(s)) return "windows"
   if (s.includes("linux") || s.includes("ubuntu") || s.includes("debian") || s.includes("fedora")) return "linux"
   return "unknown"
 }
@@ -83,8 +84,19 @@ export function GlobalSearch() {
   const { data } = useData()
 
   useEffect(() => {
+    const isEditable = (el: EventTarget | null): boolean => {
+      const t = el as HTMLElement | null
+      if (!t) return false
+      const tag = t.tagName
+      return tag === "INPUT" || tag === "TEXTAREA" || tag === "SELECT" || t.isContentEditable
+    }
     const onKey = (e: KeyboardEvent) => {
+      // Auto-Repeat ignorieren (Taste gedrueckt gehalten toggelt sonst wild).
+      if (e.repeat) return
       if (e.key.toLowerCase() === "k" && (e.metaKey || e.ctrlKey)) {
+        // Cmd/Ctrl+K nicht kapern, waehrend in einem Formularfeld getippt wird
+        // (der Fokus wuerde sonst aus News-Compose/Rename/Key-Formular gerissen).
+        if (isEditable(e.target)) return
         e.preventDefault()
         setOpen((o) => !o)
       }

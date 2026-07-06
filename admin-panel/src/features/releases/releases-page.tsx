@@ -1,12 +1,15 @@
-import { useState, type ReactNode } from "react"
+import { useRef, useState, type ReactNode } from "react"
 import { useData } from "@/lib/data-context"
+import { api } from "@/lib/api"
 import { PageHeader, ErrorState, RolloutCard, ExportMdButton } from "@/components/common/bits"
 import { mdTable } from "@/lib/md-export"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Button } from "@/components/ui/button"
-import { CheckCircle2, XCircle, Download, FileText, Copy, Check } from "lucide-react"
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import { CheckCircle2, XCircle, Download, FileText, Copy, Check, Loader2 } from "lucide-react"
 import { copyText } from "@/lib/clipboard"
 import { macInstallCmd, winInstallCmd, winRolloutCmd } from "@/lib/installcmd"
+import { RolloutCommands } from "@/features/keys/keys-page"
 import { cn } from "@/lib/utils"
 import changelogRaw from "@/data/changelog.md?raw"
 
@@ -52,6 +55,84 @@ function Notes({ body }: { body: string }) {
   )
 }
 
+// Onboarding direkt auf der Releases-Seite: Key waehlen -> Wert serverseitig holen ->
+// Profil waehlen + fertige Befehle (RolloutCommands, dieselbe Komponente wie im Keys-Dialog).
+function OnboardCard() {
+  const { data } = useData()
+  const keys = (data?.keys ?? []).filter((k) => k.valid && !k.revoked)
+  const groups = data?.groups ?? []
+  const groupName = (id: string) => groups.find((g) => g.id === id)?.name ?? id
+  const [keyId, setKeyId] = useState("")
+  const [value, setValue] = useState<string | null>(null)
+  const [err, setErr] = useState<string | null>(null)
+  const [busy, setBusy] = useState(false)
+  const selected = keys.find((k) => k.id === keyId)
+  // Stale-Response-Guard: bei schnellem Key-Wechsel darf eine spaet eintreffende
+  // Antwort des ALTEN Requests nie den Wert unter dem NEUEN Key anzeigen - der
+  // kopierte One-Liner wuerde sonst mit dem falschen Setup-Key enrollen.
+  const reqSeq = useRef(0)
+
+  async function pick(id: string) {
+    setKeyId(id)
+    setValue(null)
+    setErr(null)
+    const req = ++reqSeq.current
+    if (!id) return
+    setBusy(true)
+    try {
+      const r = await api.revealKey(id)
+      if (req !== reqSeq.current) return // veraltet: inzwischen anderer Key gewaehlt
+      if (r.key) setValue(r.key)
+      else setErr("Für diesen Key ist kein Wert gespeichert (nur im Panel erstellte Keys sind hier nutzbar).")
+    } catch (e) {
+      if (req !== reqSeq.current) return
+      setErr(e instanceof Error ? e.message : "Wert nicht verfügbar.")
+    } finally {
+      if (req === reqSeq.current) setBusy(false)
+    }
+  }
+
+  return (
+    <div className="mb-7 rounded-xl border bg-card p-5">
+      <h2 className="mb-1 text-[15px] font-semibold">Gerät onboarden — Key + Profil</h2>
+      <p className="mb-4 text-[13px] text-muted-foreground">
+        Key wählen und Profil setzen. Der fertige Befehl installiert, setzt das Profil und verbindet automatisch.
+      </p>
+      <div className="max-w-md">
+        <label className="mb-1.5 block text-[12px] font-medium text-muted-foreground">Setup-Key</label>
+        <Select value={keyId} onValueChange={pick}>
+          <SelectTrigger>
+            <SelectValue placeholder="Key wählen …" />
+          </SelectTrigger>
+          <SelectContent>
+            {keys.length === 0 ? (
+              <div className="px-2 py-1.5 text-[13px] text-muted-foreground">Keine gültigen Keys — auf der Keys-Seite anlegen.</div>
+            ) : (
+              keys.map((k) => (
+                <SelectItem key={k.id} value={k.id}>
+                  {k.name}
+                  {k.groups.length ? ` · ${k.groups.map(groupName).join(", ")}` : ""}
+                </SelectItem>
+              ))
+            )}
+          </SelectContent>
+        </Select>
+      </div>
+      {busy && (
+        <div className="mt-3 flex items-center gap-2 text-sm text-muted-foreground">
+          <Loader2 className="size-4 animate-spin" /> Lädt …
+        </div>
+      )}
+      {err && <p className="mt-3 rounded-lg border border-dashed p-3 text-[13px] text-muted-foreground">{err}</p>}
+      {value && selected && (
+        <div className="mt-4">
+          <RolloutCommands keyValue={value} keyGroups={selected.groups} />
+        </div>
+      )}
+    </div>
+  )
+}
+
 export function ReleasesPage() {
   const { data, loading, error, refresh } = useData()
   if (error && !data) return <ErrorState message={error} onRetry={refresh} />
@@ -69,7 +150,7 @@ export function ReleasesPage() {
   const cur = data.current_version
   const channelOk = !!uc?.ok
   const dl = data.downloads ?? { windows_exe: DL_EXE, windows_zip: DL_ZIP, macos_dmg: null }
-  const winCmd = winInstallCmd(dl.windows_exe, '"/S"', { progress: true })
+  const winCmd = winInstallCmd(dl.windows_exe, '"/S"', { progress: true, launch: true })
   // Bulletproof Universal-Installer/Updater (ein gehostetes Skript, kein Drift).
   const macCmd = macInstallCmd()
 
@@ -127,7 +208,7 @@ export function ReleasesPage() {
       <div className="mb-7 rounded-xl border bg-card p-5">
         <h2 className="mb-1 text-[15px] font-semibold">Installation auf Clients</h2>
         <p className="mb-4 text-[13px] text-muted-foreground">
-          Immer die neueste Version{cur ? ` (v${cur})` : ""}. Den Setup-Key fürs Onboarding holst du auf der Keys-Seite.
+          Immer die neueste Version{cur ? ` (v${cur})` : ""}. Ohne Key nur Update; ein Onboarding mit Key und Profil steht direkt darunter.
         </p>
         <div className="grid gap-4 lg:grid-cols-2">
           <InstallCard
@@ -141,9 +222,11 @@ export function ReleasesPage() {
           <InstallCard os="macOS" href={dl.macos_dmg ?? undefined} cmd={macCmd} />
         </div>
         <p className="mt-3 text-[12px] text-muted-foreground">
-          Windows-Befehl in PowerShell (Silent-Install), macOS-Befehl im Terminal. Danach den Setup-Key eingeben, oder per Level / Mehrfach-Key zero-touch ausrollen.
+          Windows-Befehl in PowerShell (zeigt Fortschritt und startet die App danach automatisch), macOS-Befehl im Terminal. Für ein Onboarding mit Key und Profil siehe direkt darunter.
         </p>
       </div>
+
+      <OnboardCard />
 
       {/* Komplett-Rollout via Level: App + NetBird updaten + SSH scharf, alles silent */}
       <div className="mb-7 rounded-xl border bg-card p-5">

@@ -35,6 +35,7 @@ import type {
   SmartDebugResult,
   UserRole,
 } from "../types/debug";
+import { USER_ROLES, ROLE_LABELS } from "../lib/roles";
 
 interface Props {
   branding: BrandingDto;
@@ -445,13 +446,7 @@ export function AdminScreen({ branding, onClose }: Props) {
                   Schaltet zusätzliche Server-Buttons und Übersicht frei
                 </div>
                 <div className="flex gap-1">
-                  {(
-                    [
-                      ["user", "Nutzer"],
-                      ["manager", "Geschäftsführer"],
-                      ["it_admin", "IT Admin"],
-                    ] as [UserRole, string][]
-                  ).map(([r, label]) => (
+                  {USER_ROLES.map((r) => (
                     <button
                       key={r}
                       type="button"
@@ -463,7 +458,7 @@ export function AdminScreen({ branding, onClose }: Props) {
                           : "surface text-[color:var(--brand-fg)]/70 hover:border-[color:var(--brand-primary)]/50")
                       }
                     >
-                      {label}
+                      {ROLE_LABELS[r]}
                     </button>
                   ))}
                 </div>

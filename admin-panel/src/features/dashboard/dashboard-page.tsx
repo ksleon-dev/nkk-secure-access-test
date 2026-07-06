@@ -40,7 +40,9 @@ export function DashboardPage() {
     vc.set(v, (vc.get(v) || 0) + 1)
   }
   const versions = [...vc.entries()].sort((a, b) => b[1] - a[1])
-  const maxV = Math.max(...versions.map((v) => v[1]), 1)
+  // Nenner ist die Flotten-Gesamtzahl, damit die Balken den echten Anteil zeigen
+  // (nicht relativ zur groessten Gruppe). min-7%-Floor haelt Kleinstgruppen sichtbar.
+  const totalV = Math.max(data.devices.length, 1)
 
   return (
     <div>
@@ -111,7 +113,7 @@ export function DashboardPage() {
                   {kind === "current" && " ✓"}
                 </div>
                 <div className="h-5 flex-1 overflow-hidden rounded bg-secondary">
-                  <div className={"flex h-full items-center rounded px-2 text-[11px] font-semibold text-white " + color} style={{ width: `${Math.max(7, (c / maxV) * 100)}%` }}>
+                  <div className={"flex h-full items-center rounded px-2 text-[11px] font-semibold text-white " + color} style={{ width: `${Math.max(7, (c / totalV) * 100)}%` }}>
                     {c}
                   </div>
                 </div>

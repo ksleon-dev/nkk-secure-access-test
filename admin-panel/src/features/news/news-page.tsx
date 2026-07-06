@@ -9,9 +9,12 @@ import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
+import {
+  Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
+} from "@/components/ui/dialog"
 import { cn } from "@/lib/utils"
 import { Loader2, Megaphone, Sparkles, Heart, Trash2, Send } from "lucide-react"
-import type { NewsType } from "@/lib/types"
+import type { NewsItem, NewsType } from "@/lib/types"
 
 const TYPES: Record<NewsType, { label: string; icon: typeof Megaphone; cls: string }> = {
   announcement: { label: "Ankündigung", icon: Megaphone, cls: "bg-accent text-primary" },
@@ -26,6 +29,7 @@ export function NewsPage() {
   const [title, setTitle] = useState("")
   const [message, setMessage] = useState("")
   const [busy, setBusy] = useState(false)
+  const [delT, setDelT] = useState<NewsItem | null>(null)
 
   if (error && !data) return <ErrorState message={error} onRetry={refresh} />
 
@@ -78,9 +82,9 @@ export function NewsPage() {
         {/* Verfassen */}
         <div className="rounded-xl border bg-card p-5">
           <h2 className="mb-3 text-sm font-semibold">Neue Meldung</h2>
-          <Label className="mb-1.5">Art</Label>
+          <Label htmlFor="na" className="mb-1.5">Art</Label>
           <Select value={type} onValueChange={(v) => setType(v as NewsType)}>
-            <SelectTrigger><SelectValue /></SelectTrigger>
+            <SelectTrigger id="na"><SelectValue /></SelectTrigger>
             <SelectContent>
               {(Object.keys(TYPES) as NewsType[]).map((t) => (
                 <SelectItem key={t} value={t}>{TYPES[t].label}</SelectItem>
@@ -106,6 +110,11 @@ export function NewsPage() {
             {busy ? <Loader2 className="size-4 animate-spin" /> : <Send className="size-4" />}
             Veröffentlichen
           </Button>
+
+          <div className="mt-4 border-t pt-4">
+            <div className="mb-2 text-xs font-medium text-muted-foreground">Vorschau</div>
+            <NewsPreview type={type} title={title} message={message} />
+          </div>
         </div>
 
         {/* Verlauf */}
@@ -134,7 +143,7 @@ export function NewsPage() {
                       <p className="mt-0.5 text-sm text-muted-foreground">{n.body}</p>
                     </div>
                     <button
-                      onClick={() => remove(n.id)}
+                      onClick={() => setDelT(n)}
                       className="self-start rounded-md p-1.5 text-muted-foreground opacity-0 transition hover:bg-secondary hover:text-destructive group-hover:opacity-100"
                       aria-label="Meldung löschen"
                     >
@@ -147,6 +156,80 @@ export function NewsPage() {
           )}
         </div>
       </div>
+
+      {delT && (
+        <DeleteNewsDialog
+          item={delT}
+          onClose={() => setDelT(null)}
+          onConfirm={async () => {
+            await remove(delT.id)
+            setDelT(null)
+          }}
+        />
+      )}
     </div>
+  )
+}
+
+// Live-Vorschau: gleiche Darstellung wie ein Eintrag im Verlauf.
+function NewsPreview({ type, title, message }: { type: NewsType; title: string; message: string }) {
+  const t = TYPES[type] ?? TYPES.announcement
+  const Icon = t.icon
+  const today = new Date().toLocaleDateString("de-DE")
+  return (
+    <div className="flex gap-3 rounded-xl border bg-card p-4">
+      <div className={cn("grid size-9 shrink-0 place-items-center rounded-lg", t.cls)}>
+        <Icon className="size-[18px]" />
+      </div>
+      <div className="min-w-0 flex-1">
+        <div className="flex items-center gap-2">
+          <span className={cn("rounded-full px-2 py-0.5 text-[11px] font-semibold", t.cls)}>{t.label}</span>
+          <span className="text-xs text-muted-foreground tabular-nums">{today}</span>
+        </div>
+        <div className="mt-1 font-medium leading-tight">{title || <span className="text-muted-foreground">Ohne Titel</span>}</div>
+        <p className="mt-0.5 whitespace-pre-wrap break-words text-sm text-muted-foreground">
+          {message || <span className="italic">Text für die Mitarbeiter …</span>}
+        </p>
+      </div>
+    </div>
+  )
+}
+
+function DeleteNewsDialog({ item, onClose, onConfirm }: { item: NewsItem; onClose: () => void; onConfirm: () => Promise<void> }) {
+  const [busy, setBusy] = useState(false)
+  async function go() {
+    setBusy(true)
+    try {
+      await onConfirm()
+    } finally {
+      setBusy(false)
+    }
+  }
+  const t = TYPES[item.type] ?? TYPES.announcement
+  return (
+    <Dialog open onOpenChange={(o) => !o && onClose()}>
+      <DialogContent>
+        <DialogHeader>
+          <DialogTitle>Meldung löschen</DialogTitle>
+          <DialogDescription>
+            Die Meldung wird sofort aus der App entfernt und ist für die Mitarbeiter nicht mehr sichtbar.
+          </DialogDescription>
+        </DialogHeader>
+        <div className="rounded-lg border bg-secondary/40 p-3">
+          <div className="flex items-center gap-2">
+            <span className={cn("rounded-full px-2 py-0.5 text-[11px] font-semibold", t.cls)}>{t.label}</span>
+            <span className="text-xs text-muted-foreground tabular-nums">{item.date}</span>
+          </div>
+          <div className="mt-1 font-medium leading-tight">{item.title || "Ohne Titel"}</div>
+          <p className="mt-0.5 whitespace-pre-wrap break-words text-sm text-muted-foreground">{item.body}</p>
+        </div>
+        <DialogFooter>
+          <Button variant="outline" onClick={onClose} disabled={busy} autoFocus>Abbrechen</Button>
+          <Button variant="destructive" onClick={go} disabled={busy}>
+            {busy && <Loader2 className="size-4 animate-spin" />}Löschen
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
   )
 }

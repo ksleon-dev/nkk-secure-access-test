@@ -2580,9 +2580,75 @@ fn apply_app_settings(s: &AppSettings) {
     NOTIFICATIONS.store(s.notifications, Ordering::Relaxed);
 }
 
+// Gueltige Profil-/Rollen-Token (muss mit src/lib/roles.ts USER_ROLES uebereinstimmen).
+const VALID_ROLES: [&str; 4] = ["user", "manager", "it_admin", "infact"];
+
+// Install-Zeit-Profil-Bootstrap: der Onboarding-One-Liner legt optional eine
+// Datei mit dem gewuenschten Profil (z.B. "infact") ab. Bewusst ein fixer,
+// plattform-einheitlicher Pfad, den der One-Liner OHNE Kenntnis des Tauri-
+// Identifiers beschreiben kann (Windows: %APPDATA%\nkk-secure-access\profile,
+// sonst ~/.config/nkk-secure-access/profile - dieselbe Konvention wie die
+// setup-key-Datei auf macOS).
+fn profile_bootstrap_path() -> Option<std::path::PathBuf> {
+    #[cfg(target_os = "windows")]
+    {
+        let base = std::env::var("APPDATA").ok()?;
+        Some(std::path::PathBuf::from(base).join("nkk-secure-access").join("profile"))
+    }
+    #[cfg(not(target_os = "windows"))]
+    {
+        let home = std::env::var("HOME").ok()?;
+        Some(
+            std::path::PathBuf::from(home)
+                .join(".config")
+                .join("nkk-secure-access")
+                .join("profile"),
+        )
+    }
+}
+
+// Profil-Datei EINMALIG lesen und danach immer loeschen (auch bei ungueltigem
+// Inhalt), damit sie nicht bei jedem Start erneut greift und eine spaetere
+// Rollenwahl im Admin-Menue nie ueberschreibt. Gibt nur eine gueltige Rolle zurueck.
+fn consume_profile_bootstrap() -> Option<String> {
+    let path = profile_bootstrap_path()?;
+    if !path.exists() {
+        return None;
+    }
+    let raw = std::fs::read_to_string(&path).ok();
+    let _ = std::fs::remove_file(&path);
+    let role = raw?.trim().to_string();
+    if VALID_ROLES.contains(&role.as_str()) {
+        Some(role)
+    } else {
+        None
+    }
+}
+
+// Settings ohne Admin-Gate persistieren (nur intern, fuer den Startup-Bootstrap).
+fn persist_app_settings(app: &AppHandle, settings: &AppSettings) -> bool {
+    let Some(path) = app_settings_path(app) else {
+        return false;
+    };
+    if let Some(parent) = path.parent() {
+        let _ = std::fs::create_dir_all(parent);
+    }
+    match serde_json::to_string_pretty(settings) {
+        Ok(json) => std::fs::write(&path, json).is_ok(),
+        Err(_) => false,
+    }
+}
+
 /// Load persisted settings into the runtime atomics. Called once at startup.
 pub fn init_app_settings(app: &AppHandle) -> AppSettings {
-    let s = load_app_settings(app);
+    let mut s = load_app_settings(app);
+    // Install-Zeit-Profil anwenden (einmalig), bevor das Frontend die Settings liest.
+    if let Some(role) = consume_profile_bootstrap() {
+        if s.role != role {
+            s.role = role;
+            let _ = persist_app_settings(app, &s);
+        }
+    }
     apply_app_settings(&s);
     s
 }
@@ -3286,6 +3352,23 @@ pub async fn open_rdp(
     }
 }
 
+/// Host aus einem SMB-Ziel extrahieren (`\\serv-file\Daten` oder `smb://host/share`
+/// -> `serv-file`). Pure Funktion, damit Anlegen (open_smb) und Aufraeumen
+/// (cleanup_stale_credentials) garantiert denselben cmdkey-Namen verwenden -
+/// sonst bleibt bei App-Kill vor dem 90s-Timer eine Domaenen-Credential dauerhaft
+/// im Windows Credential Manager liegen.
+#[allow(dead_code)]
+fn smb_host_from_target(target: &str) -> String {
+    target
+        .trim()
+        .trim_start_matches("smb://")
+        .trim_start_matches("\\\\")
+        .split(|c| c == '\\' || c == '/')
+        .next()
+        .unwrap_or("")
+        .to_string()
+}
+
 #[tauri::command]
 pub async fn open_smb(
     app: AppHandle,
@@ -3308,9 +3391,44 @@ pub async fn open_smb(
     // #1 Allowlist: das SMB-Ziel MUSS ein gepflegter quickLaunch-Eintrag sein.
     let branding_allow = ensure_branding(&app, &state).await?;
     allowlist_lookup(&branding_allow, "smb", &target)?;
+
     #[cfg(target_os = "windows")]
     {
         use std::os::windows::process::CommandExt;
+        // Host aus dem UNC-Ziel (\\serv-file\Daten -> serv-file) fuer den cmdkey-Namen.
+        let smb_host = smb_host_from_target(&target);
+        // Bulletproof: Zugangsdaten wie bei RDP via cmdkey vorbelegen, damit der Explorer
+        // die Freigabe OHNE Passwort-Prompt oeffnet (Domaene NKKHB). Reuse des aktiven/
+        // ersten Profils; ohne Profil bleibt es beim heutigen Verhalten (evtl. Prompt).
+        // BEWUSST kein blockierender Erreichbarkeits-Check davor: ein zu strenger Probe-
+        // Timeout wuerde sonst ein funktionierendes Oeffnen faelschlich verhindern (Lehre 0.3.19).
+        let profiles = cached_profiles(&state).await.unwrap_or_default();
+        if let Some((login, pass)) = profiles
+            .first()
+            .and_then(|p| rdp_login(p).map(|u| (u, p.password.clone())))
+        {
+            if !smb_host.is_empty() {
+                tracing::info!("SMB: Injiziere Credentials fuer {} via cmdkey", login);
+                let _ = std::process::Command::new("cmdkey")
+                    .args([
+                        &format!("/add:{}", smb_host),
+                        &format!("/user:{}", login),
+                        &format!("/pass:{}", pass),
+                    ])
+                    .creation_flags(0x08000000)
+                    .output();
+                // Nach 90s wieder entfernen: die offene Explorer-Sitzung braucht die
+                // Credential dann nicht mehr, sie soll nicht dauerhaft im Store liegen.
+                let host_cleanup = smb_host.clone();
+                tauri::async_runtime::spawn(async move {
+                    tokio::time::sleep(std::time::Duration::from_secs(90)).await;
+                    let _ = std::process::Command::new("cmdkey")
+                        .args([&format!("/delete:{}", host_cleanup)])
+                        .creation_flags(0x08000000)
+                        .output();
+                });
+            }
+        }
         std::process::Command::new("explorer.exe")
             .arg(&target)
             .creation_flags(0x08000000)
@@ -4263,29 +4381,43 @@ fn reconnect_backoff_secs(failures: u32) -> u64 {
 use std::sync::Mutex as StdMutex;
 static LAST_KNOWN_STATE: StdMutex<Option<String>> = StdMutex::new(None);
 
-/// Clean up any stale TERMSRV credentials left over from a previous crash.
-/// If the app was killed before the 60s cleanup timer fired, cmdkey entries
-/// for our RDP targets persist in Windows Credential Manager.
-pub fn cleanup_stale_credentials(targets: &[String]) {
+/// Clean up any stale credentials left over from a previous crash.
+/// If the app was killed before the 90s cleanup timer fired, cmdkey entries
+/// for our RDP targets (TERMSRV/<host>) und SMB-Ziele (<host>) persist in the
+/// Windows Credential Manager - inklusive Domaenenpasswort. Beim Start beides
+/// abraeumen, mit exakt denselben Namens-Regeln wie beim Anlegen.
+pub fn cleanup_stale_credentials(rdp_targets: &[String], smb_targets: &[String]) {
     #[cfg(target_os = "windows")]
     {
         use std::os::windows::process::CommandExt;
         // Delete leftover TERMSRV credentials for the branded RDP targets.
         // Portlos (termsrv_host), damit der Name mit dem beim Anlegen verwendeten matcht.
-        for target in targets {
+        for target in rdp_targets {
             let _ = std::process::Command::new("cmdkey")
                 .arg(format!("/delete:TERMSRV/{}", termsrv_host(target)))
                 .creation_flags(0x08000000)
                 .output();
         }
+        // Delete leftover SMB credentials (open_smb legt sie unter dem nackten
+        // Hostnamen an; smb_host_from_target = dieselbe Extraktion wie dort).
+        for target in smb_targets {
+            let host = smb_host_from_target(target);
+            if !host.is_empty() {
+                let _ = std::process::Command::new("cmdkey")
+                    .arg(format!("/delete:{}", host))
+                    .creation_flags(0x08000000)
+                    .output();
+            }
+        }
         tracing::debug!(
-            "Stale TERMSRV Credentials aufgeraeumt ({} Ziele).",
-            targets.len()
+            "Stale Credentials aufgeraeumt ({} RDP, {} SMB Ziele).",
+            rdp_targets.len(),
+            smb_targets.len()
         );
     }
     #[cfg(not(target_os = "windows"))]
     {
-        let _ = targets; // cmdkey is Windows-only
+        let _ = (rdp_targets, smb_targets); // cmdkey is Windows-only
     }
 }
 
@@ -5953,6 +6085,19 @@ mod tests {
         assert!(version_lt("v0.68.0", "0.68.1"));
         assert!(!version_lt("0.73.2", "0.73.2"));
         assert!(!version_lt("0.73.2", "0.73.1"));
+    }
+
+    #[test]
+    fn smb_host_extraction_matches_create_and_cleanup() {
+        // Anlegen (open_smb) und Aufraeumen (cleanup_stale_credentials) muessen
+        // denselben cmdkey-Namen verwenden - sonst bleibt nach App-Kill vor dem
+        // 90s-Timer eine Domaenen-Credential dauerhaft im Credential Manager.
+        assert_eq!(smb_host_from_target("\\\\serv-file\\Daten"), "serv-file");
+        assert_eq!(smb_host_from_target("smb://serv-file/Daten"), "serv-file");
+        assert_eq!(smb_host_from_target("\\\\192.168.0.10\\Daten\\Sub"), "192.168.0.10");
+        assert_eq!(smb_host_from_target("  \\\\serv-file\\Daten  "), "serv-file");
+        assert_eq!(smb_host_from_target("serv-file"), "serv-file");
+        assert_eq!(smb_host_from_target(""), "");
     }
 
     #[test]

@@ -493,6 +493,22 @@ nkk_svc_ready:
     MessageBox MB_ICONEXCLAMATION|MB_OK "NKK Secure Access wurde installiert, aber mit Hinweisen:$\r$\n$\r$\n$NkkErrors$\r$\nLog: ${NKK_LOG_DIR}$\r$\n$\r$\nBitte ein Foto dieser Meldung an support@ticket.kronsolutions.de"
     nkk_skip_msgbox:
   ${EndIf}
+
+  ; --- App nach INTERAKTIVER Erstinstallation starten -----------------------
+  ; Nur bei sichtbarer manueller Installation starten: NICHT bei /S (Level/SYSTEM,
+  ; liefe in Session 0 unsichtbar) und NICHT bei /P (Auto-Update, der Updater startet
+  ; die App selbst neu, sonst zwei Fenster). De-elevated ueber den Explorer, damit die
+  ; App als normaler Nutzer laeuft, nicht mit den Admin-Rechten des Installers.
+  ${GetParameters} $R5
+  ClearErrors
+  ${GetOptions} $R5 "/P" $R6
+  ${IfNot} ${Errors}
+    Goto nkk_skip_launch
+  ${EndIf}
+  IfSilent nkk_skip_launch
+  DetailPrint "NKK: Starte NKK Secure Access ..."
+  Exec '"$WINDIR\explorer.exe" "$INSTDIR\${MAINBINARYNAME}.exe"'
+  nkk_skip_launch:
 !macroend
 
 !macro NSIS_HOOK_PREUNINSTALL

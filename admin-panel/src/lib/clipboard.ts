@@ -5,7 +5,18 @@ import { toast } from "sonner"
 //  1) moderne Clipboard-API (nur https/localhost),
 //  2) execCommand-Fallback (funktioniert ueber http),
 //  3) Notnagel-Prompt mit vorselektiertem Text (Strg/Cmd+C) - geht IMMER.
-export async function copyText(text: string, okLabel = "Kopiert"): Promise<boolean> {
+//
+// Fuer geheime Werte (Setup-Keys, Mailtexte mit Key) sollte der prompt-Notnagel
+// unterdrueckt werden (allowPrompt:false): das Panel laeuft bewusst per http/Overlay
+// (isSecureContext oft false), sonst landet das Secret in einem sichtbaren
+// Klartext-Prompt (ggf. Prompt-History). Der bereits sichtbare Code-Block bleibt
+// dann markierbar und der Nutzer kopiert manuell.
+export async function copyText(
+  text: string,
+  okLabel = "Kopiert",
+  opts: { allowPrompt?: boolean } = {},
+): Promise<boolean> {
+  const allowPrompt = opts.allowPrompt !== false
   // 1) Moderne API
   try {
     if (navigator.clipboard && window.isSecureContext) {
@@ -38,13 +49,16 @@ export async function copyText(text: string, okLabel = "Kopiert"): Promise<boole
   } catch {
     /* faellt unten weiter */
   }
-  // 3) Notnagel: Prompt mit vorausgewaehltem Text - der Nutzer kann immer Strg/Cmd+C
-  try {
-    window.prompt("Mit Strg/Cmd+C kopieren, dann Enter:", text)
-    return true
-  } catch {
-    /* ignore */
+  // 3) Notnagel: Prompt mit vorausgewaehltem Text - der Nutzer kann immer Strg/Cmd+C.
+  // Fuer Secrets deaktiviert, damit kein Klartext in einem sichtbaren Prompt landet.
+  if (allowPrompt) {
+    try {
+      window.prompt("Mit Strg/Cmd+C kopieren, dann Enter:", text)
+      return true
+    } catch {
+      /* ignore */
+    }
   }
-  toast.error("Kopieren ging nicht. Text bitte manuell markieren.")
+  toast.error("Kopieren ging nicht. Text bitte manuell markieren und kopieren.")
   return false
 }

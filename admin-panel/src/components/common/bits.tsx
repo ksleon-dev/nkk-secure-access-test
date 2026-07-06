@@ -79,6 +79,16 @@ export function VersionBadge({ version, current }: { version: string | null | un
   return <span className={cn("rounded-full px-2 py-0.5 font-mono text-[11.5px] font-medium tabular-nums", cls)}>{label}</span>
 }
 
+// NetBird-Agent-Version: rein informativ (der Client kommt gebuendelt mit der App
+// und wird zentral aktualisiert), daher KEIN roter Veraltet-Alarm wie bei der
+// App-Version. Neutral grau; dezent gruen nur, wenn es exakt die aktuellste ist.
+export function AgentVersion({ version, current }: { version: string | null | undefined; current: string }) {
+  const label = version && version !== "None" ? version : "unbekannt"
+  const isCurrent = !!version && version !== "None" && !!current && version === current
+  const cls = isCurrent ? "bg-ok/10 text-ok" : "bg-muted text-muted-foreground"
+  return <span className={cn("rounded-full px-2 py-0.5 font-mono text-[11.5px] font-medium tabular-nums", cls)}>{label}</span>
+}
+
 // Update rollout at a glance: how many devices are already on the target
 // version, how many are behind, how many never reported. Honest about freshness
 // (the version is whatever a device last reported, not live).

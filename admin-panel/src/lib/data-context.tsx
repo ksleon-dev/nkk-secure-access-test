@@ -42,8 +42,33 @@ export function DataProvider({ children, onUnauthorized }: { children: ReactNode
 
   useEffect(() => {
     refresh()
-    const t = setInterval(refresh, 60_000)
-    return () => clearInterval(t)
+    let t: ReturnType<typeof setInterval> | null = null
+    const start = () => {
+      if (t === null) t = setInterval(refresh, 60_000)
+    }
+    const stop = () => {
+      if (t !== null) {
+        clearInterval(t)
+        t = null
+      }
+    }
+    // Auto-Refresh nur im sichtbaren Tab: im Hintergrund pausieren, damit keine
+    // Fetches (inkl. serverseitiger ISP-Anreicherung) unbemerkt weiterlaufen und
+    // ein API-Fehler nicht alle 60s den Stale-Banner flackern laesst.
+    const onVisibility = () => {
+      if (document.hidden) {
+        stop()
+      } else {
+        refresh()
+        start()
+      }
+    }
+    if (!document.hidden) start()
+    document.addEventListener("visibilitychange", onVisibility)
+    return () => {
+      stop()
+      document.removeEventListener("visibilitychange", onVisibility)
+    }
   }, [refresh])
 
   return (

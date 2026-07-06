@@ -12,6 +12,7 @@ import { Skeleton } from "@/components/ui/skeleton"
 import { cn } from "@/lib/utils"
 import { copyText } from "@/lib/clipboard"
 import { macInstallCmd, winInstallCmd } from "@/lib/installcmd"
+import { PROFILE_OPTIONS, roleForGroups, type ProfileRole } from "@/lib/profiles"
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog"
@@ -20,6 +21,12 @@ import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@
 import { Plus, Ban, Loader2, Copy, Check, KeyRound, UserPlus, Eye, Layers } from "lucide-react"
 import type { SetupKey, Group } from "@/lib/types"
 import { OnboardingDialog } from "./onboarding-dialog"
+
+const KEY_TYPE_LABEL: Record<string, string> = { "one-off": "Einmal", reusable: "Mehrfach" }
+function keyTypeLabel(t: string | null | undefined): string {
+  if (!t) return "—"
+  return KEY_TYPE_LABEL[t] ?? t
+}
 
 export function KeysPage() {
   const { data, loading, error, refresh } = useData()
@@ -32,16 +39,23 @@ export function KeysPage() {
 
   const keys = (data?.keys ?? []).slice().sort((a, b) => Number(b.valid) - Number(a.valid))
 
+  // NetBird liefert bei den Keys nur die Gruppen-IDs; die lesbaren Namen stehen in
+  // data.groups. Auf Namen aufloesen (Fallback: rohe ID, falls die Gruppe fehlt).
+  const groupNames = (ids: string[]) =>
+    (ids ?? [])
+      .map((id) => data?.groups.find((g) => g.id === id)?.name ?? id)
+      .join(", ")
+
   function exportMd(): string {
     const table = mdTable(
       ["Name", "Status", "Typ", "Verwendet", "Läuft ab", "Gruppen"],
       keys.map((k) => [
         k.name,
         k.valid ? "gültig" : k.revoked ? "widerrufen" : "abgelaufen",
-        k.type,
+        keyTypeLabel(k.type),
         `${k.used ?? 0} / ${k.limit ?? "∞"}`,
         k.expires,
-        k.groups.join(", "),
+        groupNames(k.groups),
       ]),
     )
     return `# Setup-Keys\n\nStand: ${new Date().toLocaleString("de-DE")} · ${keys.length} Keys\n\n${table}\n`
@@ -80,7 +94,7 @@ export function KeysPage() {
                 <TableHead className="text-right">Verwendet</TableHead>
                 <TableHead>Läuft ab</TableHead>
                 <TableHead>Gruppen</TableHead>
-                <TableHead className="w-px" />
+                <TableHead className="pr-4 text-right">Aktionen</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
@@ -98,13 +112,13 @@ export function KeysPage() {
                         </span>
                       )}
                     </TableCell>
-                    <TableCell className="text-muted-foreground" data-label="Typ">{k.type ?? "—"}</TableCell>
+                    <TableCell className="text-muted-foreground" data-label="Typ">{keyTypeLabel(k.type)}</TableCell>
                     <TableCell className="text-right tabular-nums" data-label="Verwendet">{k.used ?? 0} / {k.limit ?? "∞"}</TableCell>
                     <TableCell className={cn("tabular-nums", k.valid && du != null && du <= 30 && "text-warn")} data-label="Läuft ab">
                       {k.expires || "—"}
                       {k.valid && du != null && du <= 30 && <span className="ml-1 text-xs">({du} T.)</span>}
                     </TableCell>
-                    <TableCell className="text-muted-foreground" data-label="Gruppen">{k.groups.join(", ") || "—"}</TableCell>
+                    <TableCell className="text-muted-foreground" data-label="Gruppen">{groupNames(k.groups) || "—"}</TableCell>
                     <TableCell data-label="">
                       <div className="flex justify-end gap-1">
                         <Button variant="ghost" size="sm" onClick={() => setRevealT(k)}>
@@ -133,11 +147,18 @@ export function KeysPage() {
   )
 }
 
+// Maskiert einen Setup-Key: erstes Segment (z.B. "nb") sichtbar, Rest als Punkte.
+function maskKey(v: string): string {
+  const head = v.slice(0, 3)
+  return `${head}${"•".repeat(Math.max(8, Math.min(v.length - head.length, 24)))}`
+}
+
 function RevealDialog({ k, onClose }: { k: SetupKey; onClose: () => void }) {
   const [value, setValue] = useState<string | null>(null)
   const [err, setErr] = useState<string | null>(null)
   const [busy, setBusy] = useState(true)
   const [copied, setCopied] = useState(false)
+  const [shown, setShown] = useState(false)
 
   useEffect(() => {
     let on = true
@@ -157,9 +178,26 @@ function RevealDialog({ k, onClose }: { k: SetupKey; onClose: () => void }) {
     }
   }, [k.id])
 
+  // Shoulder-Surfing-Schutz: bei Fensterwechsel wieder maskieren und Dialog schließen.
+  useEffect(() => {
+    function onBlur() {
+      setShown(false)
+      onClose()
+    }
+    window.addEventListener("blur", onBlur)
+    return () => window.removeEventListener("blur", onBlur)
+  }, [onClose])
+
+  // Eingeblendeten Klartext nach kurzer Zeit automatisch wieder maskieren.
+  useEffect(() => {
+    if (!shown) return
+    const t = setTimeout(() => setShown(false), 30_000)
+    return () => clearTimeout(t)
+  }, [shown])
+
   async function copy() {
     if (!value) return
-    if (await copyText(value, "Schlüssel kopiert")) {
+    if (await copyText(value, "Schlüssel kopiert", { allowPrompt: false })) {
       setCopied(true)
       setTimeout(() => setCopied(false), 1500)
     }
@@ -181,14 +219,25 @@ function RevealDialog({ k, onClose }: { k: SetupKey; onClose: () => void }) {
         ) : value ? (
           <div className="space-y-4">
             <div className="flex items-center gap-2 rounded-lg border bg-secondary/60 p-2">
-              <code className="flex-1 break-all px-1 font-mono text-[13px]">{value}</code>
+              <code className="flex-1 break-all px-1 font-mono text-[13px]">{shown ? value : maskKey(value)}</code>
+              <Button variant="outline" size="sm" onClick={() => setShown((s) => !s)}>
+                <Eye className="size-3.5" /> {shown ? "Verbergen" : "Einblenden"}
+              </Button>
               <Button variant="outline" size="sm" onClick={copy}>
                 {copied ? <Check className="size-3.5 text-ok" /> : <Copy className="size-3.5" />}
                 {copied ? "Kopiert" : "Kopieren"}
               </Button>
             </div>
-            <RolloutCommands keyValue={value} />
-            <LevelRolloutBlock keyValue={value} keyType={k.type} />
+            {shown ? (
+              <>
+                <RolloutCommands keyValue={value} keyGroups={k.groups} />
+                <LevelRolloutBlock keyValue={value} keyType={k.type} />
+              </>
+            ) : (
+              <p className="rounded-lg border border-dashed p-3 text-[13px] text-muted-foreground">
+                Zum Schutz vor Mitlesen ist der Schlüssel verborgen. Mit „Einblenden“ werden Schlüssel und fertige Rollout-Befehle sichtbar.
+              </p>
+            )}
           </div>
         ) : (
           <div className="rounded-lg border border-dashed p-3 text-sm text-muted-foreground">
@@ -209,7 +258,7 @@ const FALLBACK_DMG = "https://api.secure.nkk-hb.de/download/NKK-Secure-Access.dm
 function CmdBlock({ label, cmd, note }: { label: string; cmd: string; note?: string }) {
   const [copied, setCopied] = useState(false)
   async function copy() {
-    if (await copyText(cmd, "Kopiert")) {
+    if (await copyText(cmd, "Kopiert", { allowPrompt: false })) {
       setCopied(true)
       setTimeout(() => setCopied(false), 1500)
     }
@@ -231,16 +280,38 @@ function CmdBlock({ label, cmd, note }: { label: string; cmd: string; note?: str
 
 // Fertige Onboarding-Befehle mit eingebettetem Setup-Key. macOS setzt die
 // Key-Datei vorab (Zero-Touch); Windows installiert silent, Key einmal einfügen.
-function RolloutCommands({ keyValue }: { keyValue: string }) {
+// Das Profil (Rolle) wird aus den Key-Gruppen vorausgewaehlt und in den One-Liner
+// eingebettet; die App startet danach direkt im richtigen Profil.
+export function RolloutCommands({ keyValue, keyGroups }: { keyValue: string; keyGroups?: string[] }) {
   const { data } = useData()
   const exe = data?.downloads?.windows_exe ?? FALLBACK_EXE
   const dmg = data?.downloads?.macos_dmg ?? FALLBACK_DMG
-  const win = winInstallCmd(exe, `"/S","/SETUPKEY=${keyValue}"`, { progress: true })
+  // Key-Gruppen-IDs -> Namen, daraus das Profil vorwaehlen.
+  const groupNames = (keyGroups ?? []).map((id) => data?.groups.find((g) => g.id === id)?.name ?? id)
+  const [profile, setProfile] = useState<ProfileRole>(() => roleForGroups(groupNames))
+  // "user" = Standard -> kein Profil noetig (Rolle ist ohnehin der Default).
+  const profileArg = profile === "user" ? undefined : profile
+  const win = winInstallCmd(exe, `"/S","/SETUPKEY=${keyValue}"`, { progress: true, launch: true, profile: profileArg })
   // Bulletproof Universal-Installer/Updater + Zero-Touch-Key (ein gehostetes Skript).
-  const mac = macInstallCmd({ setupKey: keyValue, dmgUrl: dmg })
+  const mac = macInstallCmd({ setupKey: keyValue, dmgUrl: dmg, profile: profileArg })
   return (
     <div className="space-y-3 rounded-lg border bg-card/40 p-3">
-      <div className="text-[13px] font-medium">Gerät onboarden mit diesem Key</div>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="text-[13px] font-medium">Gerät onboarden mit diesem Key</div>
+        <div className="flex items-center gap-2">
+          <span className="text-[12px] text-muted-foreground">Profil</span>
+          <Select value={profile} onValueChange={(v) => setProfile(v as ProfileRole)}>
+            <SelectTrigger className="h-7 w-[168px] text-[12px]">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {PROFILE_OPTIONS.map((o) => (
+                <SelectItem key={o.value} value={o.value}>{o.label}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+        </div>
+      </div>
       <CmdBlock
         label="macOS · Terminal (Zero-Touch, Key wird vorab gesetzt)"
         cmd={mac}
@@ -249,7 +320,7 @@ function RolloutCommands({ keyValue }: { keyValue: string }) {
       <CmdBlock
         label="Windows · PowerShell als Administrator"
         cmd={win}
-        note="Installiert still und verbindet sich automatisch mit diesem Key. Kein Eintippen nötig."
+        note="Installiert still, setzt das Profil und verbindet sich automatisch mit diesem Key."
       />
     </div>
   )
@@ -336,7 +407,7 @@ function CreateKeyDialog({ groups, onClose, onDone }: { groups: Group[]; onClose
       const input: CreateKeyInput = {
         name: name.trim(),
         type,
-        usage_limit: type === "reusable" ? Math.max(0, parseInt(limit) || 0) : 1,
+        usage_limit: type === "reusable" ? Math.max(1, parseInt(limit) || 1) : 1,
         expires_days: Math.max(1, parseInt(days) || 365),
         auto_groups: [...sel],
       }
@@ -352,7 +423,7 @@ function CreateKeyDialog({ groups, onClose, onDone }: { groups: Group[]; onClose
 
   async function copy() {
     if (!created) return
-    if (await copyText(created, "Schlüssel kopiert")) {
+    if (await copyText(created, "Schlüssel kopiert", { allowPrompt: false })) {
       setCopied(true)
       setTimeout(() => setCopied(false), 1500)
     }
@@ -367,7 +438,7 @@ function CreateKeyDialog({ groups, onClose, onDone }: { groups: Group[]; onClose
               <DialogTitle className="flex items-center gap-2">
                 <KeyRound className="size-4 text-ok" /> Key erstellt
               </DialogTitle>
-              <DialogDescription>Jetzt kopieren, wird nicht erneut angezeigt.</DialogDescription>
+              <DialogDescription>Jetzt kopieren. Kannst du später über „Anzeigen“ erneut einsehen.</DialogDescription>
             </DialogHeader>
             <div className="flex items-center gap-2 rounded-lg border bg-secondary/60 p-2">
               <code className="flex-1 break-all px-1 font-mono text-[13px]">{created}</code>
@@ -393,9 +464,9 @@ function CreateKeyDialog({ groups, onClose, onDone }: { groups: Group[]; onClose
               </div>
               <div className="grid grid-cols-3 gap-3">
                 <div>
-                  <Label className="mb-1.5">Typ</Label>
+                  <Label htmlFor="kt" className="mb-1.5">Typ</Label>
                   <Select value={type} onValueChange={(v) => setType(v as "one-off" | "reusable")}>
-                    <SelectTrigger><SelectValue /></SelectTrigger>
+                    <SelectTrigger id="kt"><SelectValue /></SelectTrigger>
                     <SelectContent>
                       <SelectItem value="one-off">Einmal</SelectItem>
                       <SelectItem value="reusable">Mehrfach</SelectItem>
@@ -407,11 +478,11 @@ function CreateKeyDialog({ groups, onClose, onDone }: { groups: Group[]; onClose
                   <Input
                     id="kl"
                     type="number"
-                    min="0"
+                    min="1"
                     value={type === "one-off" ? "1" : limit}
                     onChange={(e) => setLimit(e.target.value)}
                     disabled={type === "one-off"}
-                    title={type === "one-off" ? "Einmal-Key ist immer 1" : undefined}
+                    title={type === "one-off" ? "Einmal-Key ist immer 1" : "Anzahl erlaubter Geräte, mindestens 1"}
                   />
                 </div>
                 <div>
@@ -478,7 +549,7 @@ function RevokeDialog({ k, onClose, onDone }: { k: SetupKey; onClose: () => void
           </DialogDescription>
         </DialogHeader>
         <DialogFooter>
-          <Button variant="outline" onClick={onClose}>Abbrechen</Button>
+          <Button variant="outline" onClick={onClose} autoFocus>Abbrechen</Button>
           <Button variant="destructive" onClick={go} disabled={busy}>
             {busy && <Loader2 className="size-4 animate-spin" />}Widerrufen
           </Button>

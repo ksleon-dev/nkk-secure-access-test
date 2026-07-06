@@ -49,10 +49,12 @@ export interface QuickLaunchEntry {
   /** Optional Shift+<digit> hotkey (e.g. "1") that launches this entry. */
   hotkey?: string;
   /**
-   * Rollen-Gate: "manager" => nur Geschäftsführer, "it_admin" => nur IT Admin,
-   * "admin" => beide privilegierten Rollen (GF + IT Admin); fehlt => alle sehen es.
+   * Rollen-Gate als kommagetrennte Tokenliste (z.B. "admin,infact"). Token:
+   * "manager" (GF), "it_admin" (IT Admin), "infact" (InFact-Dienstleister),
+   * "admin" (beide privilegierten Rollen GF + IT Admin). Fehlt => alle sehen es.
+   * IT Admin sieht grundsaetzlich alles. Auswertung: siehe lib/roles.ts roleCanSee.
    */
-  role?: "user" | "manager" | "it_admin" | "admin";
+  role?: string;
   /** RD Gateway host (RDP over HTTPS) => reaches the target without any VPN. */
   gateway?: string;
   /** SSH-Login-Benutzer (nur type "ssh"); fehlt => Standardbenutzer (root). */

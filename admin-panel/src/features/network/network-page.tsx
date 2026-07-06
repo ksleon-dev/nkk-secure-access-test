@@ -16,11 +16,22 @@ function groupCount<T>(items: T[], key: (x: T) => string | null | undefined) {
   return [...m.entries()].sort((a, b) => b[1] - a[1])
 }
 
+// Bekannte NKK-Netze mit ehrlicher Praefixlaenge (siehe CLAUDE.md IP-Welt).
+// Reihenfolge = spezifischer zuerst gewinnt nicht, wir nehmen den ersten Treffer.
+const KNOWN_NETS: { prefix: string; label: string; octets: number }[] = [
+  { prefix: "10.101.", label: "10.101.0.0/16", octets: 2 },
+  { prefix: "10.0.0.", label: "10.0.0.0/24 (DB-Insel)", octets: 3 },
+]
+
 function subnet(ip: string | null | undefined): string | null {
   if (!ip) return null
   const parts = ip.split(".")
   if (parts.length !== 4) return null
-  return `${parts[0]}.${parts[1]}.${parts[2]}.0/24`
+  for (const net of KNOWN_NETS) {
+    if (ip.startsWith(net.prefix)) return net.label
+  }
+  // Unbekannte Netze: ehrlicher /24-Bucket, als Heuristik gekennzeichnet.
+  return `${parts[0]}.${parts[1]}.${parts[2]}.0/24 (heuristisch)`
 }
 
 export function NetworkPage() {
@@ -41,7 +52,13 @@ export function NetworkPage() {
   const byIsp = groupCount(devices, (d) => d.isp?.isp)
   const byCountry = groupCount(devices, (d) => d.isp?.country)
   const bySubnet = groupCount(devices, (d) => subnet(d.local_ip))
-  const flagged = devices.filter((d) => d.isp?.type && d.isp.type.length > 0)
+  // Nur echte Kennzeichen (proxy/hosting/mobile) gelten als auffaellig. Die IP-Familie
+  // ('IPv4'/'IPv6') aus ipwho.is ist KEIN Auffaelligkeits-Merkmal und wird ausgefiltert,
+  // damit nicht die ganze Flotte als 'Auffaellige Verbindung' erscheint.
+  const SUSPECT = ["proxy", "hosting", "mobile"]
+  const flagged = devices.filter(
+    (d) => d.isp?.type && SUSPECT.some((t) => d.isp!.type!.toLowerCase().includes(t)),
+  )
 
   function exportMd(): string {
     const isp = mdTable(["Provider", "Geräte"], byIsp.map(([name, n]) => [name, n]))

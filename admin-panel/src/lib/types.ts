@@ -31,6 +31,7 @@ export interface Device {
   local_ip: string | null
   public_ip: string | null
   last_seen: string | null
+  last_reported?: string | null
   ping_internet: number | null
   ping_lan: number | null
   speed_mbps: number | null

@@ -10,6 +10,7 @@
 #
 #  Optionale Env-Variablen:
 #    NKK_SETUP_KEY    Setzt den Setup-Key vorab (Zero-Touch-Enrollment).
+#    NKK_PROFILE      Setzt das App-Profil/die Rolle vorab (z.B. "infact").
 #    NKK_MIN_VERSION  Ueberspringt die Installation, wenn schon >= dieser Version
 #                     (fuer Level/RMM, damit nicht jeder Lauf neu installiert).
 #    NKK_DMG_URL      Override der DMG-Quelle (Default: NKK-Mirror).
@@ -26,6 +27,7 @@ PROC="nkk-secure-access"                             # CFBundleExecutable (echte
 PROC_MATCH="NKK Secure Access.app/Contents/MacOS/"   # eindeutiger Pfad-Match (p_comm wird auf 16 Z. gekuerzt)
 DMG_URL="${NKK_DMG_URL:-https://api.secure.nkk-hb.de/download/NKK-Secure-Access.dmg}"
 KEY="${NKK_SETUP_KEY:-}"
+PROFILE="${NKK_PROFILE:-}"
 MIN_VER="${NKK_MIN_VERSION:-}"
 
 log(){ printf '\033[36m[NKK]\033[0m %s\n' "$*"; }
@@ -152,6 +154,23 @@ if [ -n "$KEY" ]; then
   else
     mkdir -p "$HOME/.config/nkk-secure-access"; printf '%s' "$KEY" > "$HOME/.config/nkk-secure-access/setup-key"; chmod 600 "$HOME/.config/nkk-secure-access/setup-key"
     log "Setup-Key gesetzt."
+  fi
+fi
+
+# --- 2b) Profil/Rolle (z.B. "infact") analog zum Key ins richtige Home --------
+# Die App liest die Datei beim ersten Start EINMALIG und setzt die Rolle. Gleiches
+# Home wie der Setup-Key, damit App + Datei zusammenpassen.
+if [ -n "$PROFILE" ]; then
+  if [ "$(id -u)" = "0" ]; then
+    if [ -n "$CONSOLE_USER" ]; then
+      h="$(dscl . -read /Users/"$CONSOLE_USER" NFSHomeDirectory 2>/dev/null | awk '{print $2}')"; [ -z "$h" ] && h="/Users/$CONSOLE_USER"
+      mkdir -p "$h/.config/nkk-secure-access"; printf '%s' "$PROFILE" > "$h/.config/nkk-secure-access/profile"
+      chmod 700 "$h/.config/nkk-secure-access"; chmod 600 "$h/.config/nkk-secure-access/profile"; chown -R "$CONSOLE_USER" "$h/.config/nkk-secure-access"
+      log "Profil '$PROFILE' fuer Nutzer $CONSOLE_USER gesetzt."
+    fi
+  else
+    mkdir -p "$HOME/.config/nkk-secure-access"; printf '%s' "$PROFILE" > "$HOME/.config/nkk-secure-access/profile"; chmod 600 "$HOME/.config/nkk-secure-access/profile"
+    log "Profil '$PROFILE' gesetzt."
   fi
 fi
 

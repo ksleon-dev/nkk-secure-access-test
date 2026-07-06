@@ -17,94 +17,37 @@ interface NewsItem {
   version?: string;
 }
 
-// Fallback news - used when remote fetch fails or no URL configured.
-// Versions match CHANGELOG.md so nothing in the history looks skipped.
+// Fallback news - used when remote fetch fails or no URL configured. Bewusst
+// kurz, menschlich und ohne Versions-Flut: der Live-Feed (Panel) ueberschreibt
+// das hier, wenn er erreichbar ist. Keine doppelten Eintraege, keine Version-Badges.
 const FALLBACK_NEWS: NewsItem[] = [
   {
-    id: "v0319-veredelt",
-    date: "6. Juli 2026",
-    type: "update",
-    version: "0.3.19",
-    title: "Runder, klarer, sicherer",
-    body: "Viele Meldungen sagen dir jetzt noch klarer, was zu tun ist, und Verbindungen laufen zuverlässiger. Unter der Haube sind zahlreiche Kleinigkeiten stabiler und sicherer geworden, und das App-Symbol sitzt jetzt sauber im Dock. IT-Admins finden im Admin-Modus neue Direktzugriffe auf die Server.",
-  },
-  {
-    id: "v0318-anmeldung",
-    date: "30. Juni 2026",
-    type: "update",
-    version: "0.3.18",
-    title: "Anmeldung klappt jetzt zuverlässig",
-    body: "Beim Öffnen des Terminalservers ist die richtige Anmeldung (NKKHB) immer vorausgewählt. Du tippst nur noch deinen Namen und dein Passwort, der Rest passt automatisch. Die lästigen Sicherheitshinweise beim Öffnen sind weg, und der Server öffnet sauber auf allen deinen Bildschirmen.",
-  },
-  {
-    id: "v0318-ruhig",
-    date: "30. Juni 2026",
-    type: "update",
-    version: "0.3.18",
-    title: "Ruhiger, klarer, schneller",
-    body: "Das Fenster ist aufgeräumt und bleibt beim Verbinden ruhig, nichts springt mehr. Der erste Verbindungsaufbau nach der Einrichtung geht schneller und führt dich Schritt für Schritt. Updates kommen automatisch und zuverlässig bei dir an.",
-  },
-  {
-    id: "v031",
-    date: "25. Juni 2026",
-    type: "update",
-    version: "0.3.1",
-    title: "Schlauer im Netz, bequemer im Alltag",
-    body: "Die App erkennt jetzt selbst, ob du im Büro oder unterwegs bist, und warnt, wenn zwei Netze gleichzeitig laufen und die Verbindung ausbremsen. In den Einstellungen stellst du ein, was im Remote Desktop mitgeht (Zwischenablage, Drucker und mehr). Und du kannst dir eine Desktop-Verknüpfung zum Terminalserver anlegen.",
-  },
-  {
-    id: "v030",
-    date: "18. Juni 2026",
-    type: "update",
-    version: "0.3.0",
-    title: "Mehrere Bildschirme und bessere Diagnose",
-    body: "Remote Desktop nutzt jetzt alle deine Monitore, Text und Dateien lassen sich zuverlässig kopieren. Im Büro gehen die Server-Buttons sogar ohne VPN. Und wenn mal etwas klemmt, zeigt das Diagnose-Fenster einen Verlauf und erkennt WLAN-Anmeldeseiten.",
-  },
-  {
-    id: "v028",
-    date: "12. Mai 2026",
-    type: "update",
-    version: "0.2.8",
-    title: "Stabiler im Dauerbetrieb",
-    body: "Trennen bleibt jetzt auch nach Neustart getrennt, und die App verbindet sich nach dem Aufklappen des Laptops schneller wieder. Viele kleine Stabilitätsverbesserungen unter der Haube.",
-  },
-  {
-    id: "v027",
-    date: "2. Mai 2026",
-    type: "update",
-    version: "0.2.7",
-    title: "Updates kommen jetzt zuverlässig an",
-    body: "Die automatische Aktualisierung wurde repariert, neue Versionen landen jetzt sauber bei dir. Eine abgelaufene Sitzung wird klar als neu anmelden angezeigt, statt still zu hängen.",
-  },
-  {
-    id: "v026",
-    date: "28. April 2026",
-    type: "update",
-    version: "0.2.6",
-    title: "Sauberes Trennen und Copy/Paste",
-    body: "Der Trennen-Knopf trennt jetzt wirklich, und der Auto-Reconnect respektiert das. Text und Dateien kopieren zwischen PC und Terminalserver klappt zuverlässig. Der Installer räumt alte Installationen vor dem Upgrade auf.",
-  },
-  {
-    id: "welcome-1",
-    date: "11. April 2026",
+    id: "willkommen",
+    date: "Juli 2026",
     type: "announcement",
-    title: "Willkommen bei NKK Secure Access!",
-    body: "Wir haben euren alten VPN Client durch eine neue, sichere Lösung ersetzt. Alles was ihr tun müsst: Terminalserver-Button klicken und arbeiten. Bei Fragen oder Problemen meldet euch bei support@ticket.kronsolutions.de, wir helfen sofort.",
+    title: "Willkommen bei NKK Secure Access",
+    body: "Diese App bringt dich sicher ins NKK-Netz. Tippe unten auf Verbinden. Sobald es grün ist, erreichst du Terminalserver und Dateiablage mit einem Klick. Fragen oder Probleme? Melde dich bei support@ticket.kronsolutions.de, wir helfen sofort.",
   },
   {
-    id: "feedback-1",
-    date: "11. April 2026",
-    type: "feedback",
-    title: "Euer Feedback ist Gold wert",
-    body: "Wir bauen diese App für euch. Wenn etwas nervt, fehlt oder besser sein könnte, sagt Bescheid. Einfach im Diagnose Panel auf 'Diagnose kopieren' klicken und per Mail schicken.",
-  },
-  {
-    id: "v010",
-    date: "9. April 2026",
+    id: "terminalserver",
+    date: "Juli 2026",
     type: "update",
-    version: "0.1.0",
-    title: "Erster Release",
-    body: "Terminalserver-Schnellstart, automatische NetBird-Installation, VPN-Status-Anzeige, Diagnose-Panel für den Support, Anmeldedaten sicher im System-Tresor.",
+    title: "Terminalserver mit einem Klick",
+    body: "Beim Öffnen des Terminalservers ist die Anmeldung (NKKHB) schon vorausgewählt. Du gibst nur deinen Namen und dein Passwort ein, der Rest passt automatisch, ohne lästige Sicherheitswarnungen.",
+  },
+  {
+    id: "dateiablage",
+    date: "Juli 2026",
+    type: "update",
+    title: "Dateiablage mit einem Klick",
+    body: "Die gemeinsamen Dateien und Dokumente öffnest du direkt aus der App, ohne Netzlaufwerk-Pfade suchen zu müssen. Ein Klick auf Dateiablage genügt.",
+  },
+  {
+    id: "feedback",
+    date: "April 2026",
+    type: "feedback",
+    title: "Dein Feedback zählt",
+    body: "Wir bauen diese App für euch. Wenn etwas nervt oder fehlt, sag Bescheid: im Diagnose-Fenster auf 'Diagnose kopieren' klicken und per Mail an den Support schicken.",
   },
 ];
 

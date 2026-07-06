@@ -1,15 +1,24 @@
-import type { ComponentType } from "react"
+import { useState, type ComponentType } from "react"
 import { useData } from "@/lib/data-context"
 import { PageHeader, ErrorState } from "@/components/common/bits"
 import { Skeleton } from "@/components/ui/skeleton"
+import { Button } from "@/components/ui/button"
 import { cn } from "@/lib/utils"
-import { CheckCircle2, AlertTriangle, Server, Printer, HelpCircle } from "lucide-react"
+import { relativeTime } from "@/lib/format"
+import { CheckCircle2, AlertTriangle, Server, Printer, HelpCircle, RefreshCw } from "lucide-react"
 import type { StatusTarget } from "@/lib/types"
 
 const TYPE_META: Record<string, { label: string; icon: ComponentType<{ className?: string }> }> = {
   server: { label: "Server", icon: Server },
   printer: { label: "Drucker", icon: Printer },
   other: { label: "Sonstiges", icon: HelpCircle },
+}
+
+function offlineHeadline(tOffline: number, peersOff: number): string {
+  const parts: string[] = []
+  if (tOffline > 0) parts.push(`${tOffline} Infrastruktur-Ziel${tOffline === 1 ? "" : "e"} offline`)
+  if (peersOff > 0) parts.push(`${peersOff} VPN-Gerät${peersOff === 1 ? "" : "e"} offline`)
+  return parts.join(" · ")
 }
 
 function Dot({ online }: { online: boolean | null }) {
@@ -25,6 +34,7 @@ function Dot({ online }: { online: boolean | null }) {
 
 export function StatusPage() {
   const { data, loading, error, refresh } = useData()
+  const [checking, setChecking] = useState(false)
   if (error && !data) return <ErrorState message={error} onRetry={refresh} />
   if (loading && !data)
     return (
@@ -38,10 +48,25 @@ export function StatusPage() {
   const peers = data.peers ?? []
   const targets = data.status_targets ?? []
   const peersOn = peers.filter((p) => p.connected).length
+  const peersOff = peers.length - peersOn
   const tOnline = targets.filter((t) => t.online === true).length
   const tOffline = targets.filter((t) => t.online === false).length
   const noTargets = targets.length === 0
-  const allGood = !noTargets && tOffline === 0
+  // Ampel bezieht offline VPN-Peers ein: gruen nur wenn nichts offline ist.
+  // Sind keine Infra-Ziele konfiguriert, dient der VPN-Status als Ampelquelle,
+  // statt komplett neutral zu werden.
+  const anyOffline = tOffline > 0 || peersOff > 0
+  const allGood = !anyOffline && !(noTargets && peers.length === 0)
+  const neutral = noTargets && peers.length === 0
+
+  async function checkNow() {
+    setChecking(true)
+    try {
+      await refresh()
+    } finally {
+      setChecking(false)
+    }
+  }
 
   const byType: Record<string, StatusTarget[]> = {}
   for (const t of targets) {
@@ -60,31 +85,40 @@ export function StatusPage() {
       <div
         className={cn(
           "mb-5 flex items-center gap-4 rounded-xl border border-l-4 p-5",
-          noTargets
+          neutral
             ? "border-l-muted-foreground/30 bg-muted/30"
             : allGood
               ? "border-l-ok bg-ok/5"
               : "border-l-destructive bg-destructive/5",
         )}
       >
-        {noTargets ? (
+        {neutral ? (
           <HelpCircle className="size-8 shrink-0 text-muted-foreground" />
         ) : allGood ? (
           <CheckCircle2 className="size-8 shrink-0 text-ok" />
         ) : (
           <AlertTriangle className="size-8 shrink-0 text-destructive" />
         )}
-        <div className="min-w-0">
+        <div className="min-w-0 flex-1">
           <div className="text-lg font-semibold">
-            {noTargets
-              ? "Keine Infrastruktur-Ziele konfiguriert"
+            {neutral
+              ? "Keine Ziele konfiguriert"
               : allGood
                 ? "Alles erreichbar"
-                : `${tOffline} Infrastruktur-Ziel${tOffline === 1 ? "" : "e"} offline`}
+                : offlineHeadline(tOffline, peersOff)}
           </div>
           <div className="text-sm text-muted-foreground tabular-nums">
             Infrastruktur {tOnline}/{targets.length} erreichbar · VPN-Geräte {peersOn}/{peers.length} verbunden
           </div>
+        </div>
+        <div className="flex shrink-0 flex-col items-end gap-1.5">
+          <Button variant="outline" size="sm" onClick={checkNow} disabled={checking}>
+            <RefreshCw className={cn("size-3.5", checking && "animate-spin")} />
+            {checking ? "Prüfe…" : "Jetzt prüfen"}
+          </Button>
+          <span className="text-[11px] text-muted-foreground tabular-nums">
+            zuletzt geprüft {relativeTime(data.generated)}
+          </span>
         </div>
       </div>
 
@@ -111,15 +145,27 @@ export function StatusPage() {
                       <div className="min-w-0 flex-1">
                         <div className="truncate font-medium">{t.name}</div>
                         <div className="truncate font-mono text-[12.5px] text-muted-foreground">{t.host}</div>
+                        {t.online === null && (
+                          <div className="mt-0.5 text-[11px] text-warn">
+                            Kein gültiges privates IP-Ziel: nur IP-Adressen, keine Hostnamen.
+                          </div>
+                        )}
                       </div>
-                      <div className="text-[13px] tabular-nums text-muted-foreground">
+                      <div
+                        className="text-[13px] tabular-nums text-muted-foreground"
+                        title={
+                          t.online === null
+                            ? "Der Server pingt nur private IP-Adressen. Hostnamen werden verworfen. Bitte in status-targets.json eine IP eintragen."
+                            : undefined
+                        }
+                      >
                         {t.online === true
                           ? t.ms != null
                             ? `${Math.round(t.ms)} ms`
                             : "erreichbar"
                           : t.online === false
                             ? "offline"
-                            : "—"}
+                            : "nicht prüfbar"}
                       </div>
                     </div>
                   ))}

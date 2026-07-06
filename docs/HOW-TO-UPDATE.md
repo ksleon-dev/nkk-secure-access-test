@@ -144,6 +144,24 @@ scp NKK-Secure-Access.zip root@192.168.0.50:/opt/nkk-api/downloads/
 scp "NKK Secure Access_X.Y.Z_aarch64.dmg" root@192.168.0.50:/opt/nkk-api/downloads/
 ```
 
+### Upload hosted install scripts (MANDATORY whenever they changed!)
+The panel one-liners and Level rollouts fetch these from the server, NOT from git.
+A stale server copy silently drops new features (e.g. NKK_PROFILE) — this was
+missed in v0.3.21 and only caught by the v0.3.22 release gate.
+```bash
+scp scripts/macos-install.sh scripts/install-windows.ps1 scripts/level-rollout/update-all-windows.ps1 root@192.168.0.50:/opt/nkk-api/downloads/
+# Verify (must show the new content):
+curl -s https://api.secure.nkk-hb.de/download/macos-install.sh | grep -c NKK_PROFILE
+curl -s -o /dev/null -w "%{http_code}\n" https://api.secure.nkk-hb.de/download/install-windows.ps1
+```
+
+### Deploy admin panel (MANDATORY when admin-panel/ changed or a release happened)
+`release.sh` copies the CHANGELOG into the panel; without a panel deploy the live
+panel keeps generating OLD one-liners and shows the old changelog.
+```bash
+cd admin-panel && npm run build   # then deploy dist/ to /opt/nkk-admin/dist (tar-pipe or deploy.sh)
+```
+
 ### Update API news
 SSH into `root@192.168.0.50`, edit `/opt/nkk-api/` news data.
 
