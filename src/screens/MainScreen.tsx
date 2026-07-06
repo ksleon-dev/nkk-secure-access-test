@@ -39,7 +39,7 @@ import { de } from "../i18n/de";
 import { copyText } from "../lib/clipboard";
 import { italicAccent, timeOfDayGreeting } from "../lib/greeting";
 import type { BrandingDto, QuickLaunchEntry } from "../types/branding";
-import { roleCanSee, normalizeRole, ROLE_LABELS } from "../lib/roles";
+import { roleCanSee, normalizeRole, ROLE_LABELS, descriptionForRole } from "../lib/roles";
 import { displayName, type CredentialProfileMeta } from "../types/credentials";
 import type {
   AppSettings,
@@ -429,7 +429,9 @@ export function MainScreen({
       // sieht alles). Ungegatete Ziele sieht jeder.
       return roleCanSee(q.role, role);
     })
-    .sort((a, b) => Number(!!b.default) - Number(!!a.default));
+    .sort((a, b) => Number(!!b.default) - Number(!!a.default))
+    // Beschreibung rollen-gerecht: InFact sieht z.B. "Serv-App" statt "Serv-App, InFact".
+    .map((q) => ({ ...q, description: descriptionForRole(q.description, role) }));
 
   // ----- Admin-Modus: Live-Suche + Gruppierung + Live-Status -----------------
   // Die Live-Suche filtert clientseitig ueber Name, Adresse und Beschreibung.

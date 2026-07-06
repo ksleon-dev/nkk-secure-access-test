@@ -6,6 +6,10 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), [SemVer](https
 
 ## [Unreleased]
 
+## [0.3.23] - 2026-07-06
+
+- macOS-Dateiablage oeffnet ohne Passwort-Prompt (Zugangsdaten aus dem Profil werden in die Verbindung eingebettet); Status-Punkt der Kacheln nicht mehr faelschlich rot bei Servern mit mehreren IP-Adressen (parallele Erreichbarkeitspruefung); InFact-Profil zeigt beim App-Server nur 'Serv-App' statt 'Serv-App, InFact'; Aktuelles laedt wieder zuverlaessig die Live-Meldungen (CORS am News-Feed)
+
 ## [0.3.22] - 2026-07-06
 
 - InFact-Profil: eigenes App-Profil fuer den Dienstleister InFact (sieht nur Terminalserver 2, Dateiablage und App-Server), Profil ab sofort bei der Installation waehlbar und im Panel je Setup-Key vorbelegt (Releases-Seite: Geraet onboarden mit Key und Profil in einem Schritt); Windows-Installation mit Terminal-Feedback und automatischem App-Start nach Erfolg; Dateiablage oeffnet ohne Passwort-Prompt (Zugangsdaten werden kurzzeitig vorbelegt) und verwaiste SMB-Zugangsdaten werden beim naechsten Start aufgeraeumt; interaktives Windows-Installationsskript install-windows.ps1; Aktuelles-Meldungen bereinigt. Release-Gate: kompletter Diff adversarial geprueft (5 Pruefpakete), 8 Funde vor dem Release behoben

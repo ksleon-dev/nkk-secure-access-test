@@ -1,7 +1,7 @@
 {
   "name": "nkk-secure-access",
   "private": true,
-  "version": "0.3.22",
+  "version": "0.3.23",
   "type": "module",
   "description": "NKK Secure Access — Netbird VPN Client (white-label fähig)",
   "scripts": {

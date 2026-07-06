@@ -7,6 +7,27 @@ DATA_DIR = "/data"
 DOWNLOAD_DIR = "/downloads"
 os.makedirs(DATA_DIR, exist_ok=True)
 
+
+@app.after_request
+def add_cors_headers(resp):
+    # Die Desktop-App (Tauri/WKWebView, Origin tauri://localhost) holt /api/news
+    # per fetch cross-origin. Ohne diese Header verwirft die WebView die Antwort
+    # (CORS) und zeigt nur die eingebauten Fallback-News statt des Live-Feeds.
+    # Alle Endpunkte hier sind oeffentliche Read-/Enrollment-Routen, daher ist "*"
+    # unbedenklich. curl braucht kein CORS - deshalb fiel es beim Testen nie auf.
+    resp.headers["Access-Control-Allow-Origin"] = "*"
+    resp.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
+    resp.headers["Access-Control-Allow-Headers"] = "Content-Type"
+    return resp
+
+
+@app.route("/api/news", methods=["OPTIONS"])
+@app.route("/api/enrollment", methods=["OPTIONS"])
+def cors_preflight():
+    # Preflight (falls je ein Client mit Custom-Header/Content-Type-JSON anfragt):
+    # leere 204-Antwort, die CORS-Header setzt der after_request-Hook.
+    return ("", 204)
+
 @app.route("/api/enrollment", methods=["POST"])
 def enrollment():
     data = request.get_json(silent=True) or {}

@@ -35,6 +35,24 @@ export function normalizeRole(raw: string | null | undefined): UserRole {
  *  - eigene Rolle im Set => sichtbar
  *  - Sondertoken "admin" = beide privilegierten Rollen (manager + it_admin)
  */
+/**
+ * Beschreibung eines Launch-Ziels fuer die aktuelle Rolle aufbereiten. Fuer das
+ * InFact-Profil den redundanten abschliessenden ", InFact"-Zusatz entfernen: ein
+ * InFact-Nutzer braucht den Hinweis "hier laeuft InFact" nicht, er sieht z.B. bei
+ * App-Server nur "Serv-App". Andere Rollen und Beschreibungen bleiben unveraendert
+ * (Admins sehen weiterhin die volle Angabe). Pure + einfach testbar.
+ */
+export function descriptionForRole(
+  desc: string | null | undefined,
+  role: UserRole,
+): string {
+  const d = (desc ?? "").trim();
+  if (role === "infact") {
+    return d.replace(/[,;]\s*InFact\s*$/i, "").trim();
+  }
+  return d;
+}
+
 export function roleCanSee(
   entryRole: string | undefined | null,
   role: UserRole,

@@ -3369,6 +3369,46 @@ fn smb_host_from_target(target: &str) -> String {
         .to_string()
 }
 
+/// Percent-Encoding fuer die userinfo-Komponente (User/Passwort) einer smb:// URL.
+/// Kodiert alles ausser den unreserved-Zeichen (RFC 3986), damit Sonderzeichen im
+/// Passwort (@ : / ; # ? Leerzeichen ...) die URL nicht zerlegen. Pure + testbar.
+#[allow(dead_code)]
+fn percent_encode_userinfo(s: &str) -> String {
+    let mut out = String::with_capacity(s.len());
+    for b in s.bytes() {
+        match b {
+            b'A'..=b'Z' | b'a'..=b'z' | b'0'..=b'9' | b'-' | b'.' | b'_' | b'~' => out.push(b as char),
+            _ => out.push_str(&format!("%{:02X}", b)),
+        }
+    }
+    out
+}
+
+/// Baut die macOS smb:// URL. Pure + testbar (Release-Gate-Lehre: Laufzeit-Annahmen
+/// als reine Funktion mit Unit-Test absichern). Ohne user -> nur host/share. Mit
+/// user aber ohne pass -> Domaene;User (Finder fragt das Passwort). Mit user+pass
+/// -> Domaene;User:Passwort (kein Prompt). User + Passwort werden percent-enkodiert.
+#[allow(dead_code)]
+fn build_smb_url(host_share: &str, domain: &str, user: Option<&str>, pass: &str) -> String {
+    match user {
+        None => format!("smb://{}", host_share),
+        Some(u) => {
+            let ue = percent_encode_userinfo(u);
+            if pass.is_empty() {
+                format!("smb://{};{}@{}", domain, ue, host_share)
+            } else {
+                format!(
+                    "smb://{};{}:{}@{}",
+                    domain,
+                    ue,
+                    percent_encode_userinfo(pass),
+                    host_share
+                )
+            }
+        }
+    }
+}
+
 #[tauri::command]
 pub async fn open_smb(
     app: AppHandle,
@@ -3444,12 +3484,16 @@ pub async fn open_smb(
         // (nur das letzte Segment hinter '\' zaehlt), wie es rdp_login auch macht.
         // Ohne Profil/User bleibt das heutige Verhalten (kein Domaenen-Prefix).
         let profiles = cached_profiles(&state).await.unwrap_or_default();
-        let smb_user = profiles.first().and_then(|p| {
+        // Aktives/erstes Profil: bare-User (Domaenen-Prefix wie "NKKHB\max" abstreifen)
+        // + Passwort. Mit Passwort baut die URL die Credentials ein -> Finder mountet
+        // OHNE Prompt (analog zur Windows-cmdkey-Injektion). Ohne Profil/Passwort
+        // bleibt das heutige Verhalten (Finder fragt).
+        let smb_cred = profiles.first().and_then(|p| {
             let bare = p.username.rsplit('\\').next().unwrap_or(&p.username).trim();
             if bare.is_empty() {
                 None
             } else {
-                Some(bare.to_string())
+                Some((bare.to_string(), p.password.clone()))
             }
         });
 
@@ -3459,13 +3503,10 @@ pub async fn open_smb(
             .trim_start_matches("\\\\")
             .replace('\\', "/");
 
-        let url = if let Some(user) = smb_user {
-            // domain;user@host/share - Domaene erzwungen wie bei RDP (NKKHB).
-            format!("smb://{};{}@{}", RDP_DEFAULT_DOMAIN, user, host_share)
-        } else if target.starts_with("smb://") {
-            target.clone()
-        } else {
-            format!("smb://{}", host_share)
+        let url = match smb_cred {
+            Some((user, pass)) => build_smb_url(&host_share, RDP_DEFAULT_DOMAIN, Some(&user), &pass),
+            None if target.starts_with("smb://") => target.clone(),
+            None => build_smb_url(&host_share, RDP_DEFAULT_DOMAIN, None, ""),
         };
         std::process::Command::new("open")
             .arg(url)
@@ -3698,8 +3739,8 @@ pub async fn open_ssh(
 
 /// Honest TCP reachability check for a launch target on its type-specific port
 /// (rdp 3389, ssh 22, url 8899, smb 445). Uses the existing `tcp_reachable`
-/// probe (~350ms timeout). More reliable than ICMP ping, which Windows/Hetzner
-/// often block.
+/// probe (löst alle Adressen auf, ~700ms pro Adresse, parallel). More reliable
+/// than ICMP ping, which Windows/Hetzner often block.
 #[tauri::command]
 pub async fn check_target(host: String, port: u16) -> AppResult<bool> {
     let host = validate_host_target(&host)?;
@@ -5041,14 +5082,40 @@ pub struct OnSiteResult {
 
 /// Probe whether any RDP target is reachable directly (LAN), not via the tunnel.
 async fn tcp_reachable(addr: &str) -> bool {
-    matches!(
-        timeout(
-            Duration::from_millis(350),
-            tokio::net::TcpStream::connect(addr),
-        )
-        .await,
-        Ok(Ok(_))
-    )
+    // Host:Port zu ALLEN Adressen aufloesen und PARALLEL probieren: erreichbar,
+    // sobald EINE Adresse verbindet. Entscheidend bei Multi-A-Records - z.B.
+    // serv-file = 192.168.0.10 (ueber NetBird geroutet) + 10.0.0.10 (VLAN4000,
+    // NICHT geroutet). Ein einzelner connect() haengt sonst an der unroutbaren
+    // Adresse bis zum Timeout und meldet faelschlich "nicht erreichbar" (roter
+    // Status-Punkt), obwohl das Oeffnen real funktioniert. 700ms toleriert zudem
+    // VPN-Latenz besser als die fruehere 350ms-Schranke.
+    let addrs: Vec<std::net::SocketAddr> = match tokio::net::lookup_host(addr).await {
+        Ok(it) => it.collect(),
+        Err(_) => return false,
+    };
+    if addrs.is_empty() {
+        return false;
+    }
+    let mut set = tokio::task::JoinSet::new();
+    for a in addrs {
+        set.spawn(async move {
+            matches!(
+                timeout(
+                    Duration::from_millis(700),
+                    tokio::net::TcpStream::connect(a),
+                )
+                .await,
+                Ok(Ok(_))
+            )
+        });
+    }
+    while let Some(res) = set.join_next().await {
+        if matches!(res, Ok(true)) {
+            set.abort_all();
+            return true;
+        }
+    }
+    false
 }
 
 async fn probe_onsite(targets: &[String], vpn_active: bool) -> OnSiteResult {
@@ -6085,6 +6152,33 @@ mod tests {
         assert!(version_lt("v0.68.0", "0.68.1"));
         assert!(!version_lt("0.73.2", "0.73.2"));
         assert!(!version_lt("0.73.2", "0.73.1"));
+    }
+
+    #[test]
+    fn percent_encode_userinfo_encodes_reserved_and_utf8() {
+        assert_eq!(percent_encode_userinfo("abc123"), "abc123");
+        assert_eq!(percent_encode_userinfo("a.b-c_d~"), "a.b-c_d~");
+        assert_eq!(percent_encode_userinfo("a b"), "a%20b");
+        // Genau die Zeichen, die eine smb://user:pass@host URL sonst zerlegen wuerden.
+        assert_eq!(percent_encode_userinfo("p@ss:w/rd;#?"), "p%40ss%3Aw%2Frd%3B%23%3F");
+        // UTF-8-Mehrbyte (Umlaut) korrekt byteweise kodiert.
+        assert_eq!(percent_encode_userinfo("Pä!"), "P%C3%A4%21");
+    }
+
+    #[test]
+    fn smb_url_build_variants() {
+        // Ohne User: nur host/share, kein Credential.
+        assert_eq!(build_smb_url("serv-file/Daten", "NKKHB", None, ""), "smb://serv-file/Daten");
+        // User ohne Passwort: Domaene;User (Finder fragt Passwort).
+        assert_eq!(
+            build_smb_url("serv-file/Daten", "NKKHB", Some("max"), ""),
+            "smb://NKKHB;max@serv-file/Daten"
+        );
+        // User + Passwort mit Sonderzeichen: kein Prompt, alles enkodiert.
+        assert_eq!(
+            build_smb_url("serv-file/Daten", "NKKHB", Some("max"), "p@ss:w/rd"),
+            "smb://NKKHB;max:p%40ss%3Aw%2Frd@serv-file/Daten"
+        );
     }
 
     #[test]
