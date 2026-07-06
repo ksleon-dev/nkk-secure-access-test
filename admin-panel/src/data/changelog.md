@@ -6,6 +6,10 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), [SemVer](https
 
 ## [Unreleased]
 
+## [0.3.19] - 2026-07-06
+
+- Grosses Veredelungs-Release: neuer IT-Admin-Modus (Server-Gruppen, Live-Status, SSH-Fenster Shift+8/9, direkter Panel-Knopf, smarte Rechtsklick-Menues); 12 Bugfixes aus adversarialem Audit (serverseitige Ziel-Allowlist, Admin-Panel-Link Shift+7, Live-Status pro Host und Port, korrektes RDP-Profil, ehrliche macOS-SSH-Fehler, Doppelklick-Schutz); haertere Live-Flows (klare Update-Meldung bei fehlenden Rechten, kein Fehlreport vor Enrollment, kein Auto-Connect gegen abgelaufene Sitzung); 25 Feinschliffe (Bestaetigungsdialoge, klarere Meldungen, Finder/Explorer + Cmd/Strg getrennt, Kontrast, Tastatur-Fokus); Kabel/WLAN-Bevorzugung mit Rueckgaengig; App-Symbol im korrekten Apple-Format
+
 ## [0.3.18] - 2026-06-30
 
 - Audit-Fixes (8 Bugs aus dem Komplett-Check): Enrollment-Regression behoben (Connect MIT Key wird nie verschluckt); Admin 'Nach Update suchen' startet korrekt neu (relaunch_app statt nicht-registriertem Plugin); Auto-Update-Hinweisbox auch bei passive-Install (/P) unterdrueckt; RDP cmdkey-Credential 60->15s; Profil-Loeschen + NewsScreen ruhige/robuste Behandlung; Auto-Reconnect-Abbruch-Race geschlossen; open_rdp blockiert den Async-Worker nicht mehr (spawn_blocking). Feature-Vollstaendigkeit im Audit bestaetigt (50/50 Befehle verdrahtet)

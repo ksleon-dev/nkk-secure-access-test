@@ -54,7 +54,7 @@ export function StatusPage() {
     <div>
       <PageHeader
         title="Status"
-        description="Erreichbarkeit von Infrastruktur und VPN-Geräten — von Drucker bis Server bis Client."
+        description="Erreichbarkeit von Infrastruktur und VPN-Geräten: von Drucker bis Server bis Client."
       />
 
       <div
@@ -92,7 +92,7 @@ export function StatusPage() {
       {targets.length === 0 ? (
         <div className="mb-6 rounded-xl border border-dashed bg-card p-6 text-center text-sm text-muted-foreground">
           Noch keine Server/Drucker hinterlegt. Eintragen in{" "}
-          <span className="font-mono">/etc/nkk-admin/status-targets.json</span> (Name, IP, Typ) — der Server pingt sie
+          <span className="font-mono">/etc/nkk-admin/status-targets.json</span> (Name, IP, Typ). Der Server pingt sie
           dann hier alle 60 s.
         </div>
       ) : (

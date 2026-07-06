@@ -4,12 +4,13 @@ import {
   EyeOff,
   KeyRound,
   Loader2,
+  Lock,
   Save,
-  ShieldCheck,
   Tag,
   User,
   X,
 } from "lucide-react";
+import clsx from "clsx";
 import { useCallback, useEffect, useState } from "react";
 import { useToast } from "../components/Toast";
 import {
@@ -41,9 +42,14 @@ export function CredentialsModal({ initial, defaultDomain, onSaved, onClose }: P
     return () => window.removeEventListener("keydown", handleEsc);
   }, [handleEsc]);
   const [label, setLabel] = useState(initial?.label ?? "");
-  const [username, setUsername] = useState(initial?.username ?? "");
+  // Username IMMER ohne Domaenen-Prefix fuehren (der Prefix ist fest im Feld sichtbar),
+  // damit Anzeige und Backend sich nicht zu "NKKHB\NKKHB\max" doppeln.
+  const [username, setUsername] = useState(bareUser(initial?.username ?? ""));
   const [password, setPassword] = useState("");
-  const [domain, setDomain] = useState(initial?.domain ?? domainDefault);
+  // Anmelde-Domaene ist NICHT waehlbar: bei NKK meldet sich JEDER an NKKHB an. Ein frei
+  // editierbares Feld waere nur eine Fehlerquelle (falsche Domaene = Login schlaegt fehl).
+  // Fest aus dem Branding, im Benutzername-Feld nur als gesperrter Prefix sichtbar.
+  const domain = domainDefault;
   const [showPw, setShowPw] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -79,15 +85,15 @@ export function CredentialsModal({ initial, defaultDomain, onSaved, onClose }: P
     try {
       const saved = await invoke<CredentialProfileMeta>("creds_save", {
         id: initial?.id ?? null,
-        label: label.trim() || username.trim(),
-        username: username.trim(),
+        label: label.trim() || bareUser(username),
+        username: bareUser(username),
         password,
         domain: domain.trim() || null,
       });
       toast.success(
         editing
           ? "Profil aktualisiert."
-          : "Profil gespeichert - verschlüsselt im OS Tresor."
+          : "Profil gespeichert. Verschlüsselt im System-Tresor."
       );
       onSaved(saved);
     } catch (e: unknown) {
@@ -147,36 +153,31 @@ export function CredentialsModal({ initial, defaultDomain, onSaved, onClose }: P
             }
           />
           <Field
-            label="Domäne"
-            icon={<ShieldCheck size={11} />}
-            input={
-              <input
-                type="text"
-                value={domain}
-                onChange={(e) => setDomain(e.target.value)}
-                placeholder={domainDefault || "Domäne"}
-                spellCheck={false}
-                autoComplete="off"
-                className={inputCls}
-                disabled={busy}
-              />
-            }
-          />
-          <Field
             label="Benutzername"
             icon={<User size={11} />}
             input={
-              <input
-                type="text"
-                value={username}
-                onChange={(e) => setUsername(e.target.value)}
-                placeholder="max.mustermann"
-                spellCheck={false}
-                autoComplete="username"
-                className={inputCls}
-                disabled={busy}
-                autoFocus={!editing}
-              />
+              <div className="flex items-stretch">
+                {domain && (
+                  <span
+                    className="flex items-center gap-1 shrink-0 select-none rounded-l-md border border-r-0 border-[color:var(--brand-border)] bg-[color:var(--brand-bg-soft)] pl-2.5 pr-2 text-sm font-medium text-muted"
+                    title={`Anmeldung immer an ${domain}, fest eingestellt`}
+                  >
+                    <Lock size={10} className="opacity-50" />
+                    {domain}\
+                  </span>
+                )}
+                <input
+                  type="text"
+                  value={username}
+                  onChange={(e) => setUsername(e.target.value)}
+                  placeholder="max.mustermann"
+                  spellCheck={false}
+                  autoComplete="username"
+                  className={clsx(inputCls, "min-w-0 flex-1", domain && "rounded-l-none")}
+                  disabled={busy}
+                  autoFocus={!editing}
+                />
+              </div>
             }
           />
           <Field
@@ -262,10 +263,17 @@ function Field({
   );
 }
 
+/** Nur den echten Kontonamen behalten - einen "DOMAIN\"-Prefix (auch aus Altprofilen
+ *  oder versehentlich eingefuegt) abstreifen. Die Domaene ist fest und wird separat gesetzt. */
+function bareUser(u: string): string {
+  const s = (u ?? "").trim();
+  return s.includes("\\") ? s.split("\\").pop()!.trim() : s;
+}
+
 function macOrWin(): string {
   if (typeof navigator !== "undefined") {
     if (/Mac/.test(navigator.platform)) return "macOS Schlüsselbund";
     if (/Win/.test(navigator.platform)) return "Windows Credential Manager";
   }
-  return "System Tresor";
+  return "System-Tresor";
 }

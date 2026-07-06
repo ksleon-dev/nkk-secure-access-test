@@ -23,8 +23,7 @@ export function timeOfDayGreeting(date = new Date()): string {
  * page typography ("Wir machen's / frisch.").
  */
 export function italicAccent(
-  state: "Connected" | "Connecting" | "Disconnected" | "Error",
-  _unused?: boolean
+  state: "Connected" | "Connecting" | "Disconnected" | "Error"
 ): string {
   switch (state) {
     case "Connected":
@@ -36,26 +35,4 @@ export function italicAccent(
     default:
       return "gleich geht's los.";
   }
-}
-
-/**
- * Curated rotating bio-themed footnote. Deterministic per day so it doesn't
- * flicker on re-render and feels intentional.
- */
-const BIO_TIPS = [
-  "Bio braucht eben manchmal etwas länger. Dafür wird's umso besser.",
-  "Wusstest du? NKK liefert seit 1979 Bio nach Bremen.",
-  "Tipp: Wurzelpetersilie ist jetzt im Frühjahr am besten.",
-  "Frisch verpackt, regional gehostet.",
-  "Kurze Wege, knackige Latenz.",
-  "Tunnel grün, wie unsere Möhren.",
-  "Bio Stack. Hand made in Bremen.",
-  "Schmeckt nach kurzer Latenz.",
-  "Hopfen und Malz, Tunnel ist da.",
-  "Heute schon gestaunt? Wir liefern bio seit 47 Jahren.",
-];
-
-export function bioFootnote(date = new Date()): string {
-  const idx = date.getDate() % BIO_TIPS.length;
-  return BIO_TIPS[idx];
 }

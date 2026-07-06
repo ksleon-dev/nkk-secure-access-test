@@ -44,7 +44,7 @@ export function DashboardPage() {
 
   return (
     <div>
-      <PageHeader title="Übersicht" description="Was gerade Aufmerksamkeit braucht — mit einem Klick erledigt." />
+      <PageHeader title="Übersicht" description="Was gerade Aufmerksamkeit braucht, mit einem Klick erledigt." />
 
       {/* Action Center */}
       <section className="mb-7">

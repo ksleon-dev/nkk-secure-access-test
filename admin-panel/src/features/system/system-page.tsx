@@ -1,10 +1,71 @@
+import { useEffect, useState } from "react"
 import { useData } from "@/lib/data-context"
 import { fmtNum } from "@/lib/format"
 import { PageHeader, ErrorState } from "@/components/common/bits"
 import { Skeleton } from "@/components/ui/skeleton"
 import { cn } from "@/lib/utils"
-import { HardDrive, ShieldCheck, DownloadCloud, Archive, KeyRound } from "lucide-react"
+import { HardDrive, ShieldCheck, DownloadCloud, Archive, KeyRound, Activity } from "lucide-react"
 import type { ReactNode } from "react"
+
+// Rohes /healthz-Ergebnis (bewusst kein api-Client: healthz liefert ok:false mit
+// HTTP 200, das wuerde der req-Helper faelschlich als Fehler werfen).
+interface Healthz {
+  ok: boolean
+  uptime_s: number
+  disk_pct: number
+  refreshers: Record<string, number>
+}
+
+// Sekunden menschenlesbar: 3 Tage, 4 h, 12 min, sonst < 1 min.
+function humanDuration(s: number): string {
+  if (s < 60) return "< 1 min"
+  const d = Math.floor(s / 86400)
+  const h = Math.floor((s % 86400) / 3600)
+  const m = Math.floor((s % 3600) / 60)
+  if (d > 0) return `${d} ${d === 1 ? "Tag" : "Tage"}, ${h} h`
+  if (h > 0) return `${h} h, ${m} min`
+  return `${m} min`
+}
+
+// Panel-Selbststatus: fragt /healthz (kein Auth). Bei Fehler dezent, kein Crash.
+function SelfStatusCard() {
+  const [hz, setHz] = useState<Healthz | null>(null)
+  const [failed, setFailed] = useState(false)
+
+  useEffect(() => {
+    let alive = true
+    fetch("/healthz")
+      .then((r) => r.json())
+      .then((j) => { if (alive) { setHz(j as Healthz); setFailed(false) } })
+      .catch(() => { if (alive) setFailed(true) })
+    return () => { alive = false }
+  }, [])
+
+  return (
+    <Card icon={<Activity className="size-4" />} title="Panel-Selbststatus">
+      {failed || !hz ? (
+        <p className="text-sm text-muted-foreground">
+          {failed ? "healthz nicht erreichbar (alter Backend-Stand?)." : "Wird geladen …"}
+        </p>
+      ) : (
+        <>
+          <Row label="Zustand" value={hz.ok ? "ok" : "Achtung"} tone={hz.ok ? "ok" : "warn"} />
+          <Row label="Uptime" value={humanDuration(hz.uptime_s)} />
+          <Row
+            label="Disk"
+            value={`${fmtNum(hz.disk_pct, 0)}%`}
+            tone={hz.disk_pct >= 90 ? "bad" : hz.disk_pct >= 80 ? "warn" : "ok"}
+          />
+          <Row
+            label="Refresher-Alter"
+            value={humanDuration(Math.max(0, ...Object.values(hz.refreshers)))}
+            tone={Math.max(0, ...Object.values(hz.refreshers)) > 900 ? "warn" : "ok"}
+          />
+        </>
+      )}
+    </Card>
+  )
+}
 
 function Card({ icon, title, children }: { icon: ReactNode; title: string; children: ReactNode }) {
   return (
@@ -57,7 +118,7 @@ export function SystemPage() {
 
   return (
     <div>
-      <PageHeader title="Server / System" description="Zustand von serv-secure — Speicher, Backups, Zertifikat, Auslieferung." />
+      <PageHeader title="Server / System" description="Zustand von serv-secure: Speicher, Backups, Zertifikat, Auslieferung." />
 
       <div className="grid gap-4 sm:grid-cols-2">
         <Card icon={<HardDrive className="size-4" />} title="Speicher">
@@ -122,6 +183,8 @@ export function SystemPage() {
             NetBird-Token serverseitig (nie im Browser)
           </div>
         </Card>
+
+        <SelfStatusCard />
       </div>
     </div>
   )

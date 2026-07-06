@@ -870,15 +870,31 @@ pub async fn nb_is_enrolled(app: AppHandle, state: State<'_, AppState>) -> AppRe
     if enrolled_marker_path(&app).map(|p| p.exists()).unwrap_or(false) {
         return Ok(true);
     }
-    // Slow: ask netbird if already connected (CLI call, no keychain)
-    match timeout(Duration::from_secs(3), state.netbird.status()).await {
-        Ok(Ok(s)) if s.management_connected => {
-            // Create marker so next startup is instant
-            let _ = write_enrolled_marker(&app);
-            Ok(true)
+    // Slow: ask netbird if already connected (CLI call, no keychain).
+    // #gap2: Beim Kaltstart direkt nach der Installation braucht der NetBird-Dienst
+    // manchmal ein paar Sekunden (AV-Scan, langsamer Dienststart). Ein einzelner
+    // 3s-Timeout meldete dann faelschlich "nicht enrolled" und warf den Nutzer auf den
+    // Enrollment-Screen, obwohl das Geraet bereits eingerichtet ist. Darum bis zu 3
+    // kurze Versuche (je 3s, insgesamt bis ~9s) - nur dieser Fallback-Pfad, der
+    // Marker-Pfad oben bleibt unveraendert schnell.
+    for attempt in 0..3 {
+        match timeout(Duration::from_secs(3), state.netbird.status()).await {
+            Ok(Ok(s)) if s.management_connected => {
+                // Create marker so next startup is instant
+                let _ = write_enrolled_marker(&app);
+                return Ok(true);
+            }
+            // Dienst erreichbar, aber (noch) nicht verbunden -> nicht weiter warten.
+            Ok(Ok(_)) => return Ok(false),
+            // Fehler/Timeout: kurz warten und erneut versuchen (Dienst faehrt evtl. noch hoch).
+            _ => {
+                if attempt < 2 {
+                    sleep(Duration::from_millis(500)).await;
+                }
+            }
         }
-        _ => Ok(false),
     }
+    Ok(false)
 }
 
 fn enrolled_marker_path(app: &AppHandle) -> Option<std::path::PathBuf> {
@@ -1795,6 +1811,132 @@ pub async fn dualhoming_prefer_wired(
     }
 }
 
+// Undo of dualhoming_prefer_wired. macOS restores the saved service order from
+// netorder-backup.txt; Windows resets the Wi-Fi interface back to the OS
+// automatic metric. Both ask for admin and are no-ops if there is nothing to
+// undo. This is what makes the "Reversibel" promise real.
+#[tauri::command]
+pub async fn dualhoming_restore(
+    app: AppHandle,
+    state: State<'_, AppState>,
+) -> AppResult<DualHomingResult> {
+    let _ = (&app, &state);
+
+    #[cfg(target_os = "macos")]
+    {
+        let backup = match app.path().app_data_dir() {
+            Ok(d) => d.join("netorder-backup.txt"),
+            Err(_) => {
+                return Ok(DualHomingResult {
+                    applied: false,
+                    message: "Keine Sicherung gefunden.".into(),
+                })
+            }
+        };
+        let content = match std::fs::read_to_string(&backup) {
+            Ok(c) => c,
+            Err(_) => {
+                return Ok(DualHomingResult {
+                    applied: false,
+                    message: "Keine Sicherung gefunden, nichts rueckgaengig zu machen.".into(),
+                })
+            }
+        };
+        let names: Vec<String> = content
+            .lines()
+            .map(|s| s.trim().to_string())
+            .filter(|s| !s.is_empty())
+            .collect();
+        if names.len() < 2 {
+            let _ = std::fs::remove_file(&backup);
+            return Ok(DualHomingResult {
+                applied: false,
+                message: "Sicherung unvollstaendig, nichts rueckgaengig zu machen.".into(),
+            });
+        }
+        let script = format!(
+            "#!/bin/sh\nnetworksetup -ordernetworkservices {}\n",
+            names
+                .iter()
+                .map(|n| format!("\"{}\"", n.replace('"', "")))
+                .collect::<Vec<_>>()
+                .join(" ")
+        );
+        let sp = std::env::temp_dir().join("nkk-restore-netorder.sh");
+        if std::fs::write(&sp, script).is_err() {
+            return Ok(DualHomingResult {
+                applied: false,
+                message: "Konnte Hilfsskript nicht schreiben.".into(),
+            });
+        }
+        let res = TokioCommand::new("osascript")
+            .args([
+                "-e",
+                &format!(
+                    "do shell script \"/bin/sh {}\" with administrator privileges",
+                    sp.to_string_lossy()
+                ),
+            ])
+            .output()
+            .await;
+        let _ = std::fs::remove_file(&sp);
+        return Ok(match res {
+            Ok(o) if o.status.success() => {
+                let _ = std::fs::remove_file(&backup);
+                DualHomingResult {
+                    applied: true,
+                    message: "Urspruengliche Reihenfolge wiederhergestellt. WLAN und Kabel wieder gleichrangig.".into(),
+                }
+            }
+            Ok(o) => {
+                let e = String::from_utf8_lossy(&o.stderr);
+                if e.contains("canceled") || e.contains("-128") {
+                    DualHomingResult { applied: false, message: "Abgebrochen.".into() }
+                } else {
+                    DualHomingResult { applied: false, message: "Konnte Reihenfolge nicht wiederherstellen.".into() }
+                }
+            }
+            Err(_) => DualHomingResult { applied: false, message: "Aktion fehlgeschlagen.".into() },
+        });
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        // Reset the up Wi-Fi adapter back to the automatic metric (undoes the
+        // fixed metric 60). Reliable and exact without storing the old value.
+        let ps1 = std::env::temp_dir().join("nkk-restore-metric.ps1");
+        let body = "$w = Get-NetAdapter -Physical | Where-Object { $_.Status -eq 'Up' -and $_.PhysicalMediaType -like '*802.11*' } | Select-Object -First 1; if ($w) { Set-NetIPInterface -InterfaceIndex $w.ifIndex -AddressFamily IPv4 -AutomaticMetric Enabled }";
+        if std::fs::write(&ps1, body).is_err() {
+            return Ok(DualHomingResult { applied: false, message: "Konnte Hilfsskript nicht schreiben.".into() });
+        }
+        let run = TokioCommand::new("powershell")
+            .args([
+                "-NoProfile", "-NonInteractive", "-inputformat", "none",
+                "-ExecutionPolicy", "Bypass", "-Command",
+                &format!(
+                    "Start-Process powershell -Verb RunAs -Wait -ArgumentList '-ExecutionPolicy','Bypass','-File','{}'",
+                    ps1.to_string_lossy()
+                ),
+            ])
+            .creation_flags(0x08000000)
+            .output()
+            .await;
+        let _ = std::fs::remove_file(&ps1);
+        return Ok(match run {
+            Ok(o) if o.status.success() => DualHomingResult { applied: true, message: "WLAN-Prioritaet zurueckgesetzt (automatisch). WLAN und Kabel wieder gleichrangig.".into() },
+            _ => DualHomingResult { applied: false, message: "Konnte WLAN-Prioritaet nicht zuruecksetzen (UAC?).".into() },
+        });
+    }
+
+    #[cfg(all(unix, not(target_os = "macos")))]
+    {
+        return Ok(DualHomingResult {
+            applied: false,
+            message: "Bitte die Netzwerk-Reihenfolge manuell zuruecksetzen.".into(),
+        });
+    }
+}
+
 /// Standalone speed test command - downloads 500 KB from Cloudflare's speed
 /// test CDN and measures real download throughput. Cross-platform, uses curl.
 #[tauri::command]
@@ -2189,6 +2331,28 @@ fn validate_host_target(target: &str) -> AppResult<String> {
     Ok(trimmed.to_string())
 }
 
+/// Sicherheits-Allowlist fuer die Launch-Kommandos (open_rdp/open_ssh/open_smb).
+/// Das uebergebene target MUSS exakt einem Eintrag aus branding.quickLaunch mit
+/// passendem Typ (kind) entsprechen (gleiche Zeichenkette). Kein Treffer -> Ablehnung,
+/// nichts wird gestartet. Damit kann ein manipuliertes Frontend keine beliebigen Hosts
+/// mehr ansteuern, sondern nur die zentral gepflegten Ziele.
+///
+/// WICHTIG: Das ist Komfort-/Fehlbedien-Schutz, KEINE echte Sicherheitsgrenze. Die echte
+/// Grenze bleibt die NetBird-ACL (welche Peers ein Client ueberhaupt erreicht) plus die
+/// Server-Credentials. KEINE Krypto/HMAC, KEINE Rollen-Erzwingung hier im Prozess.
+/// Der Rueckgabewert ist der gefundene Eintrag (fuer user/port-Abgleich bei SSH).
+fn allowlist_lookup<'a>(
+    branding: &'a BrandingDto,
+    kind: &str,
+    target: &str,
+) -> AppResult<&'a branding::QuickLaunchEntry> {
+    branding
+        .quick_launch
+        .iter()
+        .find(|q| q.kind == kind && q.target == target)
+        .ok_or_else(|| AppError::Internal("Unbekanntes Ziel. Verbindung abgelehnt.".into()))
+}
+
 #[derive(Serialize, Deserialize, Clone, Debug)]
 #[serde(default)]
 pub struct RdpSettings {
@@ -2265,7 +2429,8 @@ pub async fn rdp_settings_save(
         .map(|d| d.join(&shortcut_name).exists())
         .unwrap_or(false);
     if exists {
-        let _ = create_desktop_rdp_shortcut(app.clone(), state).await;
+        // Settings-sync path keeps the legacy default TS2 shortcut (no target/label).
+        let _ = create_desktop_rdp_shortcut(app.clone(), state, None, None).await;
     }
     Ok(())
 }
@@ -2363,23 +2528,76 @@ pub async fn app_settings_save(
 /// dann an der falschen an. NKK-Domaene = NKKHB. (White-Label: spaeter aus Branding.)
 const RDP_DEFAULT_DOMAIN: &str = "NKKHB";
 
-/// Effektive Anmelde-Domaene: die im Profil gesetzte, sonst der Standard (NKKHB).
+/// Anmelde-Domaene: IMMER NKKHB - hart erzwungen, nicht nur Default. Eine im Profil
+/// gespeicherte Fremd-Domaene (z.B. der lokale Rechnername, den ein Mitarbeiter mal
+/// ins Domaenen-Feld getippt hat) wird bewusst IGNORIERT: bei NKK melden sich alle an
+/// NKKHB an, jede abweichende Domaene fuehrte zur Anmeldung an der falschen (lokalen).
+/// (White-Label: die erzwungene Domaene spaeter aus dem Branding ziehen.)
 fn rdp_domain(p: &CredentialProfile) -> String {
-    p.domain
-        .as_deref()
-        .map(str::trim)
-        .filter(|d| !d.is_empty())
-        .unwrap_or(RDP_DEFAULT_DOMAIN)
-        .to_string()
+    if let Some(d) = p.domain.as_deref().map(str::trim).filter(|d| !d.is_empty()) {
+        let netbios = d.split('.').next().unwrap_or(d); // ".local"-Suffix abstreifen
+        if !netbios.eq_ignore_ascii_case(RDP_DEFAULT_DOMAIN) {
+            tracing::warn!(
+                "Profil-Domaene '{}' wird ignoriert, erzwinge {}.",
+                d,
+                RDP_DEFAULT_DOMAIN
+            );
+        }
+    }
+    RDP_DEFAULT_DOMAIN.to_string()
+}
+
+/// Waehlt das Profil per ID (Vertrag 2). Fehlt die ID oder wird sie nicht gefunden,
+/// faellt es auf das erste Profil zurueck - so bleibt der alte Aufruf ohne ID kompatibel.
+/// (Auf dem Linux-xfreerdp-Pfad werden keine Credentials aus Profilen injiziert, dort
+/// ist der Helfer daher ungenutzt - deshalb dort dead_code erlaubt.)
+#[cfg_attr(all(unix, not(target_os = "macos")), allow(dead_code))]
+fn select_profile<'a>(
+    profiles: &'a [CredentialProfile],
+    profile_id: Option<&str>,
+) -> Option<&'a CredentialProfile> {
+    if let Some(id) = profile_id.filter(|s| !s.is_empty()) {
+        if let Some(p) = profiles.iter().find(|p| p.id == id) {
+            return Some(p);
+        }
+    }
+    profiles.first()
 }
 
 /// Anmelde-User IMMER als DOMAIN\user (Domaene erzwungen -> Windows waehlt die
 /// richtige Domaene vor, statt der lokalen Maschine). Leerer Username -> None.
+///
+/// Defensiv: einen bereits im Username steckenden Domaenen-Prefix (z.B. ein Altprofil
+/// mit "NKKHB\max" oder "PC01\max") erst abstreifen, sonst entstuende "NKKHB\NKKHB\max".
+/// Es zaehlt nur das letzte Segment hinter dem Backslash als echter Kontoname.
 fn rdp_login(p: &CredentialProfile) -> Option<String> {
-    if p.username.trim().is_empty() {
+    let bare = p
+        .username
+        .rsplit('\\')
+        .next()
+        .unwrap_or(&p.username)
+        .trim();
+    if bare.is_empty() {
         None
     } else {
-        Some(format!("{}\\{}", rdp_domain(p), p.username.trim()))
+        Some(format!("{}\\{}", rdp_domain(p), bare))
+    }
+}
+
+/// Servername OHNE Port fuer den cmdkey-Credential-Namen. mstsc schlaegt die generische
+/// Credential unter TERMSRV/<host> nach - IMMER ohne Port. Wuerde cmdkey sie unter
+/// TERMSRV/<host:3389> ablegen (weil das Ziel einen Port traegt), matcht sie nie und der
+/// Nutzer bekommt trotz Injektion den Passwort-Prompt. Also den Port fuer den cmdkey-Namen
+/// abstreifen. IPv6 in [..] bleibt unangetastet (dort ist ':' Teil der Adresse).
+/// Nur Windows: cmdkey gibt es nur dort (macOS nutzt keinen Credential-Store-Namen).
+#[cfg(target_os = "windows")]
+fn termsrv_host(target: &str) -> &str {
+    if target.starts_with('[') {
+        return target;
+    }
+    match target.rsplit_once(':') {
+        Some((h, p)) if !h.is_empty() && p.chars().all(|c| c.is_ascii_digit()) => h,
+        _ => target,
     }
 }
 
@@ -2403,19 +2621,15 @@ fn rdp_file_content(target: &str, s: &RdpSettings, username: Option<&str>) -> St
     if s.microphone {
         lines.push("audiocapturemode:i:1".to_string());
     }
-    // Domaene fuer den Anmelde-Prompt IMMER vorwaehlen (aus dem qualifizierten
-    // DOMAIN\user, sonst Default NKKHB), damit Windows nie die lokale Domaene nimmt.
-    let dom = username
-        .and_then(|u| u.split_once('\\').map(|(d, _)| d))
-        .filter(|d| !d.is_empty())
-        .unwrap_or(RDP_DEFAULT_DOMAIN);
-    lines.push(format!("domain:s:{}", dom));
+    // KEINE separate domain:s:-Zeile: die Domaene steckt IMMER im qualifizierten Username
+    // (NKKHB\user). Eine zusaetzliche domain:s:-Zeile wuerde auf dem Mac (Microsoft Remote
+    // Desktop) Domaene + Username DOPPELN -> NKKHB\NKKHB\user. Der qualifizierte Username
+    // allein waehlt die Domaene auf Windows (mstsc) UND Mac korrekt vor.
     match username {
         Some(u) if !u.is_empty() => lines.push(format!("username:s:{}", u)),
-        // Kein bekannter User -> nur die Domaene vorwaehlen: "DOMAIN\" mit leerem User.
-        // Der Windows-Prompt zeigt dann NKKHB vorgewaehlt und der Mitarbeiter tippt nur
-        // seinen Namen dahinter (der zuverlaessigste Weg, die Domaene zu erzwingen).
-        _ => lines.push(format!("username:s:{}\\", dom)),
+        // Kein bekannter User -> Domaene ueber "NKKHB\" (leerer User) vorwaehlen; der Prompt
+        // zeigt NKKHB und der Mitarbeiter tippt nur seinen Namen dahinter.
+        _ => lines.push(format!("username:s:{}\\", RDP_DEFAULT_DOMAIN)),
     }
     lines.join("\r\n") + "\r\n"
 }
@@ -2427,18 +2641,27 @@ fn rdp_file_content(target: &str, s: &RdpSettings, username: Option<&str>) -> St
 pub async fn create_desktop_rdp_shortcut(
     app: AppHandle,
     state: State<'_, AppState>,
+    target: Option<String>,
+    label: Option<String>,
 ) -> AppResult<String> {
     let branding = ensure_branding(&app, &state).await.ok();
-    let target = branding
-        .as_ref()
-        .and_then(|b| {
-            b.quick_launch
-                .iter()
-                .find(|q| q.kind == "rdp" && q.default)
-                .or_else(|| b.quick_launch.iter().find(|q| q.kind == "rdp"))
-                .map(|q| q.target.clone())
-        })
-        .ok_or_else(|| AppError::Internal("Kein RDP-Ziel konfiguriert.".into()))?;
+    // When a concrete target is passed (per-tile in the admin grid) use exactly
+    // that host, validated. Only when it is absent (the old settings-sync path)
+    // fall back to the default RDP entry - otherwise every tile would drop the
+    // same TS2 shortcut.
+    let target = match target {
+        Some(t) => validate_host_target(&t)?,
+        None => branding
+            .as_ref()
+            .and_then(|b| {
+                b.quick_launch
+                    .iter()
+                    .find(|q| q.kind == "rdp" && q.default)
+                    .or_else(|| b.quick_launch.iter().find(|q| q.kind == "rdp"))
+                    .map(|q| q.target.clone())
+            })
+            .ok_or_else(|| AppError::Internal("Kein RDP-Ziel konfiguriert.".into()))?,
+    };
 
     let s = load_rdp_settings(&app);
     let profiles = cached_profiles(&state).await.unwrap_or_default();
@@ -2449,6 +2672,20 @@ pub async fn create_desktop_rdp_shortcut(
         .as_ref()
         .map(|b| b.product.short_name.clone())
         .unwrap_or_else(|| "NKK".to_string());
+    // The shortcut file name and description follow the passed label when given,
+    // so distinct servers get distinct shortcuts; otherwise the legacy
+    // "<name> Terminalserver" wording stays byte-for-byte identical.
+    let shortcut_base = match &label {
+        Some(l) if !l.trim().is_empty() => format!("{} {}", name, l.trim()),
+        _ => format!("{} Terminalserver", name),
+    };
+    // Only the Windows .lnk carries a description; on macOS/Linux the plain .rdp
+    // has none, so this is unused there.
+    #[cfg_attr(not(target_os = "windows"), allow(unused_variables))]
+    let shortcut_desc = match &label {
+        Some(l) if !l.trim().is_empty() => l.trim().to_string(),
+        _ => "NKK Terminalserver 2".to_string(),
+    };
 
     let result_path: std::path::PathBuf;
 
@@ -2463,7 +2700,7 @@ pub async fn create_desktop_rdp_shortcut(
             .app_data_dir()
             .map_err(|e| AppError::Internal(format!("App-Daten: {}", e)))?;
         let _ = std::fs::create_dir_all(&data_dir);
-        let rdp_path = data_dir.join(format!("{} Terminalserver.rdp", name));
+        let rdp_path = data_dir.join(format!("{}.rdp", shortcut_base));
         std::fs::write(&rdp_path, content).map_err(|e| AppError::Io(e.to_string()))?;
         sign_rdp_file(&rdp_path); // signieren -> keine RDP-Herausgeber-Warnung
 
@@ -2471,7 +2708,15 @@ pub async fn create_desktop_rdp_shortcut(
             .path()
             .desktop_dir()
             .map_err(|e| AppError::Internal(format!("Desktop: {}", e)))?;
-        let lnk_path = desktop.join(format!("{} Terminalserver.lnk", name));
+        let lnk_path = desktop.join(format!("{}.lnk", shortcut_base));
+        // PowerShell single-quote escaping (double any ') so ein Label mit Apostroph
+        // nie aus dem jeweiligen '...'-String-Literal ausbrechen kann. Betrifft die
+        // Description UND die beiden Pfade (lnk/rdp): der shortcut_base enthaelt das
+        // Label und landet direkt in beiden Dateinamen, ein Apostroph darauf wuerde
+        // sonst die Interpolation in TargetPath/Arguments/Shortcut-Pfad brechen.
+        let desc_ps = shortcut_desc.replace('\'', "''");
+        let lnk_ps = lnk_path.to_string_lossy().replace('\'', "''");
+        let rdp_ps = rdp_path.to_string_lossy().replace('\'', "''");
 
         // Bundled TS2 icon; if it is somehow missing the shortcut still works,
         // it just falls back to the default mstsc icon.
@@ -2489,10 +2734,11 @@ pub async fn create_desktop_rdp_shortcut(
              $sc = $ws.CreateShortcut('{lnk}'); \
              $sc.TargetPath = \"$env:SystemRoot\\System32\\mstsc.exe\"; \
              $sc.Arguments = '\"{rdp}\"'; \
-             $sc.Description = 'NKK Terminalserver 2'; \
+             $sc.Description = '{desc}'; \
              {icon}$sc.Save()",
-            lnk = lnk_path.to_string_lossy(),
-            rdp = rdp_path.to_string_lossy(),
+            lnk = lnk_ps,
+            rdp = rdp_ps,
+            desc = desc_ps,
             icon = icon_line,
         );
         let out = TokioCommand::new("powershell")
@@ -2525,7 +2771,7 @@ pub async fn create_desktop_rdp_shortcut(
             .path()
             .desktop_dir()
             .map_err(|e| AppError::Internal(format!("Desktop: {}", e)))?;
-        let path = desktop.join(format!("{} Terminalserver.rdp", name));
+        let path = desktop.join(format!("{}.rdp", shortcut_base));
         std::fs::write(&path, content).map_err(|e| AppError::Io(e.to_string()))?;
 
         // macOS: a .rdp otherwise shows the generic Remote-Desktop icon. Stamp
@@ -2675,9 +2921,25 @@ pub async fn open_rdp(
     app: AppHandle,
     target: String,
     gateway: Option<String>,
+    // Optionaler Profil-Wahl-Parameter (Vertrag 2). Option<String> ist bei Tauri
+    // bereits serde-default: ein alter Aufruf ohne profileId liefert None -> Fallback
+    // auf das erste Profil (select_profile). Frontend sendet profileId (camelCase).
+    profile_id: Option<String>,
     state: State<'_, AppState>,
 ) -> AppResult<()> {
     let target = validate_host_target(&target)?;
+    // #10: Der RDP-Host darf keinen ':' tragen (Port kommt separat/ist im .rdp fix).
+    // Ein ':' im Host wuerde IPv6-Adressen und die spaeteren Socket-/cmdkey-Namen brechen.
+    if target.contains(':') {
+        return Err(AppError::Internal(
+            "RDP-Ziel darf keinen Doppelpunkt enthalten.".into(),
+        ));
+    }
+    // #1 Allowlist: das Ziel MUSS ein gepflegter quickLaunch-Eintrag sein. Ausnahme:
+    // ein Gateway-Eintrag reicht das Ziel THROUGH die RD-Gateway (kein VPN) - dort ist
+    // das target ebenfalls ein Eintrag, daher greift die Allowlist auch fuer den Gateway-Pfad.
+    let branding_allow = ensure_branding(&app, &state).await?;
+    allowlist_lookup(&branding_allow, "rdp", &target)?;
     let rdp = load_rdp_settings(&app);
     // A gateway entry reaches the target over HTTPS/443 (RD Gateway), entirely
     // without NetBird, so it must never touch the VPN. Empty string = no gateway.
@@ -2734,6 +2996,7 @@ pub async fn open_rdp(
         use std::os::windows::process::CommandExt;
 
         let profiles = cached_profiles(&state).await.unwrap_or_default();
+        let selected = select_profile(&profiles, profile_id.as_deref());
         let safe_name = target.replace([':', '/', '\\'], "_");
         let rdp_path = std::env::temp_dir().join(format!("nkk-{}.rdp", safe_name));
 
@@ -2776,29 +3039,31 @@ pub async fn open_rdp(
         let full_addr = format!("full address:s:{}", target);
         let mut owned_lines: Vec<String> = vec![full_addr];
 
-        if let Some(p) = profiles.first() {
+        if let Some(p) = selected {
             if let Some(user) = rdp_login(p) {
                 // Credentials via cmdkey injizieren BEVOR mstsc die .rdp liest -> im
                 // Idealfall gar kein Prompt. user ist immer DOMAIN\user (Default NKKHB).
+                // cmdkey-Name IMMER portlos (termsrv_host): mstsc schlaegt die Credential
+                // unter TERMSRV/<host ohne Port> nach - mit Port wuerde sie nie matchen.
+                let cred_host = termsrv_host(&target);
                 tracing::info!("RDP: Injiziere Credentials fuer {} via cmdkey", user);
                 let _ = std::process::Command::new("cmdkey")
                     .args([
-                        &format!("/generic:TERMSRV/{}", target),
+                        &format!("/generic:TERMSRV/{}", cred_host),
                         &format!("/user:{}", user),
                         &format!("/pass:{}", p.password),
                     ])
                     .creation_flags(0x08000000)
                     .output();
-                // Domaene + User im .rdp vorwaehlen: falls doch ein Prompt kommt, ist
-                // die Domaene IMMER NKKHB (nicht die lokale Maschine).
-                owned_lines.push(format!("domain:s:{}", rdp_domain(p)));
+                // User im .rdp vorwaehlen: falls doch ein Prompt kommt, ist die Domaene
+                // IMMER NKKHB (steckt im qualifizierten user). KEINE separate domain:s:-Zeile
+                // (redundant auf Windows, und sie wuerde auf dem Mac die Domaene doppeln).
                 owned_lines.push(format!("username:s:{}", user));
             }
         }
         // Falls kein Username im .rdp landete (kein/leeres Profil): trotzdem die Domaene
         // vorwaehlen, damit der Windows-Prompt NKKHB zeigt statt der lokalen Maschine.
         if !owned_lines.iter().any(|l| l.starts_with("username:s:")) {
-            owned_lines.push(format!("domain:s:{}", RDP_DEFAULT_DOMAIN));
             owned_lines.push(format!("username:s:{}\\", RDP_DEFAULT_DOMAIN));
         }
 
@@ -2832,14 +3097,17 @@ pub async fn open_rdp(
         .await
         .map_err(|e| AppError::Internal(format!("rdp task: {}", e)))??;
 
-        // Clean up cmdkey + temp file after 60s (gives mstsc time to read the file
-        // and the user time to authenticate if cmdkey didn't inject credentials)
-        let target_cleanup = target.clone();
+        // Clean up cmdkey + temp file after 60s.
+        // Portlos loeschen (termsrv_host), damit es die oben angelegte Credential trifft.
+        let target_cleanup = termsrv_host(&target).to_string();
         tauri::async_runtime::spawn(async move {
-            // 15s statt 60s: mstsc liest die Credential beim Connect in 1-2s. Das
-            // verkleinert das Fenster, in dem eine generische TERMSRV-Credential im
-            // Credential Manager liegt (Sicherheit), mit Reserve fuer langsame Verbindungen.
-            sleep(Duration::from_secs(15)).await;
+            // 60s statt 15s: der VPN-Reconnect laeuft non-blocking im Hintergrund und kann
+            // beim Offsite-Kaltstart >13s brauchen, bis mstsc den Server ueberhaupt erreicht
+            // und die Credential liest. Loeschten wir schon nach 15s, waere die generische
+            // TERMSRV-Credential dann weg und der Nutzer bekaeme trotz Injektion den
+            // Passwort-Prompt. 60s deckt auch traege Verbindungen ab; danach wird die
+            // temporaere Credential wieder entfernt (Sicherheit).
+            sleep(Duration::from_secs(60)).await;
             let _ = std::process::Command::new("cmdkey")
                 .arg(format!("/delete:TERMSRV/{}", target_cleanup))
                 .creation_flags(0x08000000)
@@ -2852,71 +3120,20 @@ pub async fn open_rdp(
     #[cfg(target_os = "macos")]
     {
         let profiles = cached_profiles(&state).await.unwrap_or_default();
+        let selected = select_profile(&profiles, profile_id.as_deref());
 
-        // Try xfreerdp first (supports password injection)
-        let has_xfreerdp = std::process::Command::new("which")
-            .arg("xfreerdp3")
-            .output()
-            .map(|o| o.status.success())
-            .unwrap_or(false)
-            || std::process::Command::new("which")
-                .arg("xfreerdp")
-                .output()
-                .map(|o| o.status.success())
-                .unwrap_or(false);
+        // macOS nutzt den NATIVEN Microsoft Remote Desktop (die .rdp unten): polierter und
+        // voll ausgestattet (Multimon, Vollbild, alles). FreeRDP/xfreerdp wurde bewusst
+        // WIEDER ENTFERNT - auf dem Mac nur Aerger (X11 braucht XQuartz, SDL-Multimon ueber
+        // mehrere Monitore instabil). Einzige Einschraenkung des nativen Clients: er belegt
+        // das Passwort nicht aus der Datei vor (Apple-Grenze), merkt es sich aber nach dem
+        // ersten Mal (Haekchen "Passwort speichern") und fuellt es danach selbst. Domaene +
+        // Benutzer werden ueber die .rdp vorbelegt (qualifizierter username:s:NKKHB\user,
+        // kein Doppeln). Windows spritzt das Passwort weiter per cmdkey ein (unveraendert).
 
-        if has_xfreerdp {
-            if let Some(p) = profiles.first() {
-                let bin = if std::process::Command::new("which")
-                    .arg("xfreerdp3")
-                    .output()
-                    .map(|o| o.status.success())
-                    .unwrap_or(false)
-                {
-                    "xfreerdp3"
-                } else {
-                    "xfreerdp"
-                };
-                // Immer DOMAIN\user (Default NKKHB), sonst waehlt Windows die falsche Domaene.
-                let user = rdp_login(p).unwrap_or_else(|| p.username.clone());
-                let is_v3 = bin == "xfreerdp3";
-                let home = std::env::var("HOME").unwrap_or_else(|_| "/Users/Shared".to_string());
-                let mut args: Vec<String> = vec![
-                    format!("/v:{}", target),
-                    format!("/u:{}", user),
-                    format!("/p:{}", p.password),
-                    "/cert:ignore".into(),
-                    "/f".into(),
-                    "/smart-sizing".into(),
-                    "/auto-reconnect".into(),
-                ];
-                if rdp.multimon {
-                    args.push("/multimon".into());
-                }
-                if rdp.audio {
-                    args.push("/sound".into());
-                }
-                if rdp.microphone {
-                    args.push("/microphone".into());
-                }
-                if rdp.clipboard {
-                    // v3 carries files over the clipboard; v2 only has the toggle.
-                    args.push(if is_v3 { "/clipboard:files-to:all".into() } else { "+clipboard".to_string() });
-                }
-                if rdp.drives {
-                    args.push(format!("/drive:home,{}", home));
-                }
-                std::process::Command::new(bin)
-                    .args(&args)
-                    .spawn()
-                    .map_err(|e| AppError::Internal(format!("xfreerdp: {}", e)))?;
-                return Ok(());
-            }
-        }
-
-        // Fallback: .rdp file for Microsoft Remote Desktop
-        // macOS: only pre-fill username (no domain - Apple RDP handles it automatically,
-        // no password - Keychain injection not possible on macOS)
+        // .rdp fuer den nativen Microsoft Remote Desktop.
+        // Domaene + Benutzer werden vorbelegt (qualifizierter Username, kein Doppeln);
+        // das Passwort tippt der Nutzer einmal und kann es in MS Remote Desktop speichern.
         let mut rdp_file = format!(
             "full address:s:{target}\nauthentication level:i:0\nscreen mode id:i:2\nsmart sizing:i:1\naudiomode:i:{}\nredirectclipboard:i:{}\nuse multimon:i:{}\n",
             if rdp.audio { 0 } else { 2 },
@@ -2926,10 +3143,12 @@ pub async fn open_rdp(
         if rdp.camera {
             rdp_file.push_str("camerastoredirect:s:*\n");
         }
-        if let Some(p) = profiles.first() {
+        if let Some(p) = selected {
             if let Some(user) = rdp_login(p) {
-                // Domaene erzwingen (Default NKKHB) statt nur den blossen Usernamen.
-                rdp_file.push_str(&format!("domain:s:{}\n", rdp_domain(p)));
+                // NUR den qualifizierten Username (NKKHB\user). KEINE domain:s:-Zeile:
+                // Microsoft Remote Desktop auf dem Mac wuerde sonst Domaene + Username
+                // DOPPELN -> NKKHB\NKKHB\user. Der qualifizierte Username traegt die
+                // Domaene selbst und waehlt NKKHB korrekt vor.
                 rdp_file.push_str(&format!("username:s:{}\n", user));
             }
             rdp_file.push_str("prompt for credentials:i:0\n");
@@ -2949,6 +3168,9 @@ pub async fn open_rdp(
 
     #[cfg(all(unix, not(target_os = "macos")))]
     {
+        // Der Linux-xfreerdp-Pfad injiziert keine Profil-Credentials; profile_id ist hier
+        // ungenutzt, wird aber bewusst referenziert, damit kein Unused-Warning entsteht.
+        let _ = &profile_id;
         let mut args: Vec<String> = vec![
             format!("/v:{}", target),
             "/cert:ignore".to_string(),
@@ -2975,7 +3197,11 @@ pub async fn open_rdp(
 }
 
 #[tauri::command]
-pub async fn open_smb(target: String) -> AppResult<()> {
+pub async fn open_smb(
+    app: AppHandle,
+    target: String,
+    state: State<'_, AppState>,
+) -> AppResult<()> {
     let target = target.trim().to_string();
     if target.is_empty() {
         return Err(AppError::Internal("SMB Ziel ist leer.".into()));
@@ -2989,6 +3215,9 @@ pub async fn open_smb(target: String) -> AppResult<()> {
             target
         )));
     }
+    // #1 Allowlist: das SMB-Ziel MUSS ein gepflegter quickLaunch-Eintrag sein.
+    let branding_allow = ensure_branding(&app, &state).await?;
+    allowlist_lookup(&branding_allow, "smb", &target)?;
     #[cfg(target_os = "windows")]
     {
         use std::os::windows::process::CommandExt;
@@ -3001,13 +3230,34 @@ pub async fn open_smb(target: String) -> AppResult<()> {
     }
     #[cfg(target_os = "macos")]
     {
-        let url = if target.starts_with("smb://") {
+        // #gap4: Domaene + Benutzer vorbelegen (analog zu RDP). Finder akzeptiert
+        // smb://DOMAIN;user@host/share. User aus dem aktiven/ersten Profil, ein evtl.
+        // im Username steckender Domaenen-Prefix (z.B. "NKKHB\max") wird abgestreift
+        // (nur das letzte Segment hinter '\' zaehlt), wie es rdp_login auch macht.
+        // Ohne Profil/User bleibt das heutige Verhalten (kein Domaenen-Prefix).
+        let profiles = cached_profiles(&state).await.unwrap_or_default();
+        let smb_user = profiles.first().and_then(|p| {
+            let bare = p.username.rsplit('\\').next().unwrap_or(&p.username).trim();
+            if bare.is_empty() {
+                None
+            } else {
+                Some(bare.to_string())
+            }
+        });
+
+        // Rohes host/share aus dem Ziel (smb://-Prefix und UNC-Backslashes normalisieren).
+        let host_share = target
+            .trim_start_matches("smb://")
+            .trim_start_matches("\\\\")
+            .replace('\\', "/");
+
+        let url = if let Some(user) = smb_user {
+            // domain;user@host/share - Domaene erzwungen wie bei RDP (NKKHB).
+            format!("smb://{};{}@{}", RDP_DEFAULT_DOMAIN, user, host_share)
+        } else if target.starts_with("smb://") {
             target.clone()
         } else {
-            format!(
-                "smb://{}",
-                target.trim_start_matches("\\\\").replace('\\', "/")
-            )
+            format!("smb://{}", host_share)
         };
         std::process::Command::new("open")
             .arg(url)
@@ -3060,6 +3310,232 @@ pub async fn open_url(url: String) -> AppResult<()> {
             .map_err(|e| AppError::Internal(format!("open url: {}", e)))?;
     }
     Ok(())
+}
+
+/// Validate an SSH login user in isolation. The host goes through
+/// `validate_host_target`, which rejects '@' and '_', so the login user MUST be
+/// checked separately and only concatenated into `user@host` afterwards. Allows
+/// ASCII letters/digits plus '.', '-', '_'; 1..=32 chars.
+fn validate_ssh_user(user: &str) -> AppResult<String> {
+    if user.is_empty() || user.len() > 32 {
+        return Err(AppError::Internal("Ungültiger SSH-Benutzer.".into()));
+    }
+    if !user
+        .chars()
+        .all(|c| c.is_ascii_alphanumeric() || c == '.' || c == '-' || c == '_')
+    {
+        return Err(AppError::Internal("Ungültiger SSH-Benutzer.".into()));
+    }
+    Ok(user.to_string())
+}
+
+/// Open an interactive SSH session to a launch target in a real terminal window.
+/// Only used for entries of type "ssh" (Serv-Secure/.50, Serv-Network/.99).
+/// Auth is via a pre-installed key or an interactive prompt in the terminal -
+/// no secret ever touches this code.
+///
+/// Injection boundary: `host` is whitelisted by `validate_host_target`, `user`
+/// by `validate_ssh_user`, `port` defaults to 22 and 0 is rejected. Only the
+/// resulting `dest`/`port` reach osascript/wt/ssh, and Windows uses `.args()`
+/// (no shell), so no metacharacter can escape.
+#[tauri::command]
+pub async fn open_ssh(
+    app: AppHandle,
+    target: String,
+    user: Option<String>,
+    port: Option<u16>,
+    state: State<'_, AppState>,
+) -> AppResult<()> {
+    let host = validate_host_target(&target)?;
+    // #10: Der SSH-Host darf keinen ':' tragen - der Port kommt separat ueber das
+    // port-Feld. Ein ':' wuerde in den dest-String ("user@host") wandern und dort
+    // die Adresse verfaelschen (bzw. IPv6 uneindeutig machen).
+    if host.contains(':') {
+        return Err(AppError::Internal(
+            "SSH-Ziel darf keinen Doppelpunkt enthalten.".into(),
+        ));
+    }
+    let user = match user {
+        Some(u) => Some(validate_ssh_user(&u)?),
+        None => None,
+    };
+    // Ob der Port explizit uebergeben wurde, VOR dem Defaulten festhalten (fuer den
+    // Allowlist-Abgleich unten: null bedeutet "Eintragswert nutzen").
+    let port_provided = port.is_some();
+    let port = port.unwrap_or(22);
+    if port == 0 {
+        return Err(AppError::Internal("Ungültiger SSH-Port.".into()));
+    }
+
+    // #1 Allowlist (Vertrag 3): host MUSS ein quickLaunch-Eintrag vom Typ "ssh" sein.
+    // Zusaetzlich muessen user/port zum gefundenen Eintrag passen ODER null sein
+    // (dann werden die Eintragswerte verwendet). So kann ein manipuliertes Frontend
+    // weder einen fremden Host noch abweichende Login-Daten erzwingen.
+    let branding_allow = ensure_branding(&app, &state).await?;
+    let entry = allowlist_lookup(&branding_allow, "ssh", &host)?;
+    // User: uebergebener Wert muss zum Eintrag passen; ohne Uebergabe den Eintrag nutzen.
+    let user = match user {
+        Some(u) => {
+            let entry_user = entry.user.as_deref().unwrap_or("");
+            if !entry_user.is_empty() && entry_user != u.as_str() {
+                return Err(AppError::Internal("Unbekanntes Ziel. Verbindung abgelehnt.".into()));
+            }
+            Some(u)
+        }
+        None => match entry.user.as_deref() {
+            Some(u) if !u.is_empty() => Some(validate_ssh_user(u)?),
+            _ => None,
+        },
+    };
+    // Port: nur wenn explizit uebergeben, muss er zum Eintrags-Port passen. Ohne
+    // Uebergabe gilt der Eintrags-Port (bzw. 22, wenn der Eintrag keinen setzt).
+    let port = if port_provided {
+        if let Some(ep) = entry.port {
+            if ep != port {
+                return Err(AppError::Internal("Unbekanntes Ziel. Verbindung abgelehnt.".into()));
+            }
+        }
+        port
+    } else {
+        entry.port.unwrap_or(22)
+    };
+
+    let dest = match &user {
+        Some(u) => format!("{u}@{host}"),
+        None => host.clone(),
+    };
+
+    #[cfg(target_os = "macos")]
+    {
+        // do script WITHOUT "in window" always opens a NEW Terminal window.
+        // dest/port are pre-validated, so no ", ;, or backslash can reach the
+        // AppleScript string - this interpolation is the only injection guard on
+        // macOS. First run triggers the one-time TCC "control Terminal" dialog.
+        let script = format!(
+            "tell application \"Terminal\" to do script \"ssh -p {port} {dest}\""
+        );
+        // #8: Auf den osascript-Exit WARTEN (.output() statt .spawn()). Bei TCC-Ablehnung
+        // (-1743) oder anderem Fehler beendet sich osascript mit != 0 - das muss als
+        // AppError hochkommen, damit das Frontend de.quickLaunch.ssh.failed anzeigt.
+        // Frueher (.spawn()) wurde selbst eine Ablehnung als Erfolg gemeldet.
+        let out = TokioCommand::new("osascript")
+            .arg("-e")
+            .arg(&script)
+            .arg("-e")
+            .arg("tell application \"Terminal\" to activate")
+            .output()
+            .await
+            .map_err(|e| AppError::Internal(format!("osascript ssh: {}", e)))?;
+        if !out.status.success() {
+            let stderr = String::from_utf8_lossy(&out.stderr);
+            tracing::warn!("osascript ssh fehlgeschlagen: {}", stderr.trim());
+            return Err(AppError::Internal(
+                "Terminal konnte nicht gestartet werden. Bitte den Zugriff auf Terminal erlauben.".into(),
+            ));
+        }
+        return Ok(());
+    }
+
+    #[cfg(target_os = "windows")]
+    {
+        use std::os::windows::process::CommandExt;
+        let title = host.clone(); // simple window title = IP
+        let port_s = port.to_string();
+        // Resolve wt.exe over its real path, never via PATH/alias.
+        let wt = std::env::var("LOCALAPPDATA").ok().map(|l| {
+            std::path::PathBuf::from(l)
+                .join("Microsoft\\WindowsApps\\wt.exe")
+        });
+        let wt = wt.filter(|p| p.exists());
+        if let Some(wt_path) = wt {
+            // wt spawns its OWN visible window, so 0x08000000 here only suppresses
+            // the launcher flash, it does not hide the terminal.
+            std::process::Command::new(wt_path)
+                .args([
+                    "new-tab",
+                    "--title",
+                    &title,
+                    "--tabColor",
+                    "#B51F29",
+                    "ssh.exe",
+                    "-p",
+                    &port_s,
+                    &dest,
+                ])
+                .creation_flags(0x08000000)
+                .spawn()
+                .map_err(|e| AppError::Internal(format!("wt ssh: {}", e)))?;
+        } else {
+            // Fallback: a visible PowerShell window. CREATE_NEW_CONSOLE (0x10) so
+            // the window IS shown - NOT 0x08000000 (which every other command uses
+            // precisely because it must stay hidden).
+            std::process::Command::new("powershell.exe")
+                .args(["-NoExit", "-Command", &format!("ssh -p {} {}", port, dest)])
+                .creation_flags(0x00000010)
+                .spawn()
+                .map_err(|e| AppError::Internal(format!("powershell ssh: {}", e)))?;
+        }
+        return Ok(());
+    }
+
+    #[cfg(all(unix, not(target_os = "macos")))]
+    {
+        std::process::Command::new("x-terminal-emulator")
+            .args(["-e", "ssh", "-p", &port.to_string(), &dest])
+            .spawn()
+            .map_err(|e| AppError::Internal(format!("x-terminal-emulator ssh: {}", e)))?;
+        Ok(())
+    }
+}
+
+/// Honest TCP reachability check for a launch target on its type-specific port
+/// (rdp 3389, ssh 22, url 8899, smb 445). Uses the existing `tcp_reachable`
+/// probe (~350ms timeout). More reliable than ICMP ping, which Windows/Hetzner
+/// often block.
+#[tauri::command]
+pub async fn check_target(host: String, port: u16) -> AppResult<bool> {
+    let host = validate_host_target(&host)?;
+    Ok(tcp_reachable(&socket_addr(&host, port)).await)
+}
+
+/// Baut einen Socket-String host:port. #10: IPv6-Adressen (enthalten ':') muessen
+/// in eckige Klammern, sonst ist der Port nicht vom letzten Adress-Segment zu trennen.
+fn socket_addr(host: &str, port: u16) -> String {
+    if host.contains(':') {
+        format!("[{}]:{}", host, port)
+    } else {
+        format!("{}:{}", host, port)
+    }
+}
+
+/// Probe many (host, port) pairs in parallel and return a map keyed by "host:port".
+/// Feeds the live status dots in the admin grid. Invalid hosts map to `false`
+/// rather than failing the whole batch. Runs each probe on its own task so a
+/// slow host never serialises the others.
+#[tauri::command]
+pub async fn check_targets(
+    targets: Vec<(String, u16)>,
+) -> AppResult<std::collections::HashMap<String, bool>> {
+    let mut handles = Vec::with_capacity(targets.len());
+    for (host, port) in targets {
+        handles.push(tokio::spawn(async move {
+            let ok = match validate_host_target(&host) {
+                // #10: IPv6 im Socket klammern.
+                Ok(h) => tcp_reachable(&socket_addr(&h, port)).await,
+                Err(_) => false,
+            };
+            (host, port, ok)
+        }));
+    }
+    let mut out = std::collections::HashMap::new();
+    for h in handles {
+        if let Ok((host, port, ok)) = h.await {
+            // #3 (Vertrag 1): Schluessel = "host:port", damit das Frontend
+            // targetStatus[`${host}:${port}`] exakt trifft.
+            out.insert(format!("{}:{}", host, port), ok);
+        }
+    }
+    Ok(out)
 }
 
 #[tauri::command]
@@ -3151,8 +3627,122 @@ pub async fn install_netbird() -> AppResult<String> {
     {
         tracing::info!("Starte NetBird Installation auf macOS ...");
 
-        // Use the official NetBird install script with admin privileges via osascript
-        let install_script = r#"curl -fsSL https://pkgs.netbird.io/install.sh | sh"#;
+        // Optionale Hash-Durchsetzung. Leer = keine Erzwingung (Default), damit
+        // ein NetBird-seitiges Skript-Update heute nichts bricht. Wird ein
+        // konkreter Hash hinterlegt, muss die geladene install.sh exakt passen,
+        // sonst bricht die Installation kontrolliert ab.
+        const EXPECTED_NETBIRD_INSTALL_SHA256: &str = "";
+
+        // Skript zuerst in eine temporaere Datei laden statt blind in eine
+        // Root-Shell zu pipen (kein `curl | sh`). So laesst sich der Inhalt vor
+        // der privilegierten Ausfuehrung pruefen und protokollieren.
+        let script_path = std::env::temp_dir().join(format!(
+            "nkk-netbird-install-{}.sh",
+            std::process::id()
+        ));
+        let script_path_str = script_path.to_string_lossy().to_string();
+
+        // Download ueber HTTPS in die Datei (-o), nicht in eine Pipe.
+        let dl = timeout(
+            Duration::from_secs(60),
+            TokioCommand::new("curl")
+                .args([
+                    "-fsSL",
+                    "https://pkgs.netbird.io/install.sh",
+                    "-o",
+                    &script_path_str,
+                ])
+                .output(),
+        )
+        .await;
+
+        match dl {
+            Ok(Ok(o)) if o.status.success() => {}
+            Ok(Ok(o)) => {
+                let stderr = String::from_utf8_lossy(&o.stderr);
+                let _ = std::fs::remove_file(&script_path);
+                tracing::warn!("NetBird Install-Skript Download fehlgeschlagen: {}", stderr.trim());
+                return Err(AppError::Internal(
+                    "Konnte das NetBird Installations-Skript nicht laden. Bitte Internetverbindung pruefen und nochmal versuchen.".into(),
+                ));
+            }
+            Ok(Err(e)) => {
+                let _ = std::fs::remove_file(&script_path);
+                tracing::warn!("curl fuer NetBird Install-Skript nicht gestartet: {}", e);
+                return Err(AppError::Internal(format!(
+                    "Konnte das Installations-Skript nicht laden: {}",
+                    e
+                )));
+            }
+            Err(_) => {
+                let _ = std::fs::remove_file(&script_path);
+                tracing::warn!("NetBird Install-Skript Download Timeout (60s)");
+                return Err(AppError::Internal(
+                    "Der Download des Installations-Skripts hat zu lange gedauert. Bitte nochmal versuchen.".into(),
+                ));
+            }
+        }
+
+        // Geladenen Inhalt einlesen fuer Sanity-Check + Hash.
+        let script_bytes = match std::fs::read(&script_path) {
+            Ok(b) => b,
+            Err(e) => {
+                let _ = std::fs::remove_file(&script_path);
+                tracing::warn!("Geladenes Install-Skript nicht lesbar: {}", e);
+                return Err(AppError::Internal(
+                    "Das geladene Installations-Skript konnte nicht gelesen werden. Bitte nochmal versuchen.".into(),
+                ));
+            }
+        };
+
+        // Sanity: nicht leer und beginnt mit einer Shebang-Zeile (#!).
+        let starts_with_shebang = script_bytes.starts_with(b"#!");
+        if script_bytes.is_empty() || !starts_with_shebang {
+            let _ = std::fs::remove_file(&script_path);
+            tracing::warn!(
+                "NetBird Install-Skript unplausibel (leer={}, shebang={})",
+                script_bytes.is_empty(),
+                starts_with_shebang
+            );
+            return Err(AppError::Internal(
+                "Das geladene Installations-Skript ist ungueltig (leer oder kein gueltiges Skript). Installation abgebrochen.".into(),
+            ));
+        }
+
+        // SHA256 berechnen (sha2 ist bereits Projekt-Dependency) und ins Log
+        // schreiben - Audit-Spur fuer den Rollout.
+        let sha256_hex: String = {
+            use sha2::{Digest, Sha256};
+            let mut hasher = Sha256::new();
+            hasher.update(&script_bytes);
+            hasher.finalize().iter().map(|b| format!("{:02x}", b)).collect()
+        };
+        tracing::info!(
+            "NetBird Install-Skript geladen ({} Bytes), SHA256={}",
+            script_bytes.len(),
+            sha256_hex
+        );
+
+        // Optionale Durchsetzung: nur pruefen, wenn ein Erwartungswert gesetzt ist.
+        if !EXPECTED_NETBIRD_INSTALL_SHA256.is_empty()
+            && !sha256_hex.eq_ignore_ascii_case(EXPECTED_NETBIRD_INSTALL_SHA256)
+        {
+            let _ = std::fs::remove_file(&script_path);
+            tracing::warn!(
+                "NetBird Install-Skript SHA256 weicht ab: erwartet {}, erhalten {}",
+                EXPECTED_NETBIRD_INSTALL_SHA256,
+                sha256_hex
+            );
+            return Err(AppError::Internal(
+                "Das Installations-Skript entspricht nicht der erwarteten Pruefsumme. Installation aus Sicherheitsgruenden abgebrochen.".into(),
+            ));
+        }
+
+        // Nun die geladene Datei mit Admin-Rechten ausfuehren (sh Datei) statt
+        // der urspruenglichen Pipe. Pfad wird fuer die AppleScript-Zeichenkette
+        // maskiert (Backslashes + Quotes).
+        let escaped_path = script_path_str.replace('\\', r#"\\"#).replace('"', r#"\""#);
+        let install_script = format!("/bin/sh \"{}\"", escaped_path);
 
         let result = timeout(
             Duration::from_secs(120),
@@ -3167,6 +3757,9 @@ pub async fn install_netbird() -> AppResult<String> {
                 .output(),
         )
         .await;
+
+        // Temporaere Datei nach der Ausfuehrung aufraeumen (best effort).
+        let _ = std::fs::remove_file(&script_path);
 
         match result {
             Ok(Ok(output)) if output.status.success() => {
@@ -3283,9 +3876,10 @@ pub fn cleanup_stale_credentials(targets: &[String]) {
     {
         use std::os::windows::process::CommandExt;
         // Delete leftover TERMSRV credentials for the branded RDP targets.
+        // Portlos (termsrv_host), damit der Name mit dem beim Anlegen verwendeten matcht.
         for target in targets {
             let _ = std::process::Command::new("cmdkey")
-                .arg(format!("/delete:TERMSRV/{}", target))
+                .arg(format!("/delete:TERMSRV/{}", termsrv_host(target)))
                 .creation_flags(0x08000000)
                 .output();
         }

@@ -97,7 +97,7 @@ export function EnrollmentScreen({ branding, onEnrolled }: Props) {
       setPhase("error");
       // Keep the technical detail in the log for support, show a calm message.
       console.error("Enrollment fehlgeschlagen:", e);
-      setError("Anmeldung fehlgeschlagen. Bitte Setup-Key prüfen und erneut versuchen.");
+      setError("Aktivierung fehlgeschlagen. Bitte Setup-Key prüfen und erneut versuchen.");
       await new Promise((r) => setTimeout(r, 1000));
       setPhase("idle");
     } finally {
@@ -152,9 +152,11 @@ export function EnrollmentScreen({ branding, onEnrolled }: Props) {
                 className="font-serif-display italic text-[22px] leading-[1.0] mt-0.5"
                 style={{ color: phase === "error" ? "#dc2626" : "var(--brand-primary)" }}
               >
-                {phase === "error" ? "hat nicht geklappt." : "schön dass du da bist."}
+                {phase === "error" ? "hat nicht geklappt." : "schön, dass du da bist."}
               </div>
             </div>
+
+            <p className="fade-in-2 text-[11.5px] text-[color:var(--brand-fg)]/60 max-w-[280px] leading-snug">{de.enrollment.subtitle}</p>
 
             <form
               onSubmit={submit}

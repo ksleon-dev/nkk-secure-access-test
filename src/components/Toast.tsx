@@ -7,7 +7,7 @@ import {
   useState,
   type ReactNode,
 } from "react";
-import { CheckCircle2, AlertTriangle } from "lucide-react";
+import { CheckCircle2, AlertTriangle, Info, X } from "lucide-react";
 import clsx from "clsx";
 
 type ToastKind = "success" | "error" | "info";
@@ -38,13 +38,13 @@ export function ToastProvider({ children }: { children: ReactNode }) {
     );
     setTimeout(() => {
       setToasts((prev) => prev.filter((t) => t.id !== id));
-    }, 300);
+    }, 150);
   }, []);
 
   const push = useCallback((kind: ToastKind, message: string) => {
     const id = ++idRef.current;
-    setToasts((prev) => [...prev, { id, kind, message }]);
-    setTimeout(() => dismiss(id), 4500);
+    setToasts((prev) => prev.some((t) => t.message === message && !t.dismissing) ? prev : [...prev, { id, kind, message }]);
+    setTimeout(() => dismiss(id), kind === "error" ? 8000 : 4500);
   }, [dismiss]);
 
   const api: ToastApi = useMemo(() => ({
@@ -57,7 +57,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
   return (
     <ToastContext.Provider value={api}>
       {children}
-      <div className="fixed top-[52px] left-3 right-3 flex flex-col gap-1.5 z-10 pointer-events-none">
+      <div className="fixed top-[68px] left-3 right-3 flex flex-col gap-1.5 z-10 pointer-events-none">
         {toasts.map((t) => (
           <Toast key={t.id} item={t} onClose={() => dismiss(t.id)} />
         ))}
@@ -67,7 +67,7 @@ export function ToastProvider({ children }: { children: ReactNode }) {
 }
 
 function Toast({ item, onClose }: { item: ToastItem; onClose: () => void }) {
-  const Icon = item.kind === "success" ? CheckCircle2 : AlertTriangle;
+  const Icon = item.kind === "success" ? CheckCircle2 : item.kind === "info" ? Info : AlertTriangle;
   return (
     <div
       onClick={onClose}
@@ -85,7 +85,21 @@ function Toast({ item, onClose }: { item: ToastItem; onClose: () => void }) {
     >
       <Icon size={15} className="shrink-0 opacity-90" />
       <span className="flex-1 leading-snug">{item.message}</span>
-      <span className={clsx("text-[16px] font-light shrink-0 ml-1", item.kind === "info" ? "text-[color:var(--brand-fg)]/40" : "text-white/60")}>✕</span>
+      <button
+        onClick={(e) => {
+          e.stopPropagation();
+          onClose();
+        }}
+        aria-label="Schließen"
+        className={clsx(
+          "shrink-0 ml-1 -mr-1.5 p-1 rounded-md transition active:scale-90",
+          item.kind === "info"
+            ? "text-[color:var(--brand-fg)]/45 hover:text-[color:var(--brand-fg)]/80 hover:bg-[color:var(--brand-fg)]/10"
+            : "text-white/70 hover:text-white hover:bg-white/15"
+        )}
+      >
+        <X size={14} strokeWidth={2.5} />
+      </button>
     </div>
   );
 }

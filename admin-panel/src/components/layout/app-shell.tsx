@@ -7,7 +7,8 @@ import { cn } from "@/lib/utils"
 import { useVersionWatch } from "@/lib/use-version-watch"
 import { Button } from "@/components/ui/button"
 import { Sheet, SheetContent, SheetHeader, SheetTitle, SheetTrigger } from "@/components/ui/sheet"
-import { ShieldCheck, RefreshCw, LogOut, Menu, ExternalLink } from "lucide-react"
+import { GlobalSearch } from "@/components/global-search"
+import { ShieldCheck, RefreshCw, LogOut, Menu, ExternalLink, AlertTriangle } from "lucide-react"
 
 const NETBIRD_MGMT_URL = "https://vpn.secure.nkk-hb.de"
 
@@ -64,10 +65,13 @@ function LogoutButton({ onClick }: { onClick: () => void }) {
 }
 
 export function AppShell() {
-  const { refresh, loading, lastUpdated, onUnauthorized } = useData()
+  const { data, error, refresh, loading, lastUpdated, onUnauthorized } = useData()
   const [mobileOpen, setMobileOpen] = useState(false)
   const location = useLocation()
   useVersionWatch() // bei neuer Panel-Version automatisch neu laden (kein Stale-Cache)
+
+  // Stale-Banner: nur wenn eine Aktualisierung fehlschlug, aber noch alte Daten da sind.
+  const stale = !!error && !!data
 
   async function logout() {
     try {
@@ -116,6 +120,8 @@ export function AppShell() {
             </SheetContent>
           </Sheet>
 
+          <GlobalSearch />
+
           <div className="ml-auto flex items-center gap-3">
             {lastUpdated && (
               <span className="hidden text-[13px] text-muted-foreground tabular-nums sm:inline">
@@ -135,6 +141,23 @@ export function AppShell() {
             </Button>
           </div>
         </header>
+
+        {stale && (
+          <div className="flex h-9 items-center gap-2 border-b border-warn/25 bg-warn/10 px-4 text-[13px] text-warn md:px-7">
+            <AlertTriangle className="size-3.5 shrink-0" />
+            <span className="min-w-0 truncate">
+              Aktualisierung fehlgeschlagen, Anzeige ist veraltet
+              {lastUpdated && ` (Stand ${lastUpdated.toLocaleTimeString("de-DE", { hour: "2-digit", minute: "2-digit" })})`}.
+            </span>
+            <button
+              onClick={refresh}
+              disabled={loading}
+              className="ml-auto shrink-0 font-medium underline underline-offset-2 disabled:opacity-50"
+            >
+              Erneut versuchen
+            </button>
+          </div>
+        )}
 
         <main className="min-w-0 flex-1 px-4 py-8 md:px-7 lg:px-10">
           <div

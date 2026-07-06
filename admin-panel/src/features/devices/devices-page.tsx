@@ -1,9 +1,11 @@
 import { useMemo, useState, useRef, useEffect } from "react"
+import { useSearchParams } from "react-router"
 import { toast } from "sonner"
 import { useData } from "@/lib/data-context"
 import { api, AuthError } from "@/lib/api"
 import { fmtNum, relativeTime, daysSince } from "@/lib/format"
-import { PageHeader, VersionBadge, EmptyState, ErrorState, RolloutCard } from "@/components/common/bits"
+import { PageHeader, VersionBadge, EmptyState, ErrorState, RolloutCard, ExportMdButton } from "@/components/common/bits"
+import { mdTable } from "@/lib/md-export"
 import { Input } from "@/components/ui/input"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
@@ -62,7 +64,13 @@ function sortValue(d: Device, key: SortKey): string | number | null {
 
 export function DevicesPage() {
   const { data, loading, error, refresh } = useData()
-  const [q, setQ] = useState("")
+  // Startwert + Sync aus ?q, damit die globale Suche direkt auf ein Geraet filtern kann.
+  const [searchParams] = useSearchParams()
+  const [q, setQ] = useState(searchParams.get("q") ?? "")
+  useEffect(() => {
+    const qp = searchParams.get("q")
+    if (qp) setQ(qp)
+  }, [searchParams])
   const [sort, setSort] = useState<{ key: SortKey; dir: "asc" | "desc" }>({ key: "last_seen", dir: "desc" })
 
   const automations = data?.level_automations ?? []
@@ -121,7 +129,7 @@ export function DevicesPage() {
         return void toast.error(`${name}: fehlgeschlagen (${st})`, { id })
       toast.loading(`${name}: ${STATUS_DE[st] ?? st ?? "läuft"} …`, { id })
     }
-    if (mountedRef.current) toast.info(`${name}: läuft im Hintergrund — Status in Level`, { id })
+    if (mountedRef.current) toast.info(`${name}: läuft im Hintergrund, Status in Level`, { id })
   }
 
   async function doAutomation(d: Device, name: string) {
@@ -130,7 +138,7 @@ export function DevicesPage() {
     const key = "run:" + d.hostname + ":" + name
     if (runningRef.current.has(key)) return void toast.info(`„${name}" läuft schon auf ${d.hostname}`)
     const offline = d.level?.online === false
-    if (!window.confirm(`„${name}" auf ${d.hostname} auslösen?` + (offline ? "\nGerät ist offline — der Lauf startet, sobald es online ist." : ""))) return
+    if (!window.confirm(`„${name}" auf ${d.hostname} auslösen?` + (offline ? "\nGerät ist offline, der Lauf startet, sobald es online ist." : ""))) return
     runningRef.current.add(key)
     const id = toast.loading(`${name} wird ausgelöst …`)
     try {
@@ -171,6 +179,23 @@ export function DevicesPage() {
     return devs
   }, [data, q, sort])
 
+  function exportMd(): string {
+    const table = mdTable(
+      ["Hostname", "Benutzer", "OS", "Lokale IP", "Öffentliche IP", "ISP", "App-Version", "Zuletzt gesehen"],
+      rows.map((d) => [
+        d.hostname,
+        d.os_user,
+        [d.os_name, d.os_version].filter(Boolean).join(" ") || null,
+        d.local_ip,
+        d.public_ip,
+        d.isp?.isp,
+        d.app_version && d.app_version !== "None" ? d.app_version : null,
+        relativeTime(d.last_seen),
+      ]),
+    )
+    return `# Geräte\n\nStand: ${new Date().toLocaleString("de-DE")} · ${rows.length} Geräte\n\n${table}\n`
+  }
+
   if (error && !data) return <ErrorState message={error} onRetry={refresh} />
 
   return (
@@ -179,10 +204,13 @@ export function DevicesPage() {
         title="Geräte"
         description={data ? `${data.devices.length} Geräte aus den Enrollment-Meldungen` : undefined}
         actions={
-          <div className="relative">
-            <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
-            <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Suchen…" className="h-10 w-64 pl-9" />
-          </div>
+          <>
+            <div className="relative">
+              <Search className="pointer-events-none absolute left-3 top-1/2 size-4 -translate-y-1/2 text-muted-foreground" />
+              <Input value={q} onChange={(e) => setQ(e.target.value)} placeholder="Suchen…" className="h-10 w-64 pl-9" />
+            </div>
+            <ExportMdButton filename="geraete" disabled={!data} onExport={exportMd} />
+          </>
         }
       />
 

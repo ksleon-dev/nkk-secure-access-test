@@ -1,5 +1,6 @@
 import { useData } from "@/lib/data-context"
-import { PageHeader, EmptyState, ErrorState } from "@/components/common/bits"
+import { PageHeader, EmptyState, ErrorState, ExportMdButton } from "@/components/common/bits"
+import { mdTable } from "@/lib/md-export"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from "@/components/ui/table"
 import { Globe } from "lucide-react"
@@ -42,11 +43,25 @@ export function NetworkPage() {
   const bySubnet = groupCount(devices, (d) => subnet(d.local_ip))
   const flagged = devices.filter((d) => d.isp?.type && d.isp.type.length > 0)
 
+  function exportMd(): string {
+    const isp = mdTable(["Provider", "Geräte"], byIsp.map(([name, n]) => [name, n]))
+    const country = mdTable(["Land", "Geräte"], byCountry.map(([c, n]) => [c, n]))
+    const sub = mdTable(["Subnetz", "Geräte"], bySubnet.map(([s, n]) => [s, n]))
+    const flags = flagged.length
+      ? `\n## Auffällige Verbindungen (${flagged.length})\n\n${mdTable(["Gerät", "Kennzeichen"], flagged.map((d) => [d.hostname, d.isp?.type]))}\n`
+      : ""
+    return (
+      `# Netzwerk & ISP\n\nStand: ${new Date().toLocaleString("de-DE")} · ${enriched}/${devices.length} angereichert\n\n` +
+      `## Nach ISP\n\n${isp}\n\n## Nach Land\n\n${country}\n\n## Lokale Subnetze\n\n${sub}\n${flags}`
+    )
+  }
+
   return (
     <div>
       <PageHeader
         title="Netzwerk & ISP"
         description={`Aus welchem Netz die Clients kommen. ${enriched}/${devices.length} angereichert${enriched < devices.length ? " (Rest lädt im Hintergrund)" : ""}.`}
+        actions={<ExportMdButton filename="netzwerk-isp" onExport={exportMd} />}
       />
 
       {byIsp.length === 0 ? (

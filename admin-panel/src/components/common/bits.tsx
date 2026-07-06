@@ -1,7 +1,11 @@
 import type { ReactNode } from "react"
+import { toast } from "sonner"
+import { Download } from "lucide-react"
 import { cn } from "@/lib/utils"
 import { Badge } from "@/components/ui/badge"
+import { Button } from "@/components/ui/button"
 import { versionKind } from "@/lib/format"
+import { downloadMd } from "@/lib/md-export"
 
 export function PageHeader({
   title,
@@ -23,16 +27,27 @@ export function PageHeader({
   )
 }
 
-export function Mono({ children, className }: { children: ReactNode; className?: string }) {
-  return <span className={cn("font-mono text-[12.5px] text-muted-foreground tabular-nums", className)}>{children}</span>
-}
-
-export function StatusDot({ ok, className }: { ok: boolean; className?: string }) {
+// Wiederverwendbarer Export-Button: onExport baut den Markdown-String (Ansicht
+// entscheidet ueber Inhalt), downloadMd stoesst den Download an. Ueberall gleich.
+export function ExportMdButton({
+  onExport,
+  filename,
+  label = "Export .md",
+  disabled,
+}: {
+  onExport: () => string
+  filename: string
+  label?: string
+  disabled?: boolean
+}) {
+  function go() {
+    downloadMd(filename, onExport())
+    toast.success("Als Markdown exportiert.")
+  }
   return (
-    <span
-      className={cn("inline-block size-2 rounded-full", ok ? "bg-ok" : "bg-muted-foreground/40", className)}
-      aria-hidden
-    />
+    <Button variant="outline" size="sm" onClick={go} disabled={disabled}>
+      <Download className="size-3.5" /> {label}
+    </Button>
   )
 }
 

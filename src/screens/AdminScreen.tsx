@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import { open as openDialog } from "@tauri-apps/plugin-dialog";
+import { open as openDialog, confirm } from "@tauri-apps/plugin-dialog";
 import { check } from "@tauri-apps/plugin-updater";
 import {
   ArrowLeft,
@@ -33,6 +33,7 @@ import type {
   OnSiteResult,
   RdpSettings,
   SmartDebugResult,
+  UserRole,
 } from "../types/debug";
 
 interface Props {
@@ -100,12 +101,9 @@ export function AdminScreen({ branding, onClose }: Props) {
       toast.error(e instanceof Error ? e.message : String(e))
     );
   }
-  function setAppRole(manager: boolean) {
+  function setAppRole(nextRole: UserRole) {
     if (!appSettings) return;
-    const next: AppSettings = {
-      ...appSettings,
-      role: manager ? "manager" : "user",
-    };
+    const next: AppSettings = { ...appSettings, role: nextRole };
     setAppSettings(next);
     invoke("app_settings_save", { settings: next }).catch((e) =>
       toast.error(e instanceof Error ? e.message : String(e))
@@ -168,7 +166,7 @@ export function AdminScreen({ branding, onClose }: Props) {
         <header className="px-4 pt-4 pb-2 flex items-center gap-2 shrink-0">
           <button
             onClick={onClose}
-            className="p-1.5 rounded-md text-black hover:bg-black/10 transition"
+            className="p-1.5 rounded-md text-[color:var(--brand-fg)] hover:bg-[color:var(--brand-fg)]/8 transition"
             aria-label="Zurück"
           >
             <ArrowLeft size={18} strokeWidth={2.4} />
@@ -194,7 +192,7 @@ export function AdminScreen({ branding, onClose }: Props) {
               autoFocus
               onChange={(e) => setPw(e.target.value)}
               placeholder="Service-Passwort"
-              className="w-full surface rounded-md px-3 py-2 text-sm outline-none focus:border-[color:var(--brand-primary)]"
+              className="w-full surface rounded-md px-3 py-2 text-sm outline-none focus:border-[color:var(--brand-primary)] focus:ring-2 focus:ring-[color:var(--brand-primary)]/20"
               disabled={busy}
             />
             {error && (
@@ -222,7 +220,7 @@ export function AdminScreen({ branding, onClose }: Props) {
       <header className="px-4 pt-4 pb-2 flex items-center gap-2 shrink-0">
         <button
           onClick={onClose}
-          className="p-1.5 rounded-md text-black hover:bg-black/10 transition"
+          className="p-1.5 rounded-md text-[color:var(--brand-fg)] hover:bg-[color:var(--brand-fg)]/8 transition"
           aria-label="Zurück"
         >
           <ArrowLeft size={18} strokeWidth={2.4} />
@@ -423,8 +421,8 @@ export function AdminScreen({ branding, onClose }: Props) {
           label="Einrichtung zurücksetzen"
           danger
           running={running === "reset"}
-          onClick={() => {
-            if (!window.confirm("Einrichtung wirklich zurücksetzen? Setup Key wird gelöscht.")) return;
+          onClick={async () => {
+            if (!(await confirm("Einrichtung wirklich zurücksetzen? Setup-Key wird gelöscht.", { title: "Bestätigen", kind: "warning" }))) return;
             run("reset", async () => {
               await invoke("nb_reset_enrollment");
               return "Einrichtung zurückgesetzt.";
@@ -439,12 +437,37 @@ export function AdminScreen({ branding, onClose }: Props) {
           </h3>
           {appSettings && (
             <div className="surface rounded-lg px-2.5 py-0.5 mb-1.5">
-              <SettingToggle
-                label="Geschäftsführer-Profil"
-                hint="Mehr Server-Buttons und Übersicht für die Leitung"
-                checked={appSettings.role === "manager"}
-                onChange={setAppRole}
-              />
+              <div className="py-1.5 border-b border-[color:var(--brand-border)]/60">
+                <div className="text-[12px] font-semibold leading-tight">
+                  Profil-Rolle
+                </div>
+                <div className="text-[10px] text-muted leading-tight mb-1.5">
+                  Schaltet zusätzliche Server-Buttons und Übersicht frei
+                </div>
+                <div className="flex gap-1">
+                  {(
+                    [
+                      ["user", "Nutzer"],
+                      ["manager", "Geschäftsführer"],
+                      ["it_admin", "IT Admin"],
+                    ] as [UserRole, string][]
+                  ).map(([r, label]) => (
+                    <button
+                      key={r}
+                      type="button"
+                      onClick={() => setAppRole(r)}
+                      className={
+                        "flex-1 px-1 py-1.5 rounded-md text-[10.5px] font-semibold transition " +
+                        (appSettings.role === r
+                          ? "bg-[color:var(--brand-primary)] text-white"
+                          : "surface text-[color:var(--brand-fg)]/70 hover:border-[color:var(--brand-primary)]/50")
+                      }
+                    >
+                      {label}
+                    </button>
+                  ))}
+                </div>
+              </div>
               <SettingToggle
                 label="Auto-Reconnect"
                 hint="Verbindung automatisch wiederherstellen"

@@ -1,5 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
-import { open as openDialog } from "@tauri-apps/plugin-dialog";
+import { open as openDialog, confirm } from "@tauri-apps/plugin-dialog";
 import {
   ArrowLeft,
   Check,
@@ -147,7 +147,7 @@ export function DiagnosePanel({ branding, profile, onClose }: Props) {
     lines.push(`WireGuard IP: ${info.local_ip ?? "-"}`);
     lines.push(`Internet: ${info.internet_ok ? "OK" : "FAIL"} (ping 8.8.8.8)`);
     lines.push(
-      `Netbird CLI: ${info.netbird_cli_present ? "installiert" : "FEHLT"}`
+      `NetBird CLI: ${info.netbird_cli_present ? "installiert" : "FEHLT"}`
     );
     lines.push(`VPN: ${info.vpn_connected ? "verbunden" : "getrennt"}`);
     lines.push(
@@ -206,7 +206,7 @@ export function DiagnosePanel({ branding, profile, onClose }: Props) {
       <header className="px-4 pt-4 pb-2 flex items-center gap-2 shrink-0">
         <button
           onClick={onClose}
-          className="p-1.5 rounded-md text-black hover:bg-black/10 transition"
+          className="p-1.5 rounded-md text-[color:var(--brand-fg)] hover:bg-[color:var(--brand-fg)]/8 transition"
           aria-label="Zurück"
         >
           <ArrowLeft size={18} strokeWidth={2.4} />
@@ -217,7 +217,7 @@ export function DiagnosePanel({ branding, profile, onClose }: Props) {
         </div>
         <button
           onClick={refresh}
-          className="p-1.5 rounded-md text-black hover:bg-black/10 transition"
+          className="p-1.5 rounded-md text-[color:var(--brand-fg)] hover:bg-[color:var(--brand-fg)]/8 transition"
           aria-label="Aktualisieren"
           disabled={loading}
           title="Aktualisieren"
@@ -259,7 +259,7 @@ export function DiagnosePanel({ branding, profile, onClose }: Props) {
                 <Check3 ok={info.internet_ok} label="Internet" detail="ping 8.8.8.8" />
                 <Check3
                   ok={info.netbird_cli_present}
-                  label="Netbird Client"
+                  label="NetBird Client"
                   detail={info.netbird_cli_present ? "installiert" : "nicht installiert"}
                 />
                 <Check3
@@ -353,11 +353,11 @@ export function DiagnosePanel({ branding, profile, onClose }: Props) {
                     pings.map((p, i) => (
                       <div key={i} className="flex items-center gap-2 py-1.5 border-b border-[color:var(--brand-border)] last:border-b-0">
                         <Gauge size={14} className={
-                          !p.ok ? "text-red-500" :
+                          !p.ok ? "text-red-600" :
                           p.avg_ms < 30 ? "text-emerald-600" :
-                          p.avg_ms < 80 ? "text-emerald-500" :
+                          p.avg_ms < 80 ? "text-emerald-600" :
                           p.avg_ms < 150 ? "text-amber-500" :
-                          "text-red-500"
+                          "text-red-600"
                         } />
                         <div className="flex-1 min-w-0">
                           <div className="text-[11px] font-bold truncate">{p.label}</div>
@@ -373,7 +373,7 @@ export function DiagnosePanel({ branding, profile, onClose }: Props) {
                             </div>
                           </div>
                         ) : (
-                          <span className="text-[10px] font-bold text-red-500">Timeout</span>
+                          <span className="text-[10px] font-bold text-red-600">Timeout</span>
                         )}
                       </div>
                     ))
@@ -444,10 +444,10 @@ export function DiagnosePanel({ branding, profile, onClose }: Props) {
                                 size={9}
                                 className={
                                   h.state === "Connected"
-                                    ? "text-emerald-500"
+                                    ? "text-emerald-600"
                                     : h.state === "Connecting"
                                     ? "text-amber-500"
-                                    : "text-red-500"
+                                    : "text-red-600"
                                 }
                               />
                               {healthLabel(h.state)}
@@ -498,7 +498,7 @@ export function DiagnosePanel({ branding, profile, onClose }: Props) {
                         onChange={(e) => setLogFilter(e.target.value)}
                         placeholder="Logs filtern …"
                         spellCheck={false}
-                        className="w-full surface rounded-md pl-7 pr-2 py-1 text-[10px] outline-none focus:border-[color:var(--brand-primary)]"
+                        className="w-full surface rounded-md pl-7 pr-2 py-1 text-[10px] outline-none focus:border-[color:var(--brand-primary)] focus:ring-2 focus:ring-[color:var(--brand-primary)]/20"
                       />
                     </div>
                     <pre className="allow-select text-[9px] font-mono overflow-auto max-h-40 whitespace-pre-wrap leading-tight text-muted -mx-1 px-1">
@@ -511,7 +511,7 @@ export function DiagnosePanel({ branding, profile, onClose }: Props) {
               )}
             </div>
           ) : (
-            <div className="text-xs text-red-500">
+            <div className="text-xs text-red-600">
               Diagnose konnte nicht geladen werden.
             </div>
           )}
@@ -530,7 +530,7 @@ export function DiagnosePanel({ branding, profile, onClose }: Props) {
             onClick={exportBundle}
             disabled={exporting}
             className="w-full surface rounded-lg py-2 mt-1.5 text-xs font-semibold flex items-center justify-center gap-1.5 hover:border-[color:var(--brand-primary)] transition"
-            title="Schreibt Diagnose, Logs und Verlauf als Datei in den Download-Ordner"
+            title="Schreibt Diagnose, Logs und Verlauf als Datei in einen Ordner deiner Wahl"
           >
             {exporting ? (
               <Loader2 size={13} className="animate-spin" />
@@ -543,7 +543,7 @@ export function DiagnosePanel({ branding, profile, onClose }: Props) {
             type="button"
             onClick={async () => {
               if (await copyText(branding.vendor.supportEmail)) {
-                toast.success("Support Email kopiert.");
+                toast.success("Support-E-Mail kopiert.");
               } else {
                 toast.error("Konnte nicht kopieren.");
               }
@@ -675,8 +675,8 @@ function SpeedTestButton({ onResult }: { onResult: (r: SpeedResult) => void }) {
       {result && (
         <div className="px-2 pb-1 flex items-center gap-2">
           <Zap size={11} className={
-            result.mbps > 10 ? "text-emerald-500" :
-            result.mbps > 2 ? "text-amber-500" : "text-red-500"
+            result.mbps > 10 ? "text-emerald-600" :
+            result.mbps > 2 ? "text-amber-500" : "text-red-600"
           } />
           <span className="text-[11px] font-bold">
             {result.mbps > 0
@@ -711,12 +711,12 @@ function ActionButton({
   const [busy, setBusy] = useState(false);
   const toast = useToast();
   async function handle() {
-    if (confirmMsg && !window.confirm(confirmMsg)) return;
+    if (confirmMsg && !(await confirm(confirmMsg, { title: "Bestätigen", kind: "warning" }))) return;
     setBusy(true);
     try {
       await onClick();
     } catch (e: unknown) {
-      toast.error(e instanceof Error ? e.message : String(e));
+      console.error(label, e); toast.error("Das hat nicht geklappt. Bitte erneut versuchen oder die Diagnose für den Support kopieren.");
     } finally {
       setBusy(false);
     }

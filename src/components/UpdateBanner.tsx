@@ -1,5 +1,5 @@
 import clsx from "clsx";
-import { Download, RefreshCw, Sparkles } from "lucide-react";
+import { Check, Download, RefreshCw } from "lucide-react";
 import type { UpdateState } from "../hooks/useUpdater";
 
 interface Props {
@@ -52,13 +52,13 @@ export function UpdateBanner({ state, footer, onInstall, onRestart, onDismiss }:
               )}
             >
               {state.ready ? (
-                <Sparkles size={28} strokeWidth={2} />
+                <Check size={28} strokeWidth={2.5} />
               ) : state.downloading ? (
                 <Download size={28} strokeWidth={2} className="animate-pulse" />
               ) : state.error ? (
                 <RefreshCw size={28} strokeWidth={2} />
               ) : (
-                <Sparkles size={28} strokeWidth={2} />
+                <Download size={28} strokeWidth={2} />
               )}
             </div>
           </div>
@@ -150,7 +150,7 @@ export function UpdateBanner({ state, footer, onInstall, onRestart, onDismiss }:
         </div>
 
         {/* Footer */}
-        <div className="text-center text-[9px] text-white/40 pb-3 font-semibold uppercase tracking-widest">
+        <div className="text-center text-[9px] text-white/70 pb-3 font-semibold uppercase tracking-widest">
           {footer}
         </div>
       </div>

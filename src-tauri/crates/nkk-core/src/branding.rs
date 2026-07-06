@@ -86,6 +86,17 @@ pub struct QuickLaunchEntry {
     /// path. The app skips the VPN reconnect for such entries.
     #[serde(default)]
     pub gateway: Option<String>,
+    /// Optional SSH login user for entries of type "ssh". Absent => the client
+    /// default (typically the current user or root via the SSH config).
+    #[serde(default)]
+    pub user: Option<String>,
+    /// Optional TCP port for the launch target (SSH). Absent => 22.
+    #[serde(default)]
+    pub port: Option<u16>,
+    /// Optional layout group for the admin grid ("ts" | "core" | "net"). Absent
+    /// => the frontend applies a heuristic based on type/label.
+    #[serde(default)]
+    pub group: Option<String>,
 }
 
 /// Hidden service-menu gate. The hash protects against accidental employee

@@ -10,14 +10,6 @@ export const de = {
     evening: ["Guten Abend", "Feierabend?"],
     night: ["Noch wach?", "Späte Schicht?"],
   },
-  bioFootnotes: [
-    "100 % Bio Stack 🌱",
-    "Verbunden mit Naturkost Kontor 🌿",
-    "Frisch verbunden, regional gehostet",
-    "Tunnel grün, wie unsere Möhren",
-    "Kurze Wege, knackige Latenz",
-    "Schmeckt nach kurzer Latenz",
-  ],
   credentials: {
     title: "Anmeldedaten",
     subtitle: "Einmal eintragen, gilt für alle Server",
@@ -41,20 +33,20 @@ export const de = {
     connecting: "Verbinde …",
     disconnected: "Getrennt",
     error: "Fehler",
-    cliMissing: "Netbird Client fehlt",
+    cliMissing: "NetBird Client fehlt",
     cliMissingHint:
-      "Bitte den Netbird Client installieren und die App neu starten.",
+      "Bitte den NetBird Client installieren und die App neu starten.",
   },
   enrollment: {
     title: "Einrichtung",
     subtitle:
-      "Bitte gib deinen persönlichen Setup Key ein. Du hast den Key per Mail von der IT bekommen.",
-    placeholder: "Setup Key",
+      "Bitte gib deinen persönlichen Setup-Key ein. Du hast den Key per Mail von der IT bekommen.",
+    placeholder: "Setup-Key",
     submit: "Aktivieren",
     submitting: "Aktiviere …",
     error: "Aktivierung fehlgeschlagen",
-    keyRequired: "Bitte einen Setup Key eingeben.",
-    helpText: "Der Key wird sicher im System Tresor gespeichert.",
+    keyRequired: "Bitte einen Setup-Key eingeben.",
+    helpText: "Der Key wird sicher im System-Tresor gespeichert.",
   },
   main: {
     connectButton: "Verbinden",
@@ -75,18 +67,11 @@ export const de = {
     logsRefresh: "Logs aktualisieren",
     resetTitle: "Einrichtung zurücksetzen",
     resetHint:
-      "Trennt den Tunnel und löscht den gespeicherten Setup Key. Du musst dich danach neu aktivieren.",
+      "Trennt den Tunnel und löscht den gespeicherten Setup-Key. Du musst dich danach neu aktivieren.",
     resetButton: "Zurücksetzen",
-    about: "Über diese App",
     version: "Version",
     management: "Management Server",
     quitApp: "App beenden",
-  },
-  about: {
-    title: "Über",
-    close: "Schließen",
-    poweredBy: "Powered by",
-    support: "Support",
   },
   quickLaunch: {
     rdp: {
@@ -100,6 +85,11 @@ export const de = {
     url: {
       starting: "Öffne Browser …",
       failed: "URL konnte nicht geöffnet werden.",
+    },
+    ssh: {
+      starting: "Öffne SSH-Fenster …",
+      failed:
+        "SSH-Fenster konnte nicht geöffnet werden. Bitte prüfe die VPN-Verbindung.",
     },
   },
   toast: {

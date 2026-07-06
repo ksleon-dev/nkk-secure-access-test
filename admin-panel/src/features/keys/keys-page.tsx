@@ -3,7 +3,8 @@ import { toast } from "sonner"
 import { useData } from "@/lib/data-context"
 import { api, type CreateKeyInput } from "@/lib/api"
 import { daysUntil } from "@/lib/format"
-import { PageHeader, EmptyState, ErrorState } from "@/components/common/bits"
+import { PageHeader, EmptyState, ErrorState, ExportMdButton } from "@/components/common/bits"
+import { mdTable } from "@/lib/md-export"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Label } from "@/components/ui/label"
@@ -31,6 +32,21 @@ export function KeysPage() {
 
   const keys = (data?.keys ?? []).slice().sort((a, b) => Number(b.valid) - Number(a.valid))
 
+  function exportMd(): string {
+    const table = mdTable(
+      ["Name", "Status", "Typ", "Verwendet", "Läuft ab", "Gruppen"],
+      keys.map((k) => [
+        k.name,
+        k.valid ? "gültig" : k.revoked ? "widerrufen" : "abgelaufen",
+        k.type,
+        `${k.used ?? 0} / ${k.limit ?? "∞"}`,
+        k.expires,
+        k.groups.join(", "),
+      ]),
+    )
+    return `# Setup-Keys\n\nStand: ${new Date().toLocaleString("de-DE")} · ${keys.length} Keys\n\n${table}\n`
+  }
+
   return (
     <div>
       <PageHeader
@@ -38,6 +54,7 @@ export function KeysPage() {
         description="Schlüssel zum Aufnehmen neuer Geräte. Hier erstellte Keys lassen sich jederzeit über „Anzeigen“ wieder einsehen."
         actions={
           <>
+            <ExportMdButton filename="setup-keys" disabled={!data} onExport={exportMd} />
             <Button variant="outline" onClick={() => setCreateOpen(true)} disabled={!data}>
               <Plus className="size-4" /> Neuer Key
             </Button>
@@ -225,9 +242,9 @@ function RolloutCommands({ keyValue }: { keyValue: string }) {
     <div className="space-y-3 rounded-lg border bg-card/40 p-3">
       <div className="text-[13px] font-medium">Gerät onboarden mit diesem Key</div>
       <CmdBlock
-        label="macOS · Terminal (Zero-Touch — Key wird vorab gesetzt)"
+        label="macOS · Terminal (Zero-Touch, Key wird vorab gesetzt)"
         cmd={mac}
-        note={'Danach App öffnen und einmal auf „Verbinden" — kein Key-Tippen nötig.'}
+        note={'Danach App öffnen und einmal auf „Verbinden", kein Key-Tippen nötig.'}
       />
       <CmdBlock
         label="Windows · PowerShell als Administrator"
@@ -319,7 +336,7 @@ function CreateKeyDialog({ groups, onClose, onDone }: { groups: Group[]; onClose
       const input: CreateKeyInput = {
         name: name.trim(),
         type,
-        usage_limit: type === "reusable" ? Math.max(0, parseInt(limit) || 0) : Math.max(1, parseInt(limit) || 1),
+        usage_limit: type === "reusable" ? Math.max(0, parseInt(limit) || 0) : 1,
         expires_days: Math.max(1, parseInt(days) || 365),
         auto_groups: [...sel],
       }
@@ -350,7 +367,7 @@ function CreateKeyDialog({ groups, onClose, onDone }: { groups: Group[]; onClose
               <DialogTitle className="flex items-center gap-2">
                 <KeyRound className="size-4 text-ok" /> Key erstellt
               </DialogTitle>
-              <DialogDescription>Jetzt kopieren — wird nicht erneut angezeigt.</DialogDescription>
+              <DialogDescription>Jetzt kopieren, wird nicht erneut angezeigt.</DialogDescription>
             </DialogHeader>
             <div className="flex items-center gap-2 rounded-lg border bg-secondary/60 p-2">
               <code className="flex-1 break-all px-1 font-mono text-[13px]">{created}</code>
@@ -387,7 +404,15 @@ function CreateKeyDialog({ groups, onClose, onDone }: { groups: Group[]; onClose
                 </div>
                 <div>
                   <Label htmlFor="kl" className="mb-1.5">Limit</Label>
-                  <Input id="kl" type="number" min="0" value={limit} onChange={(e) => setLimit(e.target.value)} />
+                  <Input
+                    id="kl"
+                    type="number"
+                    min="0"
+                    value={type === "one-off" ? "1" : limit}
+                    onChange={(e) => setLimit(e.target.value)}
+                    disabled={type === "one-off"}
+                    title={type === "one-off" ? "Einmal-Key ist immer 1" : undefined}
+                  />
                 </div>
                 <div>
                   <Label htmlFor="kd" className="mb-1.5">Tage gültig</Label>

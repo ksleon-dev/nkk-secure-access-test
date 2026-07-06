@@ -1,9 +1,12 @@
 import { invoke } from "@tauri-apps/api/core";
+import { confirm } from "@tauri-apps/plugin-dialog";
+import { getVersion } from "@tauri-apps/api/app";
 import { check, type Update } from "@tauri-apps/plugin-updater";
 import {
   ArrowLeft,
   CheckCircle2,
   ChevronDown,
+  Circle,
   Download,
   Loader2,
   LogOut,
@@ -41,6 +44,8 @@ import type {
 interface Props {
   branding: BrandingDto;
   profiles: CredentialProfileMeta[];
+  activeProfileId: string | null;
+  onSelectActive: (id: string) => void;
   onAddProfile: () => void;
   onEditProfile: (profile: CredentialProfileMeta) => void;
   onDeleteProfile: (id: string) => void;
@@ -51,6 +56,8 @@ interface Props {
 export function SettingsScreen({
   branding,
   profiles,
+  activeProfileId,
+  onSelectActive,
   onAddProfile,
   onEditProfile,
   onDeleteProfile,
@@ -65,7 +72,17 @@ export function SettingsScreen({
   const [rdp, setRdp] = useState<RdpSettings | null>(null);
   const [rdpOpen, setRdpOpen] = useState(false);
   const [creatingShortcut, setCreatingShortcut] = useState(false);
+  // Echte Laufzeit-Version aus dem gebauten Binary (Single Source of Truth), damit
+  // Anzeige + Update-Pruefung nie gegen einen veralteten Branding-Wert driften.
+  // Fallback auf den Branding-Wert, falls getVersion (z.B. im Browser-Dev) scheitert.
+  const [appVersion, setAppVersion] = useState(branding.product.version);
   const toast = useToast();
+
+  useEffect(() => {
+    getVersion()
+      .then(setAppVersion)
+      .catch(() => {});
+  }, []);
 
   useEffect(() => {
     invoke<boolean>("is_autostart_enabled")
@@ -87,8 +104,9 @@ export function SettingsScreen({
     } catch (e: unknown) {
       const raw = e instanceof Error ? e.message : String(e);
       const denied = /denied|permission|os error 13|not permitted/i.test(raw);
+      const isMac = /Mac/.test(navigator.platform);
       toast.error(
-        denied
+        denied && isMac
           ? "Autostart braucht zusätzliche macOS-Rechte. Tipp: App nach Programme verschieben und einmal neu öffnen."
           : "Autostart konnte nicht geändert werden."
       );
@@ -142,7 +160,13 @@ export function SettingsScreen({
   }
 
   async function resetEnrollment() {
-    if (!window.confirm("Wirklich zurücksetzen?")) return;
+    if (
+      !(await confirm(
+        "Einrichtung zurücksetzen? Danach brauchst du einen neuen Setup-Key von der IT, um die App wieder nutzen zu können.",
+        { title: "Bestätigen", kind: "warning" }
+      ))
+    )
+      return;
     try {
       await invoke("nb_reset_enrollment");
       toast.info("Einrichtung zurückgesetzt.");
@@ -152,11 +176,12 @@ export function SettingsScreen({
     }
   }
 
-  function deleteProfile(p: CredentialProfileMeta) {
+  async function deleteProfile(p: CredentialProfileMeta) {
     if (
-      !window.confirm(
-        `Profil "${p.label}" wirklich löschen? Wird beim nächsten Mal neu abgefragt.`
-      )
+      !(await confirm(
+        `Profil "${p.label}" wirklich löschen? Wird beim nächsten Mal neu abgefragt.`,
+        { title: "Bestätigen", kind: "warning" }
+      ))
     )
       return;
     onDeleteProfile(p.id);
@@ -175,7 +200,7 @@ export function SettingsScreen({
       <header className="px-4 pt-4 pb-2 flex items-center gap-2 shrink-0">
         <button
           onClick={onBack}
-          className="p-1.5 rounded-md text-black hover:bg-black/10 transition"
+          className="p-1.5 rounded-md text-[color:var(--brand-fg)] hover:bg-[color:var(--brand-fg)]/8 transition"
           aria-label={de.settings.back}
         >
           <ArrowLeft size={18} strokeWidth={2.4} />
@@ -199,7 +224,9 @@ export function SettingsScreen({
           }
         >
           <p className="text-[12px] text-[color:var(--brand-fg)]/85 mb-2 leading-snug">
-            Mehrere Profile speicherbar - verschlüsselt im OS Tresor.
+            {profiles.length > 1
+              ? "Mehrere Profile speicherbar. Wähle aus, welches aktiv genutzt wird."
+              : "Mehrere Profile speicherbar. Verschlüsselt im System-Tresor."}
           </p>
           {profiles.length === 0 ? (
             <button
@@ -211,39 +238,80 @@ export function SettingsScreen({
             </button>
           ) : (
             <div className="flex flex-col gap-1.5">
-              {profiles.map((p) => (
-                <div
-                  key={p.id}
-                  className="surface rounded-lg p-2.5 flex items-center gap-2.5"
-                >
-                  <Avatar profile={p} size={36} />
-                  <div className="flex-1 min-w-0">
-                    <div className="text-[13px] font-bold truncate text-[color:var(--brand-fg)]">
-                      {p.label}
+              {profiles.map((p) => {
+                // Aktiv-Auswahl nur relevant, wenn es ueberhaupt mehr als ein Profil
+                // gibt. Bei genau einem Profil kein zusaetzliches Bedien-Element.
+                const multiple = profiles.length > 1;
+                const isActive = p.id === activeProfileId;
+                return (
+                  <div
+                    key={p.id}
+                    className={`surface rounded-lg p-2.5 flex items-center gap-2.5 transition ${
+                      multiple && isActive
+                        ? "border-[color:var(--brand-primary)] bg-[color:var(--brand-primary)]/8"
+                        : ""
+                    }`}
+                  >
+                    {multiple && (
+                      <button
+                        onClick={() => onSelectActive(p.id)}
+                        className={`p-0.5 rounded-full shrink-0 transition ${
+                          isActive
+                            ? "text-[color:var(--brand-primary)]"
+                            : "text-[color:var(--brand-fg)]/35 hover:text-[color:var(--brand-fg)]/70"
+                        }`}
+                        role="radio"
+                        aria-checked={isActive}
+                        aria-label={
+                          isActive
+                            ? `${p.label} ist das aktive Profil`
+                            : `${p.label} als aktiv setzen`
+                        }
+                        title={isActive ? "Aktives Profil" : "Als aktiv setzen"}
+                      >
+                        {isActive ? (
+                          <CheckCircle2 size={18} strokeWidth={2.4} />
+                        ) : (
+                          <Circle size={18} strokeWidth={2.2} />
+                        )}
+                      </button>
+                    )}
+                    <Avatar profile={p} size={36} />
+                    <div className="flex-1 min-w-0">
+                      <div className="flex items-center gap-1.5 min-w-0">
+                        <div className="text-[13px] font-bold truncate text-[color:var(--brand-fg)]">
+                          {p.label}
+                        </div>
+                        {multiple && isActive && (
+                          <span className="shrink-0 text-[9px] font-bold uppercase tracking-wider px-1.5 py-0.5 rounded-full text-white bg-[color:var(--brand-primary)]">
+                            Aktiv
+                          </span>
+                        )}
+                      </div>
+                      <div className="text-[11px] truncate font-mono text-[color:var(--brand-fg)]/75">
+                        {p.domain ? `${p.domain}\\` : ""}
+                        {p.username}
+                      </div>
                     </div>
-                    <div className="text-[11px] truncate font-mono text-[color:var(--brand-fg)]/75">
-                      {p.domain ? `${p.domain}\\` : ""}
-                      {p.username}
-                    </div>
+                    <button
+                      onClick={() => onEditProfile(p)}
+                      className="p-1.5 rounded-md text-[color:var(--brand-fg)] hover:bg-[color:var(--brand-fg)]/8 transition"
+                      aria-label="Bearbeiten"
+                      title="Bearbeiten"
+                    >
+                      <Pencil size={14} strokeWidth={2.4} />
+                    </button>
+                    <button
+                      onClick={() => deleteProfile(p)}
+                      className="p-1.5 rounded-md text-red-700 hover:bg-red-500/15 transition"
+                      aria-label="Löschen"
+                      title="Löschen"
+                    >
+                      <Trash2 size={14} strokeWidth={2.4} />
+                    </button>
                   </div>
-                  <button
-                    onClick={() => onEditProfile(p)}
-                    className="p-1.5 rounded-md text-black hover:bg-black/10 transition"
-                    aria-label="Bearbeiten"
-                    title="Bearbeiten"
-                  >
-                    <Pencil size={14} strokeWidth={2.4} />
-                  </button>
-                  <button
-                    onClick={() => deleteProfile(p)}
-                    className="p-1.5 rounded-md text-red-700 hover:bg-red-500/15 transition"
-                    aria-label="Löschen"
-                    title="Löschen"
-                  >
-                    <Trash2 size={14} strokeWidth={2.4} />
-                  </button>
-                </div>
-              ))}
+                );
+              })}
             </div>
           )}
 
@@ -260,7 +328,7 @@ export function SettingsScreen({
               ) : (
                 <RefreshCw size={12} />
               )}
-              {testing ? "Prüfe Schlüsselbund …" : "Schlüsselbund testen"}
+              {testing ? "Prüfe System-Tresor …" : "System-Tresor testen"}
             </button>
           ) : (
             <div
@@ -282,7 +350,7 @@ export function SettingsScreen({
               <button
                 onClick={runKeyringTest}
                 disabled={testing}
-                className="p-1 rounded shrink-0 hover:bg-black/10 text-black"
+                className="p-1 rounded shrink-0 hover:bg-[color:var(--brand-fg)]/8 text-[color:var(--brand-fg)]"
                 title="Erneut testen"
               >
                 <RefreshCw
@@ -387,7 +455,7 @@ export function SettingsScreen({
             <button
               onClick={refreshLogs}
               disabled={loadingLogs}
-              className="text-[11px] font-semibold flex items-center gap-1 px-2 py-1 rounded-md text-black hover:bg-black/10 transition"
+              className="text-[11px] font-semibold flex items-center gap-1 px-2 py-1 rounded-md text-[color:var(--brand-fg)] hover:bg-[color:var(--brand-fg)]/8 transition"
             >
               <RefreshCw
                 size={12}
@@ -421,10 +489,10 @@ export function SettingsScreen({
               {branding.product.name}
             </span>
             <span className="font-mono font-bold text-[color:var(--brand-fg)]">
-              {branding.product.version}
+              {appVersion}
             </span>
           </div>
-          <UpdateChecker currentVersion={branding.product.version} />
+          <UpdateChecker currentVersion={appVersion} />
         </Section>
 
         <button

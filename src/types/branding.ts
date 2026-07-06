@@ -35,7 +35,7 @@ export interface NetbirdInfo {
   internalDomainSuffix?: string;
 }
 
-export type QuickLaunchType = "rdp" | "smb" | "url";
+export type QuickLaunchType = "rdp" | "smb" | "url" | "ssh";
 
 export interface QuickLaunchEntry {
   label: string;
@@ -48,10 +48,19 @@ export interface QuickLaunchEntry {
   hidden?: boolean;
   /** Optional Shift+<digit> hotkey (e.g. "1") that launches this entry. */
   hotkey?: string;
-  /** "manager" => only the Geschäftsführer profile sees it; absent => everyone. */
-  role?: "user" | "manager";
+  /**
+   * Rollen-Gate: "manager" => nur Geschäftsführer, "it_admin" => nur IT Admin,
+   * "admin" => beide privilegierten Rollen (GF + IT Admin); fehlt => alle sehen es.
+   */
+  role?: "user" | "manager" | "it_admin" | "admin";
   /** RD Gateway host (RDP over HTTPS) => reaches the target without any VPN. */
   gateway?: string;
+  /** SSH-Login-Benutzer (nur type "ssh"); fehlt => Standardbenutzer (root). */
+  user?: string;
+  /** SSH-Port (nur type "ssh"); fehlt => 22. */
+  port?: number;
+  /** Layout-Gruppe im Admin-Grid: "ts" Terminalserver, "core" Kern-Server, "net" Netz + Verwaltung. */
+  group?: "ts" | "core" | "net";
 }
 
 export interface BrandingDto {

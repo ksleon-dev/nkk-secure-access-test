@@ -32,3 +32,6 @@ src-tauri/keys/
 *.token
 .env
 .env.*
+
+# Build-Artefakte (regenerierbar via build-release-zip.sh)
+*.zip

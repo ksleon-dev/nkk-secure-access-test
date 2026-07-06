@@ -96,7 +96,7 @@ function LoginScreen({ onSuccess }: { onSuccess: () => void }) {
           </Button>
         </form>
         <p className="mt-4 text-center text-xs text-muted-foreground">
-          Zugriff nur über den internen SSH-Tunnel.
+          Erreichbar nur über das NetBird-Overlay (admin-only).
         </p>
       </div>
     </div>

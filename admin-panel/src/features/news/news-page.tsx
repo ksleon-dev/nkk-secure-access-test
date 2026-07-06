@@ -2,7 +2,8 @@ import { useState } from "react"
 import { toast } from "sonner"
 import { useData } from "@/lib/data-context"
 import { api } from "@/lib/api"
-import { PageHeader, ErrorState, EmptyState } from "@/components/common/bits"
+import { PageHeader, ErrorState, EmptyState, ExportMdButton } from "@/components/common/bits"
+import { mdTable } from "@/lib/md-export"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
@@ -36,7 +37,7 @@ export function NewsPage() {
     setBusy(true)
     try {
       await api.pushNews(type, title.trim(), message.trim())
-      toast.success("News veröffentlicht — erscheint in der App.")
+      toast.success("News veröffentlicht, erscheint in der App.")
       setTitle("")
       setMessage("")
       refresh()
@@ -57,9 +58,21 @@ export function NewsPage() {
     }
   }
 
+  function exportMd(): string {
+    const table = mdTable(
+      ["Datum", "Art", "Titel", "Text"],
+      items.map((n) => [n.date, TYPES[n.type]?.label ?? n.type, n.title, n.body]),
+    )
+    return `# News\n\nStand: ${new Date().toLocaleString("de-DE")} · ${items.length} Meldungen\n\n${table}\n`
+  }
+
   return (
     <div>
-      <PageHeader title="News" description="Meldungen, die live in der App unter Aktuelles erscheinen." />
+      <PageHeader
+        title="News"
+        description="Meldungen, die live in der App unter Aktuelles erscheinen."
+        actions={<ExportMdButton filename="news" disabled={!data} onExport={exportMd} />}
+      />
 
       <div className="grid gap-5 lg:grid-cols-[360px_1fr]">
         {/* Verfassen */}
@@ -101,7 +114,7 @@ export function NewsPage() {
           {loading && !data ? (
             <Skeleton className="h-40 w-full rounded-xl" />
           ) : items.length === 0 ? (
-            <EmptyState title="Noch keine News" hint="Verfasse links die erste Meldung — sie erscheint in der App." />
+            <EmptyState title="Noch keine News" hint="Verfasse links die erste Meldung, sie erscheint in der App." />
           ) : (
             <ul className="space-y-3">
               {items.map((n) => {

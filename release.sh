@@ -25,10 +25,10 @@ DATE=$(date +%Y-%m-%d)
 echo "==> Release v$VER  ($DATE)"
 
 # 1) Version in den 3 Manifesten setzen (CI erzwingt Gleichstand)
-echo "  - Version setzen (package.json, tauri.conf.json, Cargo.toml)"
-sed -i.bak -E "s/\"version\": \"[0-9]+\.[0-9]+\.[0-9]+\"/\"version\": \"$VER\"/" package.json src-tauri/tauri.conf.json
+echo "  - Version setzen (package.json, tauri.conf.json, Cargo.toml, branding.json)"
+sed -i.bak -E "s/\"version\": \"[0-9]+\.[0-9]+\.[0-9]+\"/\"version\": \"$VER\"/" package.json src-tauri/tauri.conf.json src-tauri/resources/branding.json
 sed -i.bak -E "s/^version = \"[0-9]+\.[0-9]+\.[0-9]+\"/version = \"$VER\"/" src-tauri/Cargo.toml
-rm -f package.json.bak src-tauri/tauri.conf.json.bak src-tauri/Cargo.toml.bak
+rm -f package.json.bak src-tauri/tauri.conf.json.bak src-tauri/Cargo.toml.bak src-tauri/resources/branding.json.bak
 
 # 2) CHANGELOG-Eintrag unter [Unreleased] einfuegen + Panel-Kopie syncen
 echo "  - CHANGELOG-Eintrag einfuegen"
@@ -40,7 +40,11 @@ cp CHANGELOG.md admin-panel/src/data/changelog.md 2>/dev/null || true
 # 3) Lokal pruefen (faengt Tippfehler ab, bevor die CI laeuft)
 echo "  - Frontend bauen (tsc + vite)"
 npm run build >/dev/null
-for f in package.json src-tauri/tauri.conf.json; do
+# Rust pruefen UND dabei Cargo.lock auf die neue Version ziehen (sonst bleibt der
+# committete Lock im Repo auf der alten Version stehen = Drift).
+echo "  - Rust pruefen + Cargo.lock syncen (cargo check)"
+( cd src-tauri && cargo check --quiet )
+for f in package.json src-tauri/tauri.conf.json src-tauri/resources/branding.json; do
   grep -q "\"version\": \"$VER\"" "$f" || { echo "FEHLER: $f nicht gebumpt"; exit 1; }
 done
 grep -q "^version = \"$VER\"" src-tauri/Cargo.toml || { echo "FEHLER: Cargo.toml nicht gebumpt"; exit 1; }

@@ -21,6 +21,30 @@ interface NewsItem {
 // Versions match CHANGELOG.md so nothing in the history looks skipped.
 const FALLBACK_NEWS: NewsItem[] = [
   {
+    id: "v0319-veredelt",
+    date: "6. Juli 2026",
+    type: "update",
+    version: "0.3.19",
+    title: "Runder, klarer, sicherer",
+    body: "Viele Meldungen sagen dir jetzt noch klarer, was zu tun ist, und Verbindungen laufen zuverlässiger. Unter der Haube sind zahlreiche Kleinigkeiten stabiler und sicherer geworden, und das App-Symbol sitzt jetzt sauber im Dock. IT-Admins finden im Admin-Modus neue Direktzugriffe auf die Server.",
+  },
+  {
+    id: "v0318-anmeldung",
+    date: "30. Juni 2026",
+    type: "update",
+    version: "0.3.18",
+    title: "Anmeldung klappt jetzt zuverlässig",
+    body: "Beim Öffnen des Terminalservers ist die richtige Anmeldung (NKKHB) immer vorausgewählt. Du tippst nur noch deinen Namen und dein Passwort, der Rest passt automatisch. Die lästigen Sicherheitshinweise beim Öffnen sind weg, und der Server öffnet sauber auf allen deinen Bildschirmen.",
+  },
+  {
+    id: "v0318-ruhig",
+    date: "30. Juni 2026",
+    type: "update",
+    version: "0.3.18",
+    title: "Ruhiger, klarer, schneller",
+    body: "Das Fenster ist aufgeräumt und bleibt beim Verbinden ruhig, nichts springt mehr. Der erste Verbindungsaufbau nach der Einrichtung geht schneller und führt dich Schritt für Schritt. Updates kommen automatisch und zuverlässig bei dir an.",
+  },
+  {
     id: "v031",
     date: "25. Juni 2026",
     type: "update",
@@ -155,7 +179,7 @@ export function NewsScreen({ branding, onBack }: Props) {
       <header className="px-4 pt-4 pb-2 flex items-center gap-2 shrink-0">
         <button
           onClick={onBack}
-          className="p-1.5 rounded-md text-black hover:bg-black/10 transition"
+          className="p-1.5 rounded-md text-[color:var(--brand-fg)] hover:bg-[color:var(--brand-fg)]/8 transition"
           aria-label={de.settings.back}
         >
           <ArrowLeft size={18} strokeWidth={2.4} />
@@ -217,7 +241,7 @@ export function NewsScreen({ branding, onBack }: Props) {
 
         <div className="mt-4 text-center">
           <p className="text-[10px] text-[color:var(--brand-fg)]/40 italic">
-            Mehr Updates folgen - stay tuned.
+            Weitere Neuigkeiten folgen bald.
           </p>
         </div>
       </div>

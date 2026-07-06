@@ -1,6 +1,7 @@
 import { useState, type ReactNode } from "react"
 import { useData } from "@/lib/data-context"
-import { PageHeader, ErrorState, RolloutCard } from "@/components/common/bits"
+import { PageHeader, ErrorState, RolloutCard, ExportMdButton } from "@/components/common/bits"
+import { mdTable } from "@/lib/md-export"
 import { Skeleton } from "@/components/ui/skeleton"
 import { Button } from "@/components/ui/button"
 import { CheckCircle2, XCircle, Download, FileText, Copy, Check } from "lucide-react"
@@ -72,9 +73,33 @@ export function ReleasesPage() {
   // Bulletproof Universal-Installer/Updater (ein gehostetes Skript, kein Drift).
   const macCmd = macInstallCmd()
 
+  function exportMd(): string {
+    const table = mdTable(
+      ["Version", "Datum", "Status"],
+      VERSIONS.map((v) => {
+        const unrel = /unreleased/i.test(v.version)
+        return [
+          unrel ? "Nächste Version" : "v" + v.version,
+          v.date,
+          v.version === cur ? "aktuell" : unrel ? "in Arbeit" : "",
+        ]
+      }),
+    )
+    return (
+      `# Releases\n\nStand: ${new Date().toLocaleString("de-DE")}\n\n` +
+      `Aktuelle Version (Code): v${cur}\n\n` +
+      `Update-Kanal (latest.json): ${channelOk ? `aktiv · v${uc?.version}` : "inaktiv"}\n\n` +
+      `## Versionsverlauf\n\n${table}\n`
+    )
+  }
+
   return (
     <div>
-      <PageHeader title="Releases" description="Auslieferung, Auto-Update-Kanal und Versionsverlauf." />
+      <PageHeader
+        title="Releases"
+        description="Auslieferung, Auto-Update-Kanal und Versionsverlauf."
+        actions={<ExportMdButton filename="releases" onExport={exportMd} />}
+      />
 
       <div className="mb-5">
         <RolloutCard devices={data.devices} current={cur} />
@@ -116,7 +141,7 @@ export function ReleasesPage() {
           <InstallCard os="macOS" href={dl.macos_dmg ?? undefined} cmd={macCmd} />
         </div>
         <p className="mt-3 text-[12px] text-muted-foreground">
-          Windows-Befehl in PowerShell (Silent-Install), macOS-Befehl im Terminal. Danach den Setup-Key eingeben — oder per Level / Mehrfach-Key zero-touch ausrollen.
+          Windows-Befehl in PowerShell (Silent-Install), macOS-Befehl im Terminal. Danach den Setup-Key eingeben, oder per Level / Mehrfach-Key zero-touch ausrollen.
         </p>
       </div>
 
@@ -128,7 +153,7 @@ export function ReleasesPage() {
         </p>
         <CodeCopy code={winRolloutCmd()} label="Level · Run as System" />
         <p className="mt-3 text-[12px] text-muted-foreground">
-          Lädt das eine gehostete, gegengeprüfte Skript (kein Drift — Verbesserungen wirken sofort). Hinweis: nicht eingeloggte Geräte bekommen SSH erst beim nächsten App-Connect; die SSH-Access-Policy im NetBird-Management ist getrennt und einmalig.
+          Lädt das eine gehostete, gegengeprüfte Skript (kein Drift, Verbesserungen wirken sofort). Hinweis: nicht eingeloggte Geräte bekommen SSH erst beim nächsten App-Connect; die SSH-Access-Policy im NetBird-Management ist getrennt und einmalig.
         </p>
       </div>
 

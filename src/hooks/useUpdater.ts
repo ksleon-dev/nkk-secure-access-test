@@ -101,12 +101,23 @@ export function useUpdater() {
       // Fehler - nur ein Hinweis, die Abfrage beim naechsten Mal mit Ja zu bestaetigen.
       // Sonst eine ruhige Meldung, niemals den rohen technischen Fehler.
       const uacCancelled = /1223|elevation|cancell|abgebrochen|consent/i.test(raw);
+      // macOS ersetzt beim Update das .app-Bundle direkt. Liegt die App per MDM/Admin
+      // in /Applications, kann ein Nicht-Admin dort nicht schreiben und downloadAndInstall
+      // wirft einen Schreib-/Rechtefehler. Das ist kein generischer Fehlschlag, sondern
+      // braucht Administratorrechte - dafuer eine klare Handlungsanweisung statt der
+      // irrefuehrenden "spaeter erneut versuchen"-Meldung.
+      const needsAdmin =
+        /permission denied|read-only file system|read-only file-system|EACCES|EROFS|\/Applications|Operation not permitted|not permitted/i.test(
+          raw,
+        );
       setState((s) => ({
         ...s,
         downloading: false,
         error: uacCancelled
           ? "Für das Update bitte die Windows-Abfrage einmal mit 'Ja' bestätigen."
-          : "Update fehlgeschlagen. Bitte später erneut versuchen oder beim Support melden.",
+          : needsAdmin
+            ? "Das Update braucht Administratorrechte. Bitte an die IT wenden oder die App mit Adminrechten aktualisieren."
+            : "Update fehlgeschlagen. Bitte später erneut versuchen oder beim Support melden.",
       }));
     }
   }, []);

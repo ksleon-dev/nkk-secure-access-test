@@ -1,13 +1,3 @@
-export function fmtDateTime(s?: string | null): string {
-  if (!s) return "—"
-  const d = new Date(s)
-  if (isNaN(d.getTime())) return String(s).slice(0, 16).replace("T", " ")
-  return d.toLocaleString("de-DE", {
-    day: "2-digit", month: "2-digit", year: "numeric",
-    hour: "2-digit", minute: "2-digit",
-  })
-}
-
 export function relativeTime(s?: string | null): string {
   if (!s) return "—"
   const d = new Date(s)

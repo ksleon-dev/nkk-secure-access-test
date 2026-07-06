@@ -5,7 +5,7 @@
     "tagline": "Dein Bio-Großhandel",
     "logoText": ["Naturkost", "Kontor", "BREMEN"],
     "networkName": "NKK Netz",
-    "version": "0.3.1"
+    "version": "0.3.19"
   },
   "vendor": {
     "name": "KronSolutions GmbH",
@@ -36,7 +36,7 @@
   "quickLaunch": [
     {
       "label": "Terminalserver 2",
-      "description": "Standard",
+      "description": "InFact und Arbeitsprogramme",
       "type": "rdp",
       "target": "192.168.0.20",
       "default": true,
@@ -45,12 +45,85 @@
     },
     {
       "label": "Terminalserver 1",
-      "description": "Outdated",
+      "description": "Legacy, EOL",
       "type": "rdp",
       "target": "192.168.0.19",
       "icon": "computer",
       "hidden": true,
       "hotkey": "1"
+    },
+    {
+      "label": "Domaincontroller",
+      "description": "Serv-File, AD + DNS",
+      "type": "rdp",
+      "target": "192.168.0.10",
+      "icon": "server",
+      "role": "it_admin",
+      "hotkey": "3"
+    },
+    {
+      "label": "App-Server",
+      "description": "Serv-App, InFact",
+      "type": "rdp",
+      "target": "192.168.0.36",
+      "icon": "server",
+      "role": "it_admin",
+      "hotkey": "4"
+    },
+    {
+      "label": "DB-Server",
+      "description": "Serv-DB, MSSQL",
+      "type": "rdp",
+      "target": "192.168.0.18",
+      "icon": "database",
+      "role": "it_admin",
+      "hotkey": "5"
+    },
+    {
+      "label": "Webshop-Server",
+      "description": "Serv-Web, IIS",
+      "type": "rdp",
+      "target": "192.168.200.10",
+      "icon": "server",
+      "role": "it_admin",
+      "hotkey": "6"
+    },
+    {
+      "label": "Admin-Panel",
+      "description": "NetBird-Verwaltung",
+      "type": "url",
+      "target": "http://192.168.0.50:8899",
+      "icon": "panel",
+      "role": "it_admin",
+      "hotkey": "7"
+    },
+    {
+      "label": "Dateiablage",
+      "description": "Gemeinsame Dateien und Dokumente",
+      "type": "smb",
+      "target": "\\\\serv-file\\Daten",
+      "icon": "folder",
+      "role": "admin"
+    },
+    {
+      "label": "Serv-Secure SSH",
+      "description": "NetBird + Panel (Debian 12)",
+      "type": "ssh",
+      "target": "192.168.0.50",
+      "role": "it_admin",
+      "icon": "terminal",
+      "group": "net",
+      "hotkey": "8"
+    },
+    {
+      "label": "Serv-Network SSH",
+      "description": "Edge-Router nftables (Debian 12)",
+      "type": "ssh",
+      "target": "192.168.0.99",
+      "role": "it_admin",
+      "icon": "terminal",
+      "group": "net",
+      "hotkey": "9"
     }
   ],
   "levels": [],

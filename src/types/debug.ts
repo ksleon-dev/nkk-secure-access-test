@@ -137,7 +137,7 @@ export interface LinkQuality {
   ok: boolean;
 }
 
-export type UserRole = "user" | "manager";
+export type UserRole = "user" | "manager" | "it_admin";
 
 export interface AppSettings {
   autoReconnect: boolean;

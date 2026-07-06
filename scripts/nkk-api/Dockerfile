@@ -1,7 +1,8 @@
-FROM python:3.11-slim
-RUN pip install --no-cache-dir flask gunicorn
-COPY server.py /app/server.py
+FROM python:3.11-alpine
 WORKDIR /app
-ENV DATA_DIR=/data
+RUN pip install --no-cache-dir flask gunicorn
+RUN adduser -D -u 10001 -h /home/app app
+COPY app.py .
+USER app
 EXPOSE 9876
-CMD ["gunicorn", "--bind", "0.0.0.0:9876", "--workers", "2", "--timeout", "30", "server:app"]
+CMD ["gunicorn", "-b", "0.0.0.0:9876", "-w", "2", "app:app"]

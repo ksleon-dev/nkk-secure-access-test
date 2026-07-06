@@ -3,7 +3,8 @@ import { toast } from "sonner"
 import { useData } from "@/lib/data-context"
 import { api } from "@/lib/api"
 import { relativeTime } from "@/lib/format"
-import { PageHeader, ConnBadge, EmptyState, ErrorState } from "@/components/common/bits"
+import { PageHeader, ConnBadge, EmptyState, ErrorState, ExportMdButton } from "@/components/common/bits"
+import { mdTable } from "@/lib/md-export"
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Skeleton } from "@/components/ui/skeleton"
@@ -24,9 +25,28 @@ export function PeersPage() {
   const peers = data?.peers ?? []
   const online = peers.filter((p) => p.connected).length
 
+  function exportMd(): string {
+    const table = mdTable(
+      ["Name", "Status", "NetBird-IP", "Agent", "OS", "Zuletzt gesehen"],
+      peers.map((p) => [
+        p.name,
+        p.connected ? "online" : "offline",
+        p.ip,
+        p.version,
+        p.os,
+        relativeTime(p.last_seen),
+      ]),
+    )
+    return `# Peers\n\nStand: ${new Date().toLocaleString("de-DE")} · ${peers.length} Peers · ${online} online\n\n${table}\n`
+  }
+
   return (
     <div>
-      <PageHeader title="Peers" description={data ? `${peers.length} Peers · ${online} online` : undefined} />
+      <PageHeader
+        title="Peers"
+        description={data ? `${peers.length} Peers · ${online} online` : undefined}
+        actions={<ExportMdButton filename="peers" disabled={!data} onExport={exportMd} />}
+      />
 
       {loading && !data ? (
         <Skeleton className="h-96 w-full rounded-xl" />
@@ -143,7 +163,7 @@ function OffboardDialog({ peer, onClose, onDone }: { peer: Peer; onClose: () => 
             Zum Bestätigen den Namen eintippen.
           </DialogDescription>
         </DialogHeader>
-        <Input value={confirm} onChange={(e) => setConfirm(e.target.value)} placeholder={`${peer.name} — zum Bestätigen eintippen`} autoFocus />
+        <Input value={confirm} onChange={(e) => setConfirm(e.target.value)} placeholder={`${peer.name}: zum Bestätigen eintippen`} autoFocus />
         <DialogFooter>
           <Button variant="outline" onClick={onClose}>Abbrechen</Button>
           <Button variant="destructive" onClick={go} disabled={busy || confirm.trim().toLowerCase() !== peer.name.toLowerCase()}>

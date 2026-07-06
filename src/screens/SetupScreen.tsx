@@ -23,7 +23,7 @@ export function SetupScreen({ branding, onComplete }: Props) {
     if (busyRef.current) return;
     busyRef.current = true;
     setPhase("installing");
-    setStatusText("NetBird wird installiert, bitte Admin-Passwort eingeben ...");
+    setStatusText("NetBird wird installiert, bitte Admin-Passwort eingeben …");
 
     try {
       const msg = await invoke<string>("install_netbird");
@@ -82,7 +82,7 @@ export function SetupScreen({ branding, onComplete }: Props) {
       {phase === "done" && (
         <CheckCircle2
           size={28}
-          className="text-emerald-500"
+          className="text-emerald-600"
         />
       )}
 
