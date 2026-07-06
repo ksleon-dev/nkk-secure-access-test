@@ -33,6 +33,23 @@ err(){ printf '\033[31m[NKK] FEHLER:\033[0m %s\n' "$*" >&2; }
 
 DEST=""
 
+# Aktueller interaktiver Konsolennutzer (leer wenn keiner angemeldet ist, z.B.
+# Level/MDM auf einem Anmeldebildschirm). loginwindow/root zaehlen NICHT als Nutzer.
+console_user(){
+  local u
+  u="$(stat -f%Su /dev/console 2>/dev/null || true)"
+  case "$u" in ""|root|loginwindow|_*) printf '' ;; *) printf '%s' "$u" ;; esac
+}
+
+# NetBird auffindbar? (absolute Kandidatenpfade, GUI-PATH ist beim Skript-Lauf leer)
+netbird_present(){
+  local c
+  for c in /usr/local/bin/netbird /opt/homebrew/bin/netbird /usr/bin/netbird; do
+    [ -x "$c" ] && return 0
+  done
+  command -v netbird >/dev/null 2>&1
+}
+
 # --- 0) Schon aktuell? (nur wenn NKK_MIN_VERSION gesetzt, z.B. Level) ---------
 need_install=1
 if [ -n "$MIN_VER" ]; then
@@ -105,15 +122,30 @@ if [ "$need_install" = "1" ]; then
   fi
 fi
 
+# --- 1b) NetBird mitinstallieren (nur als root, z.B. Level/MDM) ----------------
+# Als root laeuft dieser One-Liner privilegiert. Dann NetBird gleich mit
+# installieren (offizielles Skript), damit der Mac-Weg wirklich zero-touch ist
+# und die App spaeter KEINEN GUI-Admin-Dialog (osascript) mehr braucht. Im
+# normalen Nutzerkontext bleibt es wie bisher: die App installiert NetBird selbst
+# beim ersten Start (mit Rueckfrage), hier NICHT unnoetig anfassen.
+if [ "$(id -u)" = "0" ] && ! netbird_present; then
+  log "Installiere NetBird (systemweit) ..."
+  if curl -fsSL https://pkgs.netbird.io/install.sh | sh >/dev/null 2>&1 && netbird_present; then
+    log "NetBird installiert."
+  else
+    err "NetBird-Installation fehlgeschlagen. Die App holt es beim ersten Start nach."
+  fi
+fi
+
 # --- 2) Setup-Key (Zero-Touch) in das RICHTIGE Home schreiben -----------------
+CONSOLE_USER="$(console_user)"
 if [ -n "$KEY" ]; then
   if [ "$(id -u)" = "0" ]; then
-    u="$(stat -f%Su /dev/console 2>/dev/null || true)"
-    if [ -n "$u" ] && [ "$u" != "root" ] && [ "$u" != "loginwindow" ]; then
-      h="$(dscl . -read /Users/"$u" NFSHomeDirectory 2>/dev/null | awk '{print $2}')"; [ -z "$h" ] && h="/Users/$u"
+    if [ -n "$CONSOLE_USER" ]; then
+      h="$(dscl . -read /Users/"$CONSOLE_USER" NFSHomeDirectory 2>/dev/null | awk '{print $2}')"; [ -z "$h" ] && h="/Users/$CONSOLE_USER"
       mkdir -p "$h/.config/nkk-secure-access"; printf '%s' "$KEY" > "$h/.config/nkk-secure-access/setup-key"
-      chmod 700 "$h/.config/nkk-secure-access"; chmod 600 "$h/.config/nkk-secure-access/setup-key"; chown -R "$u" "$h/.config/nkk-secure-access"
-      log "Setup-Key fuer Nutzer $u gesetzt."
+      chmod 700 "$h/.config/nkk-secure-access"; chmod 600 "$h/.config/nkk-secure-access/setup-key"; chown -R "$CONSOLE_USER" "$h/.config/nkk-secure-access"
+      log "Setup-Key fuer Nutzer $CONSOLE_USER gesetzt."
     else
       log "Kein interaktiver Nutzer aktiv - Key wird beim naechsten Anmelden gesetzt."
     fi
@@ -127,4 +159,15 @@ fi
 if [ "$(id -u)" != "0" ] && [ -n "$DEST" ]; then
   open "$DEST" 2>/dev/null || log "Bitte App manuell starten. Bei Gatekeeper-Dialog: Systemeinstellungen > Datenschutz & Sicherheit > 'Dennoch oeffnen'."
 fi
+
+# --- 4) Ehrlicher Exit fuer Level/MDM -----------------------------------------
+# Als root OHNE angemeldeten Konsolennutzer konnte weder der Key ins Nutzer-Home
+# noch die App gestartet werden: die Einrichtung ist NICHT abgeschlossen. Statt
+# stumm exit 0 (Level: 'erledigt') geben wir exit 4 zurueck, damit Level die
+# Ausfuehrung als 'ausstehend' markiert und beim naechsten Anmelden wiederholt.
+if [ "$(id -u)" = "0" ] && [ -z "$CONSOLE_USER" ]; then
+  log "Fertig (App installiert), aber kein angemeldeter Nutzer - Einrichtung wird beim naechsten Anmelden vervollstaendigt."
+  exit 4
+fi
+
 log "Fertig: ${DEST:-installiert}"

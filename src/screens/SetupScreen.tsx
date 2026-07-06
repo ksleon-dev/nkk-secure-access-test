@@ -11,6 +11,29 @@ interface Props {
   onComplete: () => void;
 }
 
+interface SetupCheckResult {
+  netbird_installed: boolean;
+  netbird_running: boolean;
+  needs_install: boolean;
+  message: string;
+}
+
+// Nach dem Install den ECHTEN Zustand pruefen (nicht dem Exit-Code des Installers
+// trauen). Bis zu ~15s (alle 1s) auf netbird_installed pollen: manche Installer legen
+// die Binary erst nach kurzer Verzoegerung ab. Reine Warte-/Pruefschleife.
+async function verifyInstalled(): Promise<boolean> {
+  for (let attempt = 0; attempt < 15; attempt++) {
+    try {
+      const check = await invoke<SetupCheckResult>("check_netbird_setup");
+      if (check.netbird_installed) return true;
+    } catch {
+      /* naechster Versuch */
+    }
+    await new Promise((r) => setTimeout(r, 1000));
+  }
+  return false;
+}
+
 export function SetupScreen({ branding, onComplete }: Props) {
   const [phase, setPhase] = useState<Phase>("ready");
   const [statusText, setStatusText] = useState(
@@ -27,6 +50,20 @@ export function SetupScreen({ branding, onComplete }: Props) {
 
     try {
       const msg = await invoke<string>("install_netbird");
+      // KEIN leerer Erfolg: der Installer-Aufruf kann Ok melden, ohne dass NetBird
+      // wirklich da ist (GUI-PATH kennt /usr/local/bin nicht, Dienst nicht gestartet).
+      // Erst gegen den echten Zustand verifizieren, sonst laeuft der Nutzer im
+      // Enrollment sofort in eine Sackgasse (#7).
+      setStatusText("Einrichtung wird geprüft …");
+      const ok = await verifyInstalled();
+      if (!ok) {
+        setPhase("error");
+        setStatusText(
+          "Die Einrichtung wurde gestartet, der VPN-Dienst ist aber noch nicht bereit. Bitte einen Moment warten und nochmal versuchen. Klemmt es weiter, bei der IT melden."
+        );
+        toast.error("VPN-Dienst noch nicht bereit. Bitte nochmal versuchen.");
+        return;
+      }
       setPhase("done");
       setStatusText(msg);
       toast.success("Einrichtung abgeschlossen!");

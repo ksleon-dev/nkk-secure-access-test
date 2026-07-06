@@ -677,10 +677,59 @@ pub async fn nb_connect(
     // Robust connect with retry (service pre-check + restart-and-retry) lives in
     // the shared core, so the GUI and the headless CLI get the exact same
     // self-healing - no drift on the connect path.
+    //
+    // WICHTIG (#3): up_with_retry liefert bei NetbirdMissing/CLI-Fehler einen
+    // Fehler - der wird 1:1 durchgereicht (das Frontend erkennt "Netbird CLI
+    // nicht gefunden ..." als NetbirdMissing-Kategorie). Ein Exit-0 heisst aber
+    // NICHT, dass die Verbindung wirklich steht. Deshalb unten gegen
+    // management_connected verifizieren, statt hier schon Ok zu melden.
     state
         .netbird
         .up_with_retry(&branding.netbird.management_url, key.as_deref())
         .await?;
+
+    // #3: Erfolg gegen den ECHTEN Zustand verifizieren. Bis ~15s pollen, jede
+    // Sekunde den Status lesen. Nur bei management_connected==true den Marker
+    // schreiben und Ok melden. So landet nie ein enrolled-Marker fuer eine
+    // Sitzung, die gar nicht verbunden ist (Falsch-Erfolg vermeiden).
+    let mut connected = false;
+    let mut saw_needs_login = false;
+    let mut last_status: Option<StatusDto> = None;
+    for _ in 0..15 {
+        match state.netbird.status().await {
+            Ok(s) => {
+                if s.management_connected {
+                    connected = true;
+                    last_status = Some(s);
+                    break;
+                }
+                if s.needs_login {
+                    saw_needs_login = true;
+                }
+                last_status = Some(s);
+            }
+            // NetbirdMissing waehrend des Pollens ist ein harter Fehler.
+            Err(AppError::NetbirdMissing) => {
+                return Err(AppError::NetbirdMissing);
+            }
+            Err(_) => {}
+        }
+        sleep(Duration::from_secs(1)).await;
+    }
+
+    if !connected {
+        // UNTERSCHEIDBARE Fehler, die das Frontend kategorisiert. Stabile
+        // deutsche Praefixe (siehe contracts) - NICHT den Wortlaut aendern, ohne
+        // P-FE nachzuziehen.
+        if saw_needs_login {
+            return Err(AppError::Internal(
+                "Setup-Key abgelehnt: Der Setup-Key wurde abgelehnt oder ist abgelaufen. Bitte neuen Key bei der IT anfordern.".into(),
+            ));
+        }
+        return Err(AppError::Internal(
+            "Nicht verbunden: Verbindung kam nicht zustande. Internetverbindung pruefen und erneut versuchen.".into(),
+        ));
+    }
 
     // Detect first enrollment BEFORE writing the marker - the diagnostic is sent
     // only once, when a device first joins, not on every connect.
@@ -688,10 +737,10 @@ pub async fn nb_connect(
         .map(|p| p.exists())
         .unwrap_or(false);
 
-    // Mark as enrolled so next startup skips the enrollment screen
+    // Verbindung steht -> jetzt (und nur jetzt) als enrolled markieren.
     let _ = write_enrolled_marker(&app);
 
-    if let Ok(s) = state.netbird.status().await {
+    if let Some(s) = last_status {
         let _ = app.emit("netbird-status-changed", &s);
     }
 
@@ -814,18 +863,49 @@ pub async fn report_version(app: AppHandle, state: State<'_, AppState>) -> AppRe
     send_enrollment_diagnostic(&app, &state.netbird, &branding, "startup", true).await
 }
 
+/// Zerlegt eine Management-URL in (Host, Port). Reine, testbare Funktion.
+/// Behandelt IPv6-Literale in eckigen Klammern (`[2001:db8::1]:443`) und einen
+/// fehlenden Port (https -> 443) korrekt. Der zurueckgegebene Host ist ohne
+/// Klammern (fuer TcpStream::connect via format!("{host}:{port}") re-hinzugefuegt).
+fn parse_host_port(url: &str) -> (String, u16) {
+    let stripped = url
+        .trim()
+        .trim_start_matches("https://")
+        .trim_start_matches("http://");
+    // Nur der Autoritaets-Teil vor dem ersten '/'.
+    let host_port = stripped.split('/').next().unwrap_or(stripped);
+
+    // IPv6-Literal in eckigen Klammern: [addr] oder [addr]:port
+    if let Some(rest) = host_port.strip_prefix('[') {
+        if let Some(close) = rest.find(']') {
+            let host = &rest[..close];
+            let after = &rest[close + 1..]; // "" oder ":port"
+            let port = after
+                .strip_prefix(':')
+                .and_then(|p| p.parse::<u16>().ok())
+                .unwrap_or(443);
+            return (host.to_string(), port);
+        }
+        // Kaputte Klammer - defensiv als Host ohne Port behandeln.
+        return (host_port.to_string(), 443);
+    }
+
+    // Kein Klammer-Literal. Ein einzelner ':' trennt Host:Port. Mehrere ':'
+    // ohne Klammern deuten auf ein rohes IPv6-Literal ohne Port hin -> ganzer
+    // String ist der Host, Standard-Port.
+    match host_port.rsplit_once(':') {
+        Some((h, p)) if !h.contains(':') => {
+            let port = p.parse::<u16>().unwrap_or(443);
+            (h.to_string(), port)
+        }
+        _ => (host_port.to_string(), 443u16),
+    }
+}
+
 /// TCP probe of the management server with a hard 2 second timeout.
 /// We don't care about TLS validation here - only "is the host reachable".
 async fn management_reachable(url: &str) -> bool {
-    // Strip scheme to get host[:port]
-    let stripped = url
-        .trim_start_matches("https://")
-        .trim_start_matches("http://");
-    let host_port = stripped.split('/').next().unwrap_or(stripped);
-    let (host, port) = match host_port.rsplit_once(':') {
-        Some((h, p)) => (h, p.parse::<u16>().unwrap_or(443)),
-        None => (host_port, 443u16),
-    };
+    let (host, port) = parse_host_port(url);
     let addr = format!("{}:{}", host, port);
     matches!(
         timeout(
@@ -835,6 +915,16 @@ async fn management_reachable(url: &str) -> bool {
         .await,
         Ok(Ok(_))
     )
+}
+
+/// #6 Koordinations-Vertrag: sagt dem Frontend, ob ein Setup-Key auf der Platte
+/// (bzw. im Keystore) liegt. So kann der EnrollmentScreen einen Zero-Touch
+/// "Automatisch verbinden" anbieten (nb_connect ohne Key -> nutzt den Cache),
+/// ohne dass der Nutzer den Key kennen muss. true = nicht-leerer Key vorhanden.
+#[tauri::command]
+pub async fn has_cached_setup_key(state: State<'_, AppState>) -> AppResult<bool> {
+    let key = cached_setup_key(&state).await?;
+    Ok(key.map(|k| !k.trim().is_empty()).unwrap_or(false))
 }
 
 #[tauri::command]
@@ -3620,11 +3710,195 @@ pub async fn check_netbird_setup(state: State<'_, AppState>) -> AppResult<SetupC
     })
 }
 
+/// Plausibilitaets-Check fuer ein heruntergeladenes `curl | sh`-Installskript.
+/// Bewusst PERMISSIV und als REINE, testbare Funktion: akzeptiert Shebang,
+/// Kommentar oder direkten Code am Anfang; lehnt nur leere Antworten und HTML
+/// (Captive-Portal / Fehlerseite) ab. NIEMALS auf "#!" bestehen - das echte
+/// NetBird-install.sh beginnt mit einem Kommentar ("# This code is based on ..."),
+/// und ein "#!"-Zwang brach in 0.3.19 die Ersteinrichtung auf frischen Macs.
+/// Der Test `install_script_accepts_real_netbird_header` sichert genau das ab,
+/// damit kein zu strenger Check je wieder unbemerkt die Installation blockiert.
+#[allow(dead_code)] // nur im macOS-Zweig + in Tests genutzt
+fn looks_like_install_script(bytes: &[u8]) -> bool {
+    if bytes.is_empty() {
+        return false;
+    }
+    // Groesserer Blick als frueher (2 KB), damit HTML-Marker die auch nach einer
+    // fuehrenden Leerzeile oder ein paar Kommentaren kommen, noch gefunden werden.
+    let head = String::from_utf8_lossy(&bytes[..bytes.len().min(2048)]);
+    let trimmed = head.trim_start();
+    let lower = head.to_lowercase();
+
+    // HART ablehnen: alles was nach HTML / JS-Redirect / Captive-Portal riecht,
+    // egal ob irgendwo das Wort 'netbird' im Text steht.
+    if trimmed.starts_with('<') {
+        return false; // beginnt direkt mit einem Tag
+    }
+    const HTML_MARKERS: [&str; 6] = [
+        "<html",
+        "<!doctype",
+        "<script",
+        "window.location",
+        "<meta",
+        "<body",
+    ];
+    if HTML_MARKERS.iter().any(|m| lower.contains(m)) {
+        return false;
+    }
+
+    // Ein echtes POSIX-Skript beginnt mit einer Shebang-Zeile ODER traegt
+    // mehrere plausible Shell-Marker. Ein Shebang ist ein starkes, eindeutiges
+    // Signal und wird direkt akzeptiert (deckt die frischen-Mac-Faelle ab).
+    if trimmed.starts_with("#!") || head.contains("#!/") {
+        return true;
+    }
+
+    // Ohne Shebang: mehrere Shell-Marker verlangen. Das echte install.sh traegt
+    // 'set -e' UND 'CONFIG_FOLDER' UND 'INSTALL_DIR' UND 'download_release_binary'.
+    // Ein knapper '# netbird'-Einzeiler oder eine getarnte Fehlerseite erreicht
+    // die Schwelle von >= 2 Markern nicht.
+    const SHELL_MARKERS: [&str; 5] = [
+        "set -e",
+        "config_folder",
+        "install_dir",
+        "download_release_binary",
+        "netbird",
+    ];
+    let marker_hits = SHELL_MARKERS.iter().filter(|m| lower.contains(*m)).count();
+    // >= 2 plausible Shell-Marker. Ein knapper '# netbird'-Kommentar-Einzeiler
+    // (nur 1 Marker, kein Shebang) fliegt hier raus; das echte install.sh und
+    // ein 'set -e; install netbird' bleiben drin. Die Marker-Schwelle ersetzt
+    // eine harte Byte-Mindestlaenge, die die kurzen (aber echten) Testvektoren
+    // fälschlich abgelehnt haette.
+    marker_hits >= 2
+}
+
+/// Re-Entrancy-Sperre fuer die NetBird-Installation. Ein zweiter paralleler
+/// install_netbird-Aufruf (z.B. SetupScreen-Klick + Repair-Button gleichzeitig)
+/// wuerde sonst zwei Admin-Dialoge stapeln oder in dieselbe Temp-Ausfuehrung
+/// laufen. compare_exchange wie beim connect_in_flight-Guard.
+static INSTALL_IN_FLIGHT: AtomicBool = AtomicBool::new(false);
+
+/// Klassifiziert den Exit-Code eines `osascript ... with administrator
+/// privileges`-Aufrufs. Reine, testbare Funktion - haengt NICHT am englischen
+/// Text ("User canceled"), weil NKK-Macs deutsch sind und dann anderer Text
+/// kommt. -128 = Nutzer hat den Passwort-Dialog abgebrochen; -1743 = TCC /
+/// Automatisierung nicht erlaubt. Beide bekommen dieselbe freundliche
+/// "bitte Passwort eingeben"-Meldung.
+#[allow(dead_code)] // Aufruf nur im macOS-Zweig, Test plattformunabhaengig.
+fn osascript_admin_prompt_aborted(exit_code: Option<i32>) -> bool {
+    matches!(exit_code, Some(-128) | Some(-1743))
+}
+
+/// Der freundliche deutsche Hinweis, wenn der Admin-Dialog abgebrochen / nicht
+/// bestaetigt wurde. Als Konstante, damit Backend und Test denselben Text sehen.
+#[allow(dead_code)] // nur im macOS-Zweig genutzt
+const ADMIN_PROMPT_ABORTED_MSG: &str =
+    "Admin-Bestaetigung noetig. Bitte im Dialog das Passwort eingeben und erneut versuchen.";
+
+/// Gemeinsamer manueller Ausweg, wenn die automatische macOS-Installation nicht
+/// verifiziert werden konnte. Terminal-Einzeiler + Hinweis auf 'Nochmal versuchen'.
+#[allow(dead_code)] // nur im macOS-Zweig genutzt
+const MAC_MANUAL_INSTALL_MSG: &str =
+    "Die NetBird-Installation konnte nicht bestaetigt werden. Bitte NetBird einmal manuell im Terminal installieren: curl -fsSL https://pkgs.netbird.io/install.sh | sh - danach in der App auf 'Nochmal versuchen'.";
+
+/// Prueft (macOS), ob die NetBird-CLI nach der Installation wirklich antwortet.
+/// Fragt die absoluten Kandidatenpfade der Reihe nach ab, nicht nur den GUI-PATH
+/// (der /usr/local/bin nach einem frischen Install oft noch nicht kennt).
+#[cfg(target_os = "macos")]
+async fn macos_netbird_binary_responds() -> bool {
+    const CANDIDATES: [&str; 4] = [
+        "/usr/local/bin/netbird",
+        "/opt/homebrew/bin/netbird",
+        "/usr/bin/netbird",
+        "/Applications/NetBird.app/Contents/MacOS/netbird",
+    ];
+    for path in CANDIDATES {
+        if !std::path::Path::new(path).exists() {
+            continue;
+        }
+        let res = timeout(
+            Duration::from_secs(5),
+            TokioCommand::new(path).arg("version").output(),
+        )
+        .await;
+        if let Ok(Ok(o)) = res {
+            if o.status.success() {
+                return true;
+            }
+        }
+    }
+    // Fallback: vielleicht liegt es doch im PATH unter einem anderen Pfad.
+    let res = timeout(
+        Duration::from_secs(5),
+        TokioCommand::new("netbird").arg("version").output(),
+    )
+    .await;
+    matches!(res, Ok(Ok(o)) if o.status.success())
+}
+
+/// Legt ein privates Temp-Verzeichnis (0700) mit Zufallsnamen an und gibt seinen
+/// Pfad zurueck. Ersetzt den vorhersagbaren, welt-schreibbaren
+/// `temp_dir()/nkk-netbird-install-<pid>.sh` (TOCTOU: ein anderer Nutzer koennte
+/// den Pfad per Symlink kapern). mkdtemp-Aequivalent ohne libc-Abhaengigkeit.
+#[cfg(target_os = "macos")]
+fn make_private_temp_dir() -> std::io::Result<std::path::PathBuf> {
+    use std::io::{Error, ErrorKind};
+    let base = std::env::temp_dir();
+    for _ in 0..16 {
+        let now = std::time::SystemTime::now()
+            .duration_since(std::time::UNIX_EPOCH)
+            .map(|d| d.as_nanos())
+            .unwrap_or(0);
+        let rnd = format!("nkk-nb-{:x}-{:x}", std::process::id(), now);
+        let dir = base.join(rnd);
+        match std::fs::create_dir(&dir) {
+            Ok(()) => {
+                #[cfg(unix)]
+                {
+                    use std::os::unix::fs::PermissionsExt;
+                    std::fs::set_permissions(&dir, std::fs::Permissions::from_mode(0o700))?;
+                }
+                return Ok(dir);
+            }
+            Err(e) if e.kind() == ErrorKind::AlreadyExists => continue,
+            Err(e) => return Err(e),
+        }
+    }
+    Err(Error::new(
+        ErrorKind::AlreadyExists,
+        "konnte kein privates Temp-Verzeichnis anlegen",
+    ))
+}
+
 /// Install NetBird on macOS using the official install script with admin privileges.
 #[tauri::command]
-pub async fn install_netbird() -> AppResult<String> {
+pub async fn install_netbird(
+    app: AppHandle,
+    state: State<'_, AppState>,
+) -> AppResult<String> {
+    // #20 Re-Entrancy: parallele Aufrufe sofort abweisen, statt zwei Admin-Dialoge
+    // zu stapeln. Guard setzt das Flag auf JEDEM Rueckweg zurueck.
+    struct InstallGuard;
+    impl Drop for InstallGuard {
+        fn drop(&mut self) {
+            INSTALL_IN_FLIGHT.store(false, Ordering::Release);
+        }
+    }
+    if INSTALL_IN_FLIGHT
+        .compare_exchange(false, true, Ordering::Acquire, Ordering::Relaxed)
+        .is_err()
+    {
+        return Err(AppError::Internal(
+            "Eine Installation laeuft bereits. Bitte warten und den Dialog abschliessen.".into(),
+        ));
+    }
+    let _install_guard = InstallGuard;
+
     #[cfg(target_os = "macos")]
     {
+        let _ = &app;
+        let _ = &state;
         tracing::info!("Starte NetBird Installation auf macOS ...");
 
         // Optionale Hash-Durchsetzung. Leer = keine Erzwingung (Default), damit
@@ -3633,14 +3907,25 @@ pub async fn install_netbird() -> AppResult<String> {
         // sonst bricht die Installation kontrolliert ab.
         const EXPECTED_NETBIRD_INSTALL_SHA256: &str = "";
 
-        // Skript zuerst in eine temporaere Datei laden statt blind in eine
-        // Root-Shell zu pipen (kein `curl | sh`). So laesst sich der Inhalt vor
-        // der privilegierten Ausfuehrung pruefen und protokollieren.
-        let script_path = std::env::temp_dir().join(format!(
-            "nkk-netbird-install-{}.sh",
-            std::process::id()
-        ));
+        // #14 TOCTOU: Skript in ein PRIVATES Verzeichnis (0700, Zufallsname)
+        // laden statt in einen vorhersagbaren, welt-schreibbaren temp_dir()-Pfad,
+        // den ein anderer Nutzer per Symlink kapern koennte. Die Skript-Datei
+        // selbst bekommt 0600. Nach Gebrauch wird das ganze Verzeichnis geloescht.
+        let work_dir = match make_private_temp_dir() {
+            Ok(d) => d,
+            Err(e) => {
+                tracing::warn!("Privates Temp-Verzeichnis fehlgeschlagen: {}", e);
+                return Err(AppError::Internal(
+                    "Konnte kein sicheres Arbeitsverzeichnis anlegen. Bitte nochmal versuchen.".into(),
+                ));
+            }
+        };
+        let script_path = work_dir.join("install.sh");
         let script_path_str = script_path.to_string_lossy().to_string();
+        // Aufraeum-Helfer: loescht das gesamte private Verzeichnis (best effort).
+        let cleanup = |dir: &std::path::Path| {
+            let _ = std::fs::remove_dir_all(dir);
+        };
 
         // Download ueber HTTPS in die Datei (-o), nicht in eine Pipe.
         let dl = timeout(
@@ -3660,14 +3945,14 @@ pub async fn install_netbird() -> AppResult<String> {
             Ok(Ok(o)) if o.status.success() => {}
             Ok(Ok(o)) => {
                 let stderr = String::from_utf8_lossy(&o.stderr);
-                let _ = std::fs::remove_file(&script_path);
+                cleanup(&work_dir);
                 tracing::warn!("NetBird Install-Skript Download fehlgeschlagen: {}", stderr.trim());
                 return Err(AppError::Internal(
                     "Konnte das NetBird Installations-Skript nicht laden. Bitte Internetverbindung pruefen und nochmal versuchen.".into(),
                 ));
             }
             Ok(Err(e)) => {
-                let _ = std::fs::remove_file(&script_path);
+                cleanup(&work_dir);
                 tracing::warn!("curl fuer NetBird Install-Skript nicht gestartet: {}", e);
                 return Err(AppError::Internal(format!(
                     "Konnte das Installations-Skript nicht laden: {}",
@@ -3675,7 +3960,7 @@ pub async fn install_netbird() -> AppResult<String> {
                 )));
             }
             Err(_) => {
-                let _ = std::fs::remove_file(&script_path);
+                cleanup(&work_dir);
                 tracing::warn!("NetBird Install-Skript Download Timeout (60s)");
                 return Err(AppError::Internal(
                     "Der Download des Installations-Skripts hat zu lange gedauert. Bitte nochmal versuchen.".into(),
@@ -3683,11 +3968,18 @@ pub async fn install_netbird() -> AppResult<String> {
             }
         }
 
+        // Skript-Datei auf 0600 einschraenken (nur Eigentuemer les-/schreibbar).
+        #[cfg(unix)]
+        {
+            use std::os::unix::fs::PermissionsExt;
+            let _ = std::fs::set_permissions(&script_path, std::fs::Permissions::from_mode(0o600));
+        }
+
         // Geladenen Inhalt einlesen fuer Sanity-Check + Hash.
         let script_bytes = match std::fs::read(&script_path) {
             Ok(b) => b,
             Err(e) => {
-                let _ = std::fs::remove_file(&script_path);
+                cleanup(&work_dir);
                 tracing::warn!("Geladenes Install-Skript nicht lesbar: {}", e);
                 return Err(AppError::Internal(
                     "Das geladene Installations-Skript konnte nicht gelesen werden. Bitte nochmal versuchen.".into(),
@@ -3696,30 +3988,17 @@ pub async fn install_netbird() -> AppResult<String> {
         };
 
         // Sanity: nicht leer und beginnt mit einer Shebang-Zeile (#!).
-        // Nicht leer, kein HTML-Redirect, sieht nach einem Shell-Skript aus.
-        // WICHTIG: NICHT auf "#!" bestehen. Viele `curl | sh`-Installer (auch das
-        // NetBird-Skript) beginnen mit einem KOMMENTAR ("# ...") oder direkt mit
-        // Code ("set -e"), nicht mit einem Shebang. Das echte install.sh startet
-        // mit "# This code is based on ..." - ein "#!"-Zwang lehnte es faelschlich
-        // ab und brach die Ersteinrichtung auf frischen Macs ab.
-        let head = String::from_utf8_lossy(&script_bytes[..script_bytes.len().min(512)]);
-        let trimmed = head.trim_start();
-        let looks_like_html = trimmed.starts_with('<');
-        let looks_like_shell = trimmed.starts_with('#') // Shebang ODER Kommentar
-            || trimmed.starts_with("set ")
-            || trimmed.contains("#!/")
-            || head.contains("netbird")
-            || head.contains("NETBIRD");
-        if script_bytes.is_empty() || looks_like_html || !looks_like_shell {
-            let _ = std::fs::remove_file(&script_path);
+        // Plausibilitaet ueber die reine, getestete Funktion pruefen. Bei einem
+        // Fehlschlag NICHT stumm abbrechen, sondern einen konkreten manuellen Weg
+        // anbieten - der Nutzer bleibt handlungsfaehig (graceful degradation).
+        if !looks_like_install_script(&script_bytes) {
+            cleanup(&work_dir);
             tracing::warn!(
-                "NetBird Install-Skript unplausibel (leer={}, html={}, shell={})",
-                script_bytes.is_empty(),
-                looks_like_html,
-                looks_like_shell
+                "NetBird Install-Skript unplausibel ({} Bytes)",
+                script_bytes.len()
             );
             return Err(AppError::Internal(
-                "Das geladene Installations-Skript ist ungueltig (leer oder kein gueltiges Skript). Installation abgebrochen.".into(),
+                "Das Installations-Skript konnte nicht geladen werden (leere oder ungueltige Antwort). Bitte NetBird einmal manuell im Terminal installieren: curl -fsSL https://pkgs.netbird.io/install.sh | sh - danach in der App auf 'Nochmal versuchen'.".into(),
             ));
         }
 
@@ -3741,7 +4020,7 @@ pub async fn install_netbird() -> AppResult<String> {
         if !EXPECTED_NETBIRD_INSTALL_SHA256.is_empty()
             && !sha256_hex.eq_ignore_ascii_case(EXPECTED_NETBIRD_INSTALL_SHA256)
         {
-            let _ = std::fs::remove_file(&script_path);
+            cleanup(&work_dir);
             tracing::warn!(
                 "NetBird Install-Skript SHA256 weicht ab: erwartet {}, erhalten {}",
                 EXPECTED_NETBIRD_INSTALL_SHA256,
@@ -3772,22 +4051,33 @@ pub async fn install_netbird() -> AppResult<String> {
         )
         .await;
 
-        // Temporaere Datei nach der Ausfuehrung aufraeumen (best effort).
-        let _ = std::fs::remove_file(&script_path);
+        // Temporaeres privates Verzeichnis nach der Ausfuehrung aufraeumen.
+        cleanup(&work_dir);
 
         match result {
             Ok(Ok(output)) if output.status.success() => {
-                tracing::info!("NetBird Installation erfolgreich");
-                // Wait for daemon to start
+                // #11: NICHT blind Erfolg melden. Der osascript-Exit 0 sagt nur
+                // "das Skript lief" - er sagt NICHT, dass die CLI danach wirklich
+                // da ist. Erst wenn `netbird version` gegen die absoluten
+                // Kandidatenpfade antwortet, ist die Installation echt.
                 sleep(Duration::from_secs(3)).await;
-                Ok("NetBird wurde erfolgreich installiert!".into())
+                if macos_netbird_binary_responds().await {
+                    tracing::info!("NetBird Installation erfolgreich und verifiziert");
+                    Ok("NetBird wurde erfolgreich installiert!".into())
+                } else {
+                    tracing::warn!(
+                        "osascript meldete Erfolg, aber netbird-CLI antwortet nicht - unverifiziert."
+                    );
+                    Err(AppError::Internal(MAC_MANUAL_INSTALL_MSG.into()))
+                }
             }
             Ok(Ok(output)) => {
-                let stderr = String::from_utf8_lossy(&output.stderr);
-                let stdout = String::from_utf8_lossy(&output.stdout);
-                let msg = if stderr.contains("User canceled") || stdout.contains("User canceled") {
-                    "Installation abgebrochen. Bitte Admin-Passwort eingeben.".into()
+                // #21: Abbruch am Fehlercode erkennen (-128 Nutzer-Cancel,
+                // -1743 TCC), NICHT am englischen Text - NKK-Macs sind deutsch.
+                let msg = if osascript_admin_prompt_aborted(output.status.code()) {
+                    ADMIN_PROMPT_ABORTED_MSG.to_string()
                 } else {
+                    let stderr = String::from_utf8_lossy(&output.stderr);
                     format!("Installation fehlgeschlagen: {}", stderr.trim())
                 };
                 tracing::warn!("NetBird Installation Fehler: {}", msg);
@@ -3806,13 +4096,104 @@ pub async fn install_netbird() -> AppResult<String> {
 
     #[cfg(target_os = "windows")]
     {
-        // Windows: NetBird is bundled with the NSIS installer, should never reach here
-        Ok("NetBird wird vom Installer eingerichtet.".into())
+        install_netbird_windows(&app, &state).await
     }
 
     #[cfg(all(unix, not(target_os = "macos")))]
     {
+        let _ = &app;
+        let _ = &state;
         Err(AppError::Internal("Bitte NetBird manuell installieren: https://netbird.io/download".into()))
+    }
+}
+
+/// #1 Windows: NICHT blind Ok melden. Erst gegen den echten Zustand pruefen
+/// (Dienst/Status). Fehlt NetBird -> den gebuendelten Installer elevated (/S)
+/// starten und danach den Dienst hochfahren; ist es danach immer noch weg ->
+/// klarer deutscher Fehler mit Ausweg (Setup erneut als Admin, IT melden).
+#[cfg(target_os = "windows")]
+async fn install_netbird_windows(app: &AppHandle, state: &AppState) -> AppResult<String> {
+    use std::os::windows::process::CommandExt;
+    // Ist NetBird schon da? Dann ist nichts zu tun - echtes Ok.
+    match state.netbird.status().await {
+        Ok(_) => {
+            return Ok("NetBird ist bereits installiert.".into());
+        }
+        Err(AppError::NetbirdMissing) => {} // fehlt -> weiter unten nachinstallieren
+        Err(_) => {
+            // Dienst antwortet nicht sauber, aber die CLI ist da (kein
+            // NetbirdMissing). Wir versuchen einen Dienststart statt neu zu
+            // installieren.
+            let mut start = TokioCommand::new("sc.exe");
+            start.args(["start", "netbird"]);
+            start.creation_flags(0x08000000);
+            let _ = timeout(Duration::from_secs(8), start.output()).await;
+            sleep(Duration::from_secs(2)).await;
+            if state.netbird.status().await.is_ok() {
+                return Ok("NetBird Dienst gestartet.".into());
+            }
+        }
+    }
+
+    // Gebuendelten Installer im Resource-Verzeichnis suchen.
+    let installer = app
+        .path()
+        .resource_dir()
+        .ok()
+        .map(|d| d.join("bin").join("netbird-installer.exe"))
+        .filter(|p| p.exists());
+
+    const MANUAL_MSG: &str =
+        "NetBird ist nicht installiert. Bitte den Installer NKK-Secure-Access-Setup.exe erneut als Administrator ausfuehren oder bei der IT melden (support@ticket.kronsolutions.de).";
+
+    let installer = match installer {
+        Some(p) => p,
+        None => {
+            tracing::warn!("Gebuendelter netbird-installer.exe nicht gefunden.");
+            return Err(AppError::Internal(MANUAL_MSG.into()));
+        }
+    };
+
+    // Elevated + still (/S) ausfuehren. runas hebt die Rechte an (UAC-Dialog).
+    let installer_str = installer.to_string_lossy().to_string();
+    let ps = format!(
+        "Start-Process -FilePath '{}' -ArgumentList '/S' -Verb RunAs -Wait",
+        installer_str.replace('\'', "''")
+    );
+    let mut cmd = TokioCommand::new("powershell.exe");
+    cmd.args(["-NoProfile", "-NonInteractive", "-Command", &ps]);
+    cmd.creation_flags(0x08000000);
+    let run = timeout(Duration::from_secs(180), cmd.output()).await;
+    match run {
+        Ok(Ok(o)) if o.status.success() => {}
+        Ok(Ok(o)) => {
+            let stderr = String::from_utf8_lossy(&o.stderr);
+            tracing::warn!("netbird-installer.exe Fehler: {}", stderr.trim());
+            return Err(AppError::Internal(MANUAL_MSG.into()));
+        }
+        Ok(Err(e)) => {
+            tracing::warn!("netbird-installer.exe nicht gestartet: {}", e);
+            return Err(AppError::Internal(MANUAL_MSG.into()));
+        }
+        Err(_) => {
+            tracing::warn!("netbird-installer.exe Timeout (180s)");
+            return Err(AppError::Internal(MANUAL_MSG.into()));
+        }
+    }
+
+    // Dienst starten und gegen den echten Zustand verifizieren.
+    let mut start = TokioCommand::new("sc.exe");
+    start.args(["start", "netbird"]);
+    start.creation_flags(0x08000000);
+    let _ = timeout(Duration::from_secs(8), start.output()).await;
+    sleep(Duration::from_secs(3)).await;
+
+    match state.netbird.status().await {
+        Ok(_) => Ok("NetBird wurde installiert und gestartet.".into()),
+        _ => {
+            tracing::warn!("NetBird nach Installer weiterhin nicht erreichbar.");
+            Err(AppError::Internal(MANUAL_MSG.into()))
+        }
     }
 }
 
@@ -5572,6 +5953,172 @@ mod tests {
         assert!(version_lt("v0.68.0", "0.68.1"));
         assert!(!version_lt("0.73.2", "0.73.2"));
         assert!(!version_lt("0.73.2", "0.73.1"));
+    }
+
+    #[test]
+    fn install_script_accepts_real_netbird_header() {
+        // Exakt der Anfang des echten pkgs.netbird.io/install.sh: ein KOMMENTAR,
+        // KEIN Shebang. Genau dieser Header brach die Ersteinrichtung in 0.3.19.
+        // Dieser Test haelt den Sanity-Check fuer immer permissiv genug.
+        let real = b"# This code is based on the netbird-installer contribution by physk on GitHub.\n# Source: https://github.com/physk/netbird-installer\nset -e\n\nCONFIG_FOLDER=\"/etc/netbird\"\n";
+        assert!(
+            looks_like_install_script(real),
+            "echtes NetBird-install.sh (Kommentar-Start) muss akzeptiert werden"
+        );
+    }
+
+    #[test]
+    fn install_script_accepts_shebang_and_code_start() {
+        assert!(looks_like_install_script(b"#!/bin/sh\necho hi\n"));
+        assert!(looks_like_install_script(b"#!/usr/bin/env bash\n"));
+        assert!(looks_like_install_script(b"set -e\ninstall netbird\n"));
+    }
+
+    #[test]
+    fn install_script_rejects_empty_and_html() {
+        assert!(!looks_like_install_script(b""));
+        assert!(!looks_like_install_script(
+            b"<!DOCTYPE html>\n<html><body>404 Not Found</body></html>"
+        ));
+        assert!(!looks_like_install_script(b"   \n  <html>captive portal</html>"));
+    }
+
+    #[test]
+    fn install_script_rejects_captive_portal_with_netbird_word() {
+        // Captive-Portal-Seite mit fuehrender Leerzeile UND dem Wort 'netbird'
+        // irgendwo im Text - der frueher permissive Check haette das als Skript
+        // durchgewunken. Jetzt greift der HTML-Marker (<html/<meta/<script) HART.
+        let page = b"\n\n<html>\n<head><meta charset=\"utf-8\"></head>\n<body>Bitte anmelden um netbird zu nutzen</body>\n</html>\n";
+        assert!(
+            !looks_like_install_script(page),
+            "Captive-Portal-HTML mit 'netbird' im Text muss abgelehnt werden"
+        );
+    }
+
+    #[test]
+    fn install_script_rejects_js_redirect() {
+        // JS-Redirect (z.B. Proxy-Fehlerseite), enthaelt 'netbird' und
+        // 'window.location' - muss abgelehnt werden.
+        let js = b"<script>window.location='https://pkgs.netbird.io/install.sh';</script>";
+        assert!(
+            !looks_like_install_script(js),
+            "JS-Redirect mit window.location muss abgelehnt werden"
+        );
+        // Auch ohne fuehrendes Tag, nur der Redirect im Text.
+        let js2 = b"// hint\nwindow.location = 'netbird';\n";
+        assert!(!looks_like_install_script(js2));
+    }
+
+    #[test]
+    fn install_script_rejects_short_netbird_oneliner() {
+        // Kurzer '# netbird'-Einzeiler: kein Shebang, nur EIN Marker (netbird),
+        // keine weitere Shell-Struktur -> abgelehnt.
+        assert!(
+            !looks_like_install_script(b"# netbird\n"),
+            "knapper '# netbird'-Kommentar-Einzeiler muss abgelehnt werden"
+        );
+        // Auch ein reiner Kommentar ohne echte Shell-Marker faellt raus.
+        assert!(!looks_like_install_script(b"# just a note about netbird\n"));
+    }
+
+    #[test]
+    fn parse_host_port_hostname_no_port() {
+        // Happy-Path: NKK-Hostname ohne Port -> Standard 443. Unveraendert.
+        assert_eq!(
+            parse_host_port("https://vpn.secure.nkk-hb.de"),
+            ("vpn.secure.nkk-hb.de".to_string(), 443)
+        );
+        // Mit Pfad dahinter - Pfad wird abgeschnitten.
+        assert_eq!(
+            parse_host_port("https://vpn.secure.nkk-hb.de/api"),
+            ("vpn.secure.nkk-hb.de".to_string(), 443)
+        );
+    }
+
+    #[test]
+    fn parse_host_port_explicit_port() {
+        assert_eq!(
+            parse_host_port("https://host.example:8443"),
+            ("host.example".to_string(), 8443)
+        );
+        assert_eq!(
+            parse_host_port("http://host.example:80"),
+            ("host.example".to_string(), 80)
+        );
+    }
+
+    #[test]
+    fn parse_host_port_ipv6() {
+        // IPv6-Literal mit Klammern + Port.
+        assert_eq!(
+            parse_host_port("https://[2001:db8::1]:443"),
+            ("2001:db8::1".to_string(), 443)
+        );
+        // IPv6-Literal mit Klammern ohne Port -> 443.
+        assert_eq!(
+            parse_host_port("https://[2001:db8::1]"),
+            ("2001:db8::1".to_string(), 443)
+        );
+        // Rohes IPv6 ohne Klammern und ohne Port: darf nicht faelschlich am
+        // letzten ':' gesplittet werden.
+        assert_eq!(
+            parse_host_port("2001:db8::1"),
+            ("2001:db8::1".to_string(), 443)
+        );
+    }
+
+    #[test]
+    fn osascript_abort_codes_are_recognised() {
+        // -128 = Nutzer-Cancel, -1743 = TCC/Automatisierung verweigert.
+        assert!(osascript_admin_prompt_aborted(Some(-128)));
+        assert!(osascript_admin_prompt_aborted(Some(-1743)));
+        // Normaler Erfolg / anderer Fehler ist KEIN Abbruch.
+        assert!(!osascript_admin_prompt_aborted(Some(0)));
+        assert!(!osascript_admin_prompt_aborted(Some(1)));
+        assert!(!osascript_admin_prompt_aborted(None));
+    }
+
+    #[test]
+    fn ping_summary_parses_english_windows() {
+        // Englische Windows-Zusammenfassung.
+        let out = "Pinging 1.1.1.1 with 32 bytes of data:\r\nReply from 1.1.1.1: bytes=32 time=19ms TTL=57\r\n\r\nPing statistics for 1.1.1.1:\r\n    Packets: Sent = 4, Received = 4, Lost = 0 (0% loss),\r\nApproximate round trip times in milli-seconds:\r\n    Minimum = 18ms, Maximum = 20ms, Average = 19ms\r\n";
+        let (min, avg, max) = parse_ping_summary(out);
+        assert_eq!(min, 18.0);
+        assert_eq!(avg, 19.0);
+        assert_eq!(max, 20.0);
+    }
+
+    #[test]
+    fn ping_summary_parses_german_windows() {
+        // Deutsche Windows-Zusammenfassung: Minimum/Maximum/Mittelwert + Verlust.
+        let out = "Ping wird ausgefuehrt fuer 1.1.1.1 mit 32 Bytes Daten:\r\nAntwort von 1.1.1.1: Bytes=32 Zeit=19ms TTL=57\r\n\r\nPing-Statistik fuer 1.1.1.1:\r\n    Pakete: Gesendet = 4, Empfangen = 4, Verloren = 0 (0% Verlust),\r\nCa. Zeitangaben in Millisek.:\r\n    Minimum = 18ms, Maximum = 20ms, Mittelwert = 19ms\r\n";
+        let (min, avg, max) = parse_ping_summary(out);
+        assert_eq!(min, 18.0);
+        assert_eq!(avg, 19.0);
+        assert_eq!(max, 20.0);
+    }
+
+    #[test]
+    fn ping_summary_parses_unix() {
+        // macOS/Linux Format bleibt unveraendert korrekt.
+        let out = "round-trip min/avg/max/stddev = 18.5/19.2/20.1/0.5 ms";
+        let (min, avg, max) = parse_ping_summary(out);
+        assert_eq!(min, 18.5);
+        assert_eq!(avg, 19.2);
+        assert_eq!(max, 20.1);
+    }
+
+    #[test]
+    fn ping_loss_parses_german_and_english() {
+        // Sprachneutral: '% loss' (englisch) und '% Verlust' (deutsch).
+        assert_eq!(
+            parse_ping_loss("    Packets: Sent = 4, Received = 4, Lost = 0 (0% loss),"),
+            0.0
+        );
+        assert_eq!(
+            parse_ping_loss("    Pakete: Gesendet = 4, Empfangen = 2, Verloren = 2 (50% Verlust),"),
+            50.0
+        );
     }
 
     #[cfg(target_os = "macos")]

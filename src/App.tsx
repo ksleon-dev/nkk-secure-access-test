@@ -67,6 +67,9 @@ function AppInner() {
   const [bootstrapping, setBootstrapping] = useState(true);
   const [bootError, setBootError] = useState<string | null>(null);
   const [profiles, setProfiles] = useState<CredentialProfileMeta[]>([]);
+  // Setzt der Bootstrap, wenn enrolled==false ABER ein Datei-Key vorliegt: dann soll
+  // der EnrollmentScreen sofort zero-touch verbinden (Fortschritt statt Key-Eingabe).
+  const [autoConnectEnrollment, setAutoConnectEnrollment] = useState(false);
   // Aktives Profil bei mehreren Profilen. In localStorage gehalten, damit die Wahl
   // Neustarts ueberlebt. Ableitung weiter unten faellt sauber auf profiles[0] zurueck,
   // falls das gemerkte Profil geloescht wurde.
@@ -299,7 +302,21 @@ function AppInner() {
             4000
           ).catch(() => false);
           if (!mounted) return;
-          setScreen(enrolled ? "main" : "enrollment");
+          if (enrolled) {
+            setScreen("main");
+          } else {
+            // Nicht enrolled, aber liegt ein Datei-Key auf der Platte? Dann kann der
+            // EnrollmentScreen zero-touch verbinden (der Nutzer muss den Key nicht
+            // kennen). has_cached_setup_key ist billig; bei Fehler faellt es sauber
+            // auf den manuellen Weg (Key-Eingabe) zurueck (#6/#22).
+            const cachedKey = await invokeWithTimeout<boolean>(
+              "has_cached_setup_key",
+              4000
+            ).catch(() => false);
+            if (!mounted) return;
+            setAutoConnectEnrollment(cachedKey);
+            setScreen("enrollment");
+          }
         }
 
         // Ab hier ist genug bekannt, um die App zu rendern -> Ladescreen JETZT beenden.
@@ -511,6 +528,7 @@ function AppInner() {
       {screen === "enrollment" && (
         <EnrollmentScreen
           branding={branding}
+          autoConnect={autoConnectEnrollment}
           onEnrolled={() => setScreen("main")}
         />
       )}

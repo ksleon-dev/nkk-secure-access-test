@@ -6,6 +6,7 @@ import {
   KeyRound,
   Loader2,
   ShieldCheck,
+  Sparkles,
   XCircle,
 } from "lucide-react";
 import { useEffect, useRef, useState } from "react";
@@ -19,16 +20,194 @@ import type { StatusDto } from "../types/netbird";
 interface Props {
   branding: BrandingDto;
   onEnrolled: () => void;
+  // Vom App-Bootstrap gesetzt: enrolled==false, aber ein Datei-Key liegt auf der
+  // Platte (has_cached_setup_key). Dann versucht der Screen beim Mount sofort einen
+  // zero-touch Auto-Connect, damit der Nutzer den Key gar nicht kennen muss (#6/#22).
+  autoConnect?: boolean;
 }
 
-export function EnrollmentScreen({ branding, onEnrolled }: Props) {
+// nb_connect kann laenger laufen (Backend pollt bis ~15s auf management_connected,
+// dazu Service-Neustart-Retry). Frontend-Timeout grosszuegig ueber dem Backend-Budget
+// (#27), damit der Spinner NIE unbegrenzt steht, der Connect aber nicht vorzeitig
+// abgeschnitten wird. Bei Ablauf lehnt das Promise mit Klartext ab -> phase=error.
+const CONNECT_TIMEOUT_MS = 75000;
+
+function invokeWithTimeout<T>(
+  cmd: string,
+  ms: number,
+  args?: Record<string, unknown>
+): Promise<T> {
+  return Promise.race([
+    invoke<T>(cmd, args),
+    new Promise<never>((_, reject) =>
+      setTimeout(
+        () => reject(new Error(`${cmd}: Zeitueberschreitung nach ${ms} ms`)),
+        ms
+      )
+    ),
+  ]);
+}
+
+type ErrorCategory = "netbirdMissing" | "keyRejected" | "network" | "timeout" | "unknown";
+
+interface CategorizedError {
+  category: ErrorCategory;
+  // Kurze Kopfzeile (was ist passiert).
+  message: string;
+  // Konkreter naechster Schritt je Kategorie (was der Nutzer jetzt tun kann).
+  nextStep: string;
+}
+
+// REINE Funktion: klassifiziert die rohe Backend-Fehlermeldung (nb_connect lehnt mit
+// dem Display-Text des AppError ab) in eine Kategorie mit konkretem naechsten Schritt.
+// Robust ueber Teilstring-Matching, damit kleine Wortaenderungen im Backend-Text den
+// Match nicht brechen. Deutsche Texte, KEINE Gedankenstriche.
+export function categorizeConnectError(raw: string): CategorizedError {
+  const t = (raw || "").toLowerCase();
+
+  // Frontend-Timeout (invokeWithTimeout) ODER Backend-Timeout ("kam nicht zustande").
+  if (t.includes("zeitueberschreitung") || t.includes("zeitüberschreitung")) {
+    return {
+      category: "timeout",
+      message: "Die Verbindung hat zu lange gedauert.",
+      nextStep:
+        "Bitte Internetverbindung pruefen und dann nochmal versuchen. Hilft das nicht, bei der IT melden.",
+    };
+  }
+
+  // NetBird-Dienst/CLI fehlt (AppError::NetbirdMissing).
+  if (
+    t.includes("cli nicht gefunden") ||
+    t.includes("nicht installiert") ||
+    (t.includes("netbird") && t.includes("nicht gefunden"))
+  ) {
+    return {
+      category: "netbirdMissing",
+      message: "Der VPN-Dienst wurde nicht gefunden.",
+      nextStep:
+        "Bitte die App einmal neu starten. Hilft das nicht: Terminal oeffnen und ausfuehren: curl -fsSL https://pkgs.netbird.io/install.sh | sh",
+    };
+  }
+
+  // Setup-Key abgelehnt oder abgelaufen (needs_login nach up()).
+  if (
+    t.includes("setup-key") ||
+    t.includes("setup key") ||
+    t.includes("abgelehnt") ||
+    t.includes("abgelaufen") ||
+    t.includes("anmelden") ||
+    t.includes("login")
+  ) {
+    return {
+      category: "keyRejected",
+      message: "Der Setup-Key wurde abgelehnt oder ist abgelaufen.",
+      nextStep:
+        "Bitte einen neuen Setup-Key bei der IT anfordern und erneut eingeben.",
+    };
+  }
+
+  // Verbindung/Management nicht erreichbar (Netzproblem).
+  if (
+    t.includes("kam nicht zustande") ||
+    t.includes("nicht verbunden") ||
+    t.includes("nicht erreichbar") ||
+    t.includes("management") ||
+    t.includes("verbindung")
+  ) {
+    return {
+      category: "network",
+      message: "Die Verbindung kam nicht zustande.",
+      nextStep:
+        "Bitte Internetverbindung pruefen und dann erneut versuchen.",
+    };
+  }
+
+  // Fallback: unbekannter Fehler, aber NIE stumm. Konkrete Meldung + Ausweg.
+  return {
+    category: "unknown",
+    message: "Die Aktivierung hat nicht geklappt.",
+    nextStep:
+      "Bitte erneut versuchen. Klemmt es weiter, den Setup-Key pruefen oder bei der IT melden.",
+  };
+}
+
+export function EnrollmentScreen({ branding, onEnrolled, autoConnect }: Props) {
   const [key, setKey] = useState("");
   const [busy, setBusy] = useState(false);
   const [phase, setPhase] = useState<"idle" | "connecting" | "success" | "error">("idle");
-  const [error, setError] = useState<string | null>(null);
+  // Strukturierter Fehler (Kopfzeile + naechster Schritt) statt einer pauschalen Zeile.
+  const [failure, setFailure] = useState<CategorizedError | null>(null);
   const [slowHint, setSlowHint] = useState(false);
+  // Datei-Key liegt vor -> zero-touch Auto-Connect anbieten (#6/#22).
+  const [hasCachedKey, setHasCachedKey] = useState(false);
   const toast = useToast();
   const enrolledRef = useRef(false);
+  // Verhindert doppelte Connect-Laeufe (Auto-Connect + Klick gleichzeitig).
+  const connectingRef = useRef(false);
+
+  // Gemeinsamer Connect-Pfad fuer Formular-Submit UND Auto-Connect. setupKey==null ->
+  // nb_connect({}) nutzt den gecachten Datei-Key im Backend (cached_setup_key).
+  async function runConnect(setupKey: string | null) {
+    if (connectingRef.current || enrolledRef.current) return;
+    connectingRef.current = true;
+    setFailure(null);
+    setBusy(true);
+    setPhase("connecting");
+    setSlowHint(false);
+    // Waechter: wirkt der Connect nach 18s noch wie haengend, klaren Hinweis zeigen
+    // (statt stillem Spinner). Der Connect laeuft im Hintergrund weiter.
+    const slowTimer = setTimeout(() => setSlowHint(true), 18000);
+    try {
+      // nb_connect liefert (durch P-CMD #3) nur Ok, wenn wirklich verbunden
+      // (management_connected verifiziert), sonst einen unterscheidbaren Fehler.
+      const args = setupKey ? { setupKey } : {};
+      await invokeWithTimeout("nb_connect", CONNECT_TIMEOUT_MS, args);
+      if (enrolledRef.current) return; // Listener hat es bereits behandelt
+      enrolledRef.current = true;
+      setPhase("success");
+      toast.success(de.toast.connected);
+      await new Promise((r) => setTimeout(r, 600));
+      onEnrolled();
+    } catch (e: unknown) {
+      // Technisches Detail fuer den Support ins Log, dem Nutzer kategorisierten
+      // Klartext + konkreten naechsten Schritt zeigen. NIE stumm auf idle zurueck.
+      console.error("Enrollment fehlgeschlagen:", e);
+      const raw = e instanceof Error ? e.message : String(e);
+      setFailure(categorizeConnectError(raw));
+      setPhase("error");
+    } finally {
+      clearTimeout(slowTimer);
+      setSlowHint(false);
+      setBusy(false);
+      connectingRef.current = false;
+    }
+  }
+
+  // Beim Mount pruefen, ob ein Datei-Key vorliegt. Wenn ja: Auto-Connect anbieten und
+  // (falls App-Bootstrap autoConnect setzt) sofort zero-touch verbinden.
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      let cached = false;
+      try {
+        cached = await invoke<boolean>("has_cached_setup_key");
+      } catch {
+        cached = false;
+      }
+      if (cancelled) return;
+      setHasCachedKey(cached);
+      // Nur automatisch loslaufen, wenn der Bootstrap das ausdruecklich will UND ein
+      // Key vorliegt. So bleibt der manuelle Weg unveraendert, wenn kein Key da ist.
+      if (cached && autoConnect && !enrolledRef.current) {
+        void runConnect(null);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // Mount-once: haengt nur am initialen autoConnect-Wunsch.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
 
   // Listen for status changes - if NetBird connects (e.g. manually via CLI),
   // auto-transition to main screen even if the UI enrollment failed.
@@ -74,37 +253,16 @@ export function EnrollmentScreen({ branding, onEnrolled }: Props) {
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
-    setError(null);
+    setFailure(null);
     if (!key.trim()) {
-      setError(de.enrollment.keyRequired);
+      setFailure({
+        category: "unknown",
+        message: de.enrollment.keyRequired,
+        nextStep: "Den Setup-Key aus der Mail der IT eingeben und dann aktivieren.",
+      });
       return;
     }
-    setBusy(true);
-    setPhase("connecting");
-    setSlowHint(false);
-    // Wächter: wirkt der Connect nach 18s noch wie haengend, klaren Hinweis zeigen
-    // (statt stillem Spinner). Der Connect laeuft im Hintergrund weiter.
-    const slowTimer = setTimeout(() => setSlowHint(true), 18000);
-    try {
-      await invoke("nb_connect", { setupKey: key.trim() });
-      if (enrolledRef.current) return; // listener already handled it
-      enrolledRef.current = true;
-      setPhase("success");
-      toast.success(de.toast.connected);
-      await new Promise((r) => setTimeout(r, 600));
-      onEnrolled();
-    } catch (e: unknown) {
-      setPhase("error");
-      // Keep the technical detail in the log for support, show a calm message.
-      console.error("Enrollment fehlgeschlagen:", e);
-      setError("Aktivierung fehlgeschlagen. Bitte Setup-Key prüfen und erneut versuchen.");
-      await new Promise((r) => setTimeout(r, 1000));
-      setPhase("idle");
-    } finally {
-      clearTimeout(slowTimer);
-      setSlowHint(false);
-      setBusy(false);
-    }
+    await runConnect(key.trim());
   }
 
   return (
@@ -158,6 +316,20 @@ export function EnrollmentScreen({ branding, onEnrolled }: Props) {
 
             <p className="fade-in-2 text-[11.5px] text-[color:var(--brand-fg)]/60 max-w-[280px] leading-snug">{de.enrollment.subtitle}</p>
 
+            {/* Datei-Key vorhanden: zero-touch Auto-Connect anbieten, damit der Nutzer
+                den Key gar nicht kennen muss. Der manuelle Key-Weg bleibt darunter. */}
+            {hasCachedKey && phase !== "connecting" && (
+              <button
+                type="button"
+                onClick={() => void runConnect(null)}
+                disabled={busy}
+                className="btn-primary rounded-lg py-3 px-5 text-sm font-bold flex items-center justify-center gap-2 w-full max-w-[280px] animate-fade-up"
+              >
+                <Sparkles size={16} />
+                Automatisch verbinden
+              </button>
+            )}
+
             <form
               onSubmit={submit}
               className="fade-in-3 w-full flex flex-col gap-2 mt-2"
@@ -179,9 +351,10 @@ export function EnrollmentScreen({ branding, onEnrolled }: Props) {
                 />
               </label>
 
-              {error && (
-                <div className="text-xs text-red-600 bg-red-500/10 border border-red-500/20 rounded-md px-3 py-2 leading-snug text-left animate-fade-up">
-                  {error}
+              {failure && (
+                <div className="text-xs text-red-600 bg-red-500/10 border border-red-500/20 rounded-md px-3 py-2 leading-snug text-left animate-fade-up flex flex-col gap-1">
+                  <span className="font-semibold">{failure.message}</span>
+                  <span className="text-[color:var(--brand-fg)]/70">{failure.nextStep}</span>
                 </div>
               )}
 
@@ -197,7 +370,7 @@ export function EnrollmentScreen({ branding, onEnrolled }: Props) {
                   </>
                 ) : (
                   <>
-                    {de.enrollment.submit}
+                    {phase === "error" ? "Nochmal versuchen" : de.enrollment.submit}
                     <ArrowRight size={16} />
                   </>
                 )}

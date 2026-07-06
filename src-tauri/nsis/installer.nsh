@@ -239,14 +239,49 @@ nkk_netbird_already:
   nsExec::Exec 'sc.exe query netbird'
   Pop $1
   ${If} $1 != 0
-    DetailPrint "NKK: NetBird-Binary ohne Dienst - installiere Windows-Dienst ..."
-    nsExec::ExecToLog '"${NKK_NETBIRD_BIN}" service install'
+    ; Foreign-Guard: ein bereits vorhandenes NetBird gehoert evtl. einer anderen
+    ; WireGuard-Loesung. Zeigt es auf einen ANDEREN Management-Server, richten wir
+    ; KEINEN Dienst dafuer ein (sonst uebernaehmen wir stumm eine fremde Instanz).
+    ; Nur unsere Instanz oder ein NetBird ohne Management-URL bekommt den Dienst.
+    ; "status -d" nennt die Management-URL zuverlaessig. Exit 0 = unsere/keine URL,
+    ; Exit 8 = fremde URL.
+    StrCpy $4 "ours"
+    nsExec::ExecToLog 'powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -WindowStyle Hidden -Command "try { $s = & \"${NKK_NETBIRD_BIN}\" status -d 2>$null | Out-String; if ($s -match \"Management URL\") { if ($s -match [regex]::Escape(\"${NKK_MGMT_URL}\")) { exit 0 } else { exit 8 } } else { exit 0 } } catch { exit 0 }"'
     Pop $NkkExitCode
+    ${If} $NkkExitCode == 8
+      StrCpy $4 "foreign"
+    ${EndIf}
+    ${If} $4 == "foreign"
+      DetailPrint "NKK: Vorgefundenes NetBird zeigt auf anderen Server - Dienst NICHT nachinstalliert."
+      StrCpy $NkkErrors "$NkkErrors[NB-FOREIGN] Fremdes NetBird gefunden, bewusst nicht uebernommen$\r$\n"
+    ${Else}
+      DetailPrint "NKK: NetBird-Binary ohne Dienst - installiere Windows-Dienst ..."
+      nsExec::ExecToLog '"${NKK_NETBIRD_BIN}" service install'
+      Pop $NkkExitCode
+    ${EndIf}
   ${EndIf}
   Goto nkk_netbird_done
 
 nkk_netbird_install:
-  IfFileExists "$NkkNetbirdInstaller" nkk_netbird_run nkk_netbird_missing
+  IfFileExists "$NkkNetbirdInstaller" nkk_netbird_sizecheck nkk_netbird_missing
+
+nkk_netbird_sizecheck:
+  ; Groessen-Guard wie bei vc_redist/wintun: eine leere/zu kleine EXE (fehlender
+  ; oder abgebrochener fetch-netbird) NIE ausfuehren - sonst laeuft eine 0-Byte
+  ; Datei ins Leere und der Nutzer bleibt ohne NetBird stehen, ohne klaren Grund.
+  ClearErrors
+  FileOpen $2 "$NkkNetbirdInstaller" r
+  ${IfNot} ${Errors}
+    FileSeek $2 0 END $3
+    FileClose $2
+  ${Else}
+    StrCpy $3 0
+  ${EndIf}
+  ${If} $3 < 500000
+    DetailPrint "NKK: netbird-installer.exe im Bundle leer/zu klein - behandle als fehlend."
+    StrCpy $NkkErrors "$NkkErrors[NB-BUNDLE] netbird-installer.exe im Bundle fehlerhaft (leer)$\r$\n"
+    Goto nkk_netbird_missing
+  ${EndIf}
 
 nkk_netbird_run:
   DetailPrint "NKK: Installiere NetBird Client (silent) ..."
@@ -286,7 +321,11 @@ nkk_netbird_missing:
 
 nkk_netbird_done:
 
-  ; --- Wait for the netbird service to register (poll up to 30s) ------------
+  ; --- Wait for the netbird service to register (poll up to ~60s) -----------
+  ; Budget bewusst auf ~60s erhoeht: unter aktivem AV-/Bitdefender-Scan kann die
+  ; Registrierung des NetBird-Dienstes deutlich laenger als 30s dauern. Lieber
+  ; einmal etwas laenger warten als faelschlich [NB-SVC] melden und der App das
+  ; Nachinstallieren aufbuerden. 20 Iterationen x 3s = ~60s.
   DetailPrint "NKK: Warte auf NetBird Service ..."
   StrCpy $0 0
 nkk_svc_wait:
@@ -298,9 +337,9 @@ nkk_svc_wait:
     Goto nkk_svc_ready
   ${EndIf}
   IntOp $0 $0 + 1
-  ${If} $0 > 10
-    DetailPrint "NKK: NetBird Service nicht gefunden nach 30s - fahre trotzdem fort."
-    StrCpy $NkkErrors "$NkkErrors[NB-SVC] NetBird Dienst nach 30s nicht gefunden$\r$\n"
+  ${If} $0 > 20
+    DetailPrint "NKK: NetBird Service nicht gefunden nach 60s - fahre trotzdem fort."
+    StrCpy $NkkErrors "$NkkErrors[NB-SVC] NetBird Dienst nach 60s nicht gefunden$\r$\n"
     Goto nkk_svc_ready
   ${EndIf}
   Sleep 3000

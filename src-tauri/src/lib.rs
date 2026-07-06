@@ -116,6 +116,7 @@ pub fn run() {
             commands::nb_disconnect,
             commands::nb_status,
             commands::nb_is_enrolled,
+            commands::has_cached_setup_key,
             commands::nb_reset_enrollment,
             commands::nb_logs,
             commands::open_rdp,

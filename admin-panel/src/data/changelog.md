@@ -6,6 +6,10 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), [SemVer](https
 
 ## [Unreleased]
 
+## [0.3.21] - 2026-07-06
+
+- Install-Pfad komplett gehaertet (nach Audit mit 29 Funden): die Ersteinrichtung laeuft nie mehr stumm in eine Sackgasse. Enrollment meldet Erfolg nur bei echter Verbindung statt am Exit-Code; macOS findet NetBird nach der Installation zuverlaessig (Binary-Pfad wird neu aufgeloest, GUI-PATH-Falle behoben); Windows meldet fehlendes NetBird ehrlich statt falsch 'fertig'; der Verbindungsaufbau faellt bei unbekanntem NetBird-Flag auf Kern-Optionen zurueck (Versions-Robustheit); Fehler werden klar unterschieden (Dienst fehlt / Key abgelehnt / Netz) mit konkretem naechsten Schritt; der macOS-One-Liner nutzt den hinterlegten Setup-Key automatisch (zero-touch); Sicherheit: das Installations-Skript laeuft nicht mehr an einem vorhersagbaren Temp-Pfad (TOCTOU-Luecke geschlossen). 18 neue Unit-Tests sichern jede dieser Laufzeit-Annahmen ab, damit solche Regressionen kuenftig im CI fallen statt beim Nutzer
+
 ## [0.3.20] - 2026-07-06
 
 - Hotfix: Ersteinrichtung auf frischen Macs repariert. Der in 0.3.19 verschaerfte Sanity-Check des NetBird-Installations-Skripts lehnte das echte install.sh faelschlich ab (es beginnt mit einem Kommentar, nicht mit einem Shebang) und brach die Installation ab. Jetzt werden Kommentar- und Code-beginnende Skripte korrekt akzeptiert, leere oder HTML-Antworten weiter abgelehnt

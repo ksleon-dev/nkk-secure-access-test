@@ -1,5 +1,5 @@
 use crate::error::{AppError, AppResult};
-use parking_lot::Mutex;
+use parking_lot::{Mutex, RwLock};
 use serde::{Deserialize, Serialize};
 use std::collections::VecDeque;
 use std::process::Stdio;
@@ -10,40 +10,57 @@ use tokio::time::{timeout, Duration};
 
 const LOG_BUFFER_SIZE: usize = 500;
 
-/// Finds the netbird binary. Bundled macOS .app doesn't inherit the user's
-/// shell PATH, so we probe well-known install locations.
-fn find_netbird_binary() -> String {
+/// Absolute, well-known install locations for the netbird binary, ordered by
+/// preference. Kept as a pure function so the NotFound-recovery path and the
+/// initial resolution share exactly one list (no drift). The bundled macOS
+/// .app doesn't inherit the user's shell PATH, so PATH alone is not enough.
+fn netbird_candidate_paths() -> &'static [&'static str] {
     #[cfg(target_os = "macos")]
     {
-        let candidates = [
+        &[
             "/usr/local/bin/netbird",
             "/opt/homebrew/bin/netbird",
             "/opt/netbird/bin/netbird",
             // Official .app bundle (installer / cask) - no shell PATH inheritance
             "/Applications/NetBird.app/Contents/MacOS/netbird",
             "/usr/bin/netbird",
-        ];
-        for path in candidates {
-            if std::path::Path::new(path).exists() {
-                tracing::info!("NetBird gefunden: {}", path);
-                return path.to_string();
-            }
-        }
+        ]
     }
     #[cfg(target_os = "windows")]
     {
-        let candidates = [
+        &[
             r"C:\Program Files\NetBird\netbird.exe",
             r"C:\Program Files (x86)\NetBird\netbird.exe",
-        ];
-        for path in candidates {
-            if std::path::Path::new(path).exists() {
-                tracing::info!("NetBird gefunden: {}", path);
-                return path.to_string();
-            }
-        }
+        ]
     }
-    "netbird".to_string()
+    #[cfg(all(unix, not(target_os = "macos")))]
+    {
+        &[
+            "/usr/local/bin/netbird",
+            "/usr/bin/netbird",
+            "/opt/netbird/bin/netbird",
+        ]
+    }
+}
+
+/// First candidate path that exists on disk, or None. The exists-check is
+/// injected so the selection logic is a pure, testable function independent of
+/// the real filesystem.
+fn first_existing<'a>(candidates: &[&'a str], exists: impl Fn(&str) -> bool) -> Option<&'a str> {
+    candidates.iter().copied().find(|p| exists(p))
+}
+
+/// Finds the netbird binary among the well-known absolute locations. Bundled
+/// macOS .app doesn't inherit the user's shell PATH, so we probe explicitly.
+/// Falls back to the bare "netbird" name (resolved via PATH at spawn time).
+fn find_netbird_binary() -> String {
+    match first_existing(netbird_candidate_paths(), |p| std::path::Path::new(p).exists()) {
+        Some(path) => {
+            tracing::info!("NetBird gefunden: {}", path);
+            path.to_string()
+        }
+        None => "netbird".to_string(),
+    }
 }
 
 #[derive(Clone, Debug, Serialize, Deserialize, PartialEq, Eq)]
@@ -82,6 +99,12 @@ pub struct StatusDto {
     /// The UI surfaces a re-login prompt instead of spinning the auto-reconnect.
     #[serde(rename = "needs_login")]
     pub needs_login: bool,
+    /// True when the parsed JSON matched NONE of the known management/ip/peers
+    /// shapes - a signal that netbird changed its status schema. Without this a
+    /// renamed schema would silently look like a clean "disconnected" and the
+    /// UI would show a green "getrennt" instead of flagging a real problem.
+    #[serde(rename = "schema_unknown")]
+    pub schema_unknown: bool,
 }
 
 impl StatusDto {
@@ -94,6 +117,7 @@ impl StatusDto {
             updated_at: chrono::Utc::now().to_rfc3339(),
             cli_available,
             needs_login: false,
+            schema_unknown: false,
         }
     }
 
@@ -106,6 +130,7 @@ impl StatusDto {
             updated_at: chrono::Utc::now().to_rfc3339(),
             cli_available: false,
             needs_login: false,
+            schema_unknown: false,
         }
     }
 }
@@ -138,7 +163,12 @@ impl LogBuffer {
 
 #[derive(Clone)]
 pub struct NetbirdClient {
-    binary: String,
+    // Interior mutability: on a fresh Mac the binary resolves to the bare
+    // "netbird" name (nothing on disk yet). After the installer drops it into
+    // /usr/local/bin the GUI's inherited PATH still won't know it, so a spawn
+    // hits ErrorKind::NotFound. We then re-resolve against the absolute
+    // candidate paths and update this in place - no app restart needed.
+    binary: Arc<RwLock<String>>,
     pub logs: Arc<LogBuffer>,
     // Serialises tunnel-changing operations (up/down) so a concurrent connect
     // and disconnect can never interleave and leave the tunnel in an
@@ -156,7 +186,7 @@ impl NetbirdClient {
     pub fn new() -> Self {
         let binary = std::env::var("NETBIRD_BIN").unwrap_or_else(|_| find_netbird_binary());
         let client = Self {
-            binary: binary.clone(),
+            binary: Arc::new(RwLock::new(binary.clone())),
             logs: Arc::new(LogBuffer::default()),
             op_lock: Arc::new(AsyncMutex::new(())),
         };
@@ -165,8 +195,39 @@ impl NetbirdClient {
         client
     }
 
-    pub fn binary_path(&self) -> &str {
-        &self.binary
+    /// Currently resolved binary path/name. Returns an owned String because the
+    /// value lives behind a lock (interior mutability for post-install
+    /// re-resolution).
+    pub fn binary_path(&self) -> String {
+        self.binary.read().clone()
+    }
+
+    /// Was NETBIRD_BIN pinned explicitly? Then we never auto-re-resolve.
+    fn binary_pinned() -> bool {
+        std::env::var_os("NETBIRD_BIN").is_some()
+    }
+
+    /// Re-resolve the binary against the absolute candidate paths after a spawn
+    /// hit ErrorKind::NotFound (e.g. netbird was just installed into
+    /// /usr/local/bin but the GUI's PATH predates it). Updates self.binary in
+    /// place and returns true if a different, existing path was found.
+    /// Happy-path is untouched: on a Mac where netbird is already resolvable
+    /// this is only ever reached when a spawn actually failed with NotFound.
+    fn refresh_binary_after_notfound(&self) -> bool {
+        if Self::binary_pinned() {
+            return false;
+        }
+        let current = self.binary.read().clone();
+        if let Some(found) =
+            first_existing(netbird_candidate_paths(), |p| std::path::Path::new(p).exists())
+        {
+            if found != current {
+                *self.binary.write() = found.to_string();
+                self.log(format!("NetBird nach Neuinstallation gefunden: {}", found));
+                return true;
+            }
+        }
+        false
     }
 
     fn log(&self, line: impl Into<String>) {
@@ -192,16 +253,37 @@ impl NetbirdClient {
                 }
             })
             .collect();
-        self.log(format!("$ {} {}", self.binary, safe_args.join(" ")));
+        let bin = self.binary_path();
+        self.log(format!("$ {} {}", bin, safe_args.join(" ")));
 
-        let mut cmd = Command::new(&self.binary);
+        let mut cmd = Command::new(&bin);
         cmd.args(args)
             .stdout(Stdio::piped())
             .stderr(Stdio::piped());
         #[cfg(target_os = "windows")]
         cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
 
-        let output = match timeout(Duration::from_secs(timeout_secs), cmd.output()).await {
+        let spawn = timeout(Duration::from_secs(timeout_secs), cmd.output()).await;
+        // Fresh Mac: the initial spawn used the bare "netbird" name (nothing on
+        // disk at startup). If it just got installed into /usr/local/bin the
+        // GUI's PATH won't know it -> NotFound. Re-resolve against the absolute
+        // candidate paths ONCE and retry, so enrollment doesn't stay wedged.
+        let spawn = if let Ok(Err(ref e)) = spawn {
+            if e.kind() == std::io::ErrorKind::NotFound && self.refresh_binary_after_notfound() {
+                let bin2 = self.binary_path();
+                let mut cmd2 = Command::new(&bin2);
+                cmd2.args(args).stdout(Stdio::piped()).stderr(Stdio::piped());
+                #[cfg(target_os = "windows")]
+                cmd2.creation_flags(0x08000000);
+                timeout(Duration::from_secs(timeout_secs), cmd2.output()).await
+            } else {
+                spawn
+            }
+        } else {
+            spawn
+        };
+
+        let output = match spawn {
             Ok(Ok(out)) => out,
             Ok(Err(e)) => {
                 return if e.kind() == std::io::ErrorKind::NotFound {
@@ -264,30 +346,27 @@ impl NetbirdClient {
         // Serialise against a concurrent down(); status() is intentionally not
         // gated so the poller and the Windows pre-check never block or deadlock.
         let _guard = self.op_lock.lock().await;
-        let mut args: Vec<&str> = vec!["up", "--management-url", management_url];
-        // Always run NetBird's built-in SSH server on every enrolled device, so the
-        // NKK fleet (clients + servers) is reachable over the overlay for support.
-        // NetBird SSH is identity-based (no passwords) and gated by the access
-        // policies; root login is intentionally NOT enabled. The peer's ssh_enabled
-        // flag in the management must also be on (set fleet-wide via the API).
-        args.push("--allow-server-ssh");
-        // SFTP/SCP for support file transfer (low risk, no privilege escalation).
-        args.push("--enable-ssh-sftp");
-        // Cache the SSO JWT for 5 min so repeated support SSH skips the browser
-        // login. Kept under the server's 10-min token-age limit on purpose; root
-        // login and port forwarding stay OFF (use the dashboard user-mapping for
-        // admin accounts instead - fail-closed by default).
-        args.push("--ssh-jwt-cache-ttl");
-        args.push("300");
-        if let Some(k) = setup_key {
-            args.push("--setup-key");
-            args.push(k);
-        }
         // "up" with a setup key needs more time than status queries (first
         // enrollment can take 15-30s on Windows: service start + handshake +
         // WireGuard tunnel). Use a longer timeout here.
-        self.run_with_timeout(&args, 30).await?;
-        Ok(())
+        let full = up_args(management_url, setup_key, true);
+        let full_ref: Vec<&str> = full.iter().map(|s| s.as_str()).collect();
+        match self.run_with_timeout(&full_ref, 30).await {
+            Ok(_) => Ok(()),
+            Err(AppError::NetbirdCli(msg)) if is_unknown_flag_error(&msg) => {
+                // An older/foreign netbird build rejected one of the optional
+                // SSH-comfort flags. The CORE enrollment must never die on a
+                // convenience flag: retry once with core flags only.
+                self.log(
+                    "NetBird kennt ein optionales SSH-Flag nicht, Rettungsversuch nur mit Kern-Flags",
+                );
+                let core = up_args(management_url, setup_key, false);
+                let core_ref: Vec<&str> = core.iter().map(|s| s.as_str()).collect();
+                self.run_with_timeout(&core_ref, 30).await?;
+                Ok(())
+            }
+            Err(e) => Err(e),
+        }
     }
 
     pub async fn down(&self) -> AppResult<()> {
@@ -366,18 +445,20 @@ impl NetbirdClient {
         }
         #[cfg(target_os = "macos")]
         {
+            let bin = self.binary_path();
             let _ = timeout(
                 Duration::from_secs(3),
-                Command::new(&self.binary).args(["service", "start"]).output(),
+                Command::new(&bin).args(["service", "start"]).output(),
             )
             .await;
             tokio::time::sleep(Duration::from_secs(2)).await;
         }
         #[cfg(all(unix, not(target_os = "macos")))]
         {
+            let bin = self.binary_path();
             let _ = timeout(
                 Duration::from_secs(3),
-                Command::new(&self.binary).args(["service", "restart"]).output(),
+                Command::new(&bin).args(["service", "restart"]).output(),
             )
             .await;
             tokio::time::sleep(Duration::from_secs(2)).await;
@@ -395,6 +476,48 @@ impl NetbirdClient {
         ));
         Ok(result)
     }
+}
+
+/// Build the argument vector for `netbird up`. Pure so the exact flag set is
+/// unit-tested. `ssh_flags` toggles the optional SSH-comfort flags; with them
+/// off only the core enrollment flags (management-url + optional setup-key)
+/// remain, which is the degraded rescue path when a netbird build rejects an
+/// optional flag.
+fn up_args(mgmt: &str, setup_key: Option<&str>, ssh_flags: bool) -> Vec<String> {
+    let mut args: Vec<String> = vec![
+        "up".to_string(),
+        "--management-url".to_string(),
+        mgmt.to_string(),
+    ];
+    if ssh_flags {
+        // Always run NetBird's built-in SSH server on every enrolled device, so the
+        // NKK fleet (clients + servers) is reachable over the overlay for support.
+        // NetBird SSH is identity-based (no passwords) and gated by the access
+        // policies; root login is intentionally NOT enabled. The peer's ssh_enabled
+        // flag in the management must also be on (set fleet-wide via the API).
+        args.push("--allow-server-ssh".to_string());
+        // SFTP/SCP for support file transfer (low risk, no privilege escalation).
+        args.push("--enable-ssh-sftp".to_string());
+        // Cache the SSO JWT for 5 min so repeated support SSH skips the browser
+        // login. Kept under the server's 10-min token-age limit on purpose; root
+        // login and port forwarding stay OFF (use the dashboard user-mapping for
+        // admin accounts instead - fail-closed by default).
+        args.push("--ssh-jwt-cache-ttl".to_string());
+        args.push("300".to_string());
+    }
+    if let Some(k) = setup_key {
+        args.push("--setup-key".to_string());
+        args.push(k.to_string());
+    }
+    args
+}
+
+/// True when a netbird CLI error text signals an unrecognised flag, so the
+/// caller can retry with the core-only flag set. Pure + tested (Cobra prints
+/// "unknown flag" for long and "unknown shorthand flag" for short options).
+fn is_unknown_flag_error(msg: &str) -> bool {
+    let low = msg.to_lowercase();
+    low.contains("unknown flag") || low.contains("unknown shorthand")
 }
 
 fn parse_status(raw: &str) -> AppResult<StatusDto> {
@@ -458,6 +581,13 @@ fn parse_status(raw: &str) -> AppResult<StatusDto> {
     // 1) peers.details[] (current), 2) peers[] (peers as a bare array),
     // 3) Peers[] (PascalCase). Each step actually checks as_array().
     let mut peers = Vec::new();
+    // Did ANY recognised peers container exist (even if empty)? Used below to
+    // tell "no peers" apart from "schema we don't understand".
+    let peers_key_present = v
+        .get("peers")
+        .and_then(|p| p.get("details").and_then(|d| d.as_array()).or_else(|| p.as_array()))
+        .or_else(|| v.get("Peers").and_then(|p| p.as_array()))
+        .is_some();
     let peer_array = v
         .get("peers")
         .and_then(|p| p.get("details"))
@@ -523,6 +653,20 @@ fn parse_status(raw: &str) -> AppResult<StatusDto> {
         ConnectionState::Disconnected
     };
 
+    // Unknown-schema guard: the JSON parsed, but NONE of the known
+    // management/daemon/ip/peers shapes matched. A renamed schema would
+    // otherwise masquerade as a clean "disconnected". Flag it (and log) so the
+    // UI can distinguish "really disconnected" from "we can't read this".
+    let schema_unknown = !management_connected
+        && daemon_status.is_none()
+        && local_ip.is_none()
+        && !peers_key_present;
+    if schema_unknown {
+        tracing::warn!(
+            "NetBird-Status: unbekanntes JSON-Schema (keine bekannte Management-/IP-/Peers-Struktur). Rohantwort ggf. neue netbird-Version."
+        );
+    }
+
     Ok(StatusDto {
         state,
         management_connected,
@@ -531,6 +675,7 @@ fn parse_status(raw: &str) -> AppResult<StatusDto> {
         updated_at: chrono::Utc::now().to_rfc3339(),
         cli_available: true,
         needs_login,
+        schema_unknown,
     })
 }
 
@@ -707,6 +852,96 @@ mod tests {
         let s = parse_status(raw).unwrap();
         assert!(s.needs_login);
         assert!(!s.management_connected);
+    }
+
+    #[test]
+    fn up_args_with_ssh_flags_contains_ssh_and_core() {
+        let a = up_args("https://vpn.secure.nkk-hb.de:443", Some("KEY123"), true);
+        // management-url present, in order
+        let mgmt_pos = a.iter().position(|s| s == "--management-url").unwrap();
+        assert_eq!(a[mgmt_pos + 1], "https://vpn.secure.nkk-hb.de:443");
+        // SSH comfort flags present
+        assert!(a.iter().any(|s| s == "--allow-server-ssh"));
+        assert!(a.iter().any(|s| s == "--enable-ssh-sftp"));
+        assert!(a.iter().any(|s| s == "--ssh-jwt-cache-ttl"));
+        // setup key present + value
+        let key_pos = a.iter().position(|s| s == "--setup-key").unwrap();
+        assert_eq!(a[key_pos + 1], "KEY123");
+        assert_eq!(a[0], "up");
+    }
+
+    #[test]
+    fn up_args_without_ssh_flags_keeps_mgmt_and_key_drops_ssh() {
+        let a = up_args("https://vpn.secure.nkk-hb.de:443", Some("KEY123"), false);
+        assert!(a.iter().any(|s| s == "--management-url"));
+        let mgmt_pos = a.iter().position(|s| s == "--management-url").unwrap();
+        assert_eq!(a[mgmt_pos + 1], "https://vpn.secure.nkk-hb.de:443");
+        // no SSH comfort flags
+        assert!(!a.iter().any(|s| s == "--allow-server-ssh"));
+        assert!(!a.iter().any(|s| s == "--enable-ssh-sftp"));
+        assert!(!a.iter().any(|s| s == "--ssh-jwt-cache-ttl"));
+        // key still there
+        assert!(a.iter().any(|s| s == "--setup-key"));
+        assert!(a.iter().any(|s| s == "KEY123"));
+    }
+
+    #[test]
+    fn up_args_without_key_has_no_setup_key_flag() {
+        let a = up_args("https://vpn.secure.nkk-hb.de:443", None, false);
+        assert!(!a.iter().any(|s| s == "--setup-key"));
+        assert!(a.iter().any(|s| s == "--management-url"));
+    }
+
+    #[test]
+    fn detects_unknown_flag_error() {
+        assert!(is_unknown_flag_error("Error: unknown flag: --enable-ssh-sftp"));
+        assert!(is_unknown_flag_error("unknown shorthand flag: 'x' in -x"));
+        assert!(is_unknown_flag_error("UNKNOWN FLAG whatever"));
+        assert!(!is_unknown_flag_error("Exit 1: setup key expired"));
+    }
+
+    #[test]
+    fn first_existing_picks_first_present() {
+        let cands = ["/a/netbird", "/b/netbird", "/c/netbird"];
+        // Only /b exists
+        assert_eq!(
+            first_existing(&cands, |p| p == "/b/netbird"),
+            Some("/b/netbird")
+        );
+        // First wins when several exist
+        assert_eq!(
+            first_existing(&cands, |p| p == "/a/netbird" || p == "/c/netbird"),
+            Some("/a/netbird")
+        );
+        // None exist
+        assert_eq!(first_existing(&cands, |_| false), None);
+    }
+
+    #[test]
+    fn parse_status_flags_unknown_schema() {
+        // Completely renamed JSON: none of the known management/ip/peers keys.
+        let raw = r#"{ "somethingCompletelyDifferent": { "foo": 1 }, "barState": "whatever" }"#;
+        let s = parse_status(raw).unwrap();
+        // Must NOT masquerade as a clean disconnected: schema_unknown flags it.
+        assert!(s.schema_unknown);
+        assert!(!s.management_connected);
+    }
+
+    #[test]
+    fn parse_status_known_schema_is_not_flagged_unknown() {
+        // Happy path stays untouched: a normal connected status is not "unknown".
+        let raw = r#"{
+            "daemonStatus": "Connected",
+            "management": { "connected": true },
+            "netbirdIp": "100.64.0.5/16",
+            "peers": { "details": [] }
+        }"#;
+        let s = parse_status(raw).unwrap();
+        assert!(!s.schema_unknown);
+        // An empty-but-present peers container is also not "unknown".
+        let raw2 = r#"{ "management": { "connected": false }, "peers": { "details": [] } }"#;
+        let s2 = parse_status(raw2).unwrap();
+        assert!(!s2.schema_unknown);
     }
 
     #[test]

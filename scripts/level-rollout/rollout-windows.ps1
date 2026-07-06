@@ -56,12 +56,34 @@ if ($cv -and $cv -ge [version]$MinVersion) {
 
 # 4) Enrollment-Selbstheilung: netbird up nachziehen, falls der einmalige
 #    Versuch des Installers fehlschlug (Mgmt-Timeout, AV, Netz spaet). Idempotent.
+#    "enrolled" heisst: Management VERBUNDEN UND auf UNSEREN Server. "status -d"
+#    (Detail) nennt die Management-URL zuverlaessig; der kurze "status" nicht. So
+#    kein unnoetiger Re-Up bei einem bereits sauber eingerollten Client (und ein
+#    fremdes NetBird, das zufaellig verbunden ist, wird nicht faelschlich als
+#    unser Enrollment gewertet).
+function Test-Enrolled {
+  $d = (& $NetBird status -d 2>$null | Out-String)
+  return (($d -match 'Management:\s*Connected') -and ($d -match [regex]::Escape($MgmtUrl)))
+}
+
 if (Test-Path $NetBird) {
-  for ($j = 0; $j -lt 3; $j++) {
-    if ((& $NetBird status 2>$null) -match 'Management:\s*Connected') { Log "NetBird verbunden"; break }
-    Log "Enrollment-Versuch $($j + 1)"
-    & $NetBird up --setup-key $SetupKey --management-url $MgmtUrl 2>$null
+  # Erst ein groesseres Wartefenster: der Installer hat evtl. gerade "netbird up"
+  # angestossen, der Dienst/Handshake braucht unter AV-Scan ein paar Sekunden.
+  # Vor dem ersten Re-Up bis zu ~24s auf den sauberen Zustand warten.
+  $enrolled = $false
+  for ($w = 0; $w -lt 4; $w++) {
+    if (Test-Enrolled) { $enrolled = $true; break }
     Start-Sleep -Seconds 6
+  }
+  if ($enrolled) {
+    Log "NetBird verbunden (unser Management)"
+  } else {
+    for ($j = 0; $j -lt 3; $j++) {
+      if (Test-Enrolled) { Log "NetBird verbunden (unser Management)"; break }
+      Log "Enrollment-Versuch $($j + 1)"
+      & $NetBird up --setup-key $SetupKey --management-url $MgmtUrl 2>$null
+      Start-Sleep -Seconds 6
+    }
   }
 } else {
   Log "netbird.exe nicht gefunden, Enrollment uebernimmt die App beim Start"

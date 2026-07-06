@@ -75,8 +75,52 @@ pub async fn fetch_os_version() -> String {
 }
 
 pub async fn fetch_netbird_version(nb: &NetbirdClient) -> Option<String> {
-    let out = shell_output(nb.binary_path(), &["version"]).await?;
-    Some(out.lines().next().unwrap_or(&out).trim().to_string())
+    let bin = nb.binary_path();
+    let out = shell_output(&bin, &["version"]).await?;
+    parse_netbird_version(&out)
+}
+
+/// Extract the netbird version from `netbird version` stdout. Robust against a
+/// leading WARNING/log line (netbird 0.7x can print a self-update or config
+/// warning before the version): pick the first line that carries a version
+/// pattern (optional leading 'v', then digits.digits...). Falls back to the
+/// trimmed whole output so an unexpected format still yields something. Pure so
+/// the CI catches a format change (like the shebang test).
+pub fn parse_netbird_version(stdout: &str) -> Option<String> {
+    for line in stdout.lines() {
+        if let Some(v) = extract_version_token(line) {
+            return Some(v);
+        }
+    }
+    let trimmed = stdout.trim();
+    if trimmed.is_empty() {
+        None
+    } else {
+        Some(trimmed.to_string())
+    }
+}
+
+/// First whitespace-separated token in `line` that looks like a version
+/// (optional leading 'v', then `\d+\.\d+` and any further version characters),
+/// with a leading 'v' stripped. None if the line carries no such token.
+fn extract_version_token(line: &str) -> Option<String> {
+    for raw in line.split_whitespace() {
+        let tok = raw.trim_start_matches('v');
+        let mut parts = tok.splitn(2, '.');
+        let major = parts.next().unwrap_or("");
+        let rest = parts.next();
+        let major_ok = !major.is_empty() && major.chars().all(|c| c.is_ascii_digit());
+        let minor_ok = rest
+            .map(|r| {
+                let minor: String = r.chars().take_while(|c| c.is_ascii_digit()).collect();
+                !minor.is_empty()
+            })
+            .unwrap_or(false);
+        if major_ok && minor_ok {
+            return Some(tok.to_string());
+        }
+    }
+    None
 }
 
 /// Captive-portal aware internet check. 204 = clean internet; a 2xx/3xx on a
@@ -109,5 +153,45 @@ pub async fn check_connectivity() -> ConnectivityResult {
         online,
         captive_portal,
         http_code: code,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn parse_version_from_prefixed_line() {
+        assert_eq!(
+            parse_netbird_version("netbird version 0.68.1"),
+            Some("0.68.1".to_string())
+        );
+    }
+
+    #[test]
+    fn parse_version_from_bare_number() {
+        assert_eq!(parse_netbird_version("0.68.1"), Some("0.68.1".to_string()));
+        assert_eq!(parse_netbird_version("v0.73.2"), Some("0.73.2".to_string()));
+    }
+
+    #[test]
+    fn parse_version_skips_leading_warning_line() {
+        let out = "WARNING: config outdated, please re-run up\nnetbird version 0.73.2";
+        assert_eq!(parse_netbird_version(out), Some("0.73.2".to_string()));
+    }
+
+    #[test]
+    fn parse_version_empty_is_none() {
+        assert_eq!(parse_netbird_version(""), None);
+        assert_eq!(parse_netbird_version("   \n  "), None);
+    }
+
+    #[test]
+    fn parse_version_no_version_token_falls_back_to_trimmed() {
+        // No token matches the version pattern -> fall back to trimmed output.
+        assert_eq!(
+            parse_netbird_version("  unexpected output  "),
+            Some("unexpected output".to_string())
+        );
     }
 }
