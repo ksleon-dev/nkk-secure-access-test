@@ -494,6 +494,34 @@ nkk_svc_ready:
     nkk_skip_msgbox:
   ${EndIf}
 
+  ; --- RDP-Warnungen + Kennwort-Prompt MASCHINENWEIT stilllegen (elevated) ----
+  ; Seit dem April-2026-RDP-Patch (CVE-2026-26151) hat Microsoft die "nicht mehr
+  ; fragen"-Logik fuer unsignierte .rdp entfernt; der Herausgeber-/Redirection-
+  ; Consent-Dialog laesst sich nur noch ueber HKLM zuverlaessig stilllegen - die
+  ; alte HKCU-Signatur-Loesung greift nicht mehr. Der Installer ist elevated (auch
+  ; beim Auto-Update /P), also setzen wir die belegten Maschinen-Policies EINMAL.
+  ; Bewusste Abwaegung: in einer kontrollierten Firmenflotte, deren einziger Zweck
+  ; nahtloses RDP auf INTERNE Server ist, sind diese Lockerungen gewollt.
+  SetRegView 64
+  ; 1) Redirection-/Consent-Dialog wieder still (MS-dokumentierter Schalter).
+  WriteRegDWORD HKLM "SOFTWARE\Policies\Microsoft\Windows NT\Terminal Services\Client" "RedirectionWarningDialogVersion" 1
+  ; 2) unsignierte .rdp ohne Publisher-Block ausfuehren.
+  WriteRegDWORD HKLM "SOFTWARE\Policies\Microsoft\Windows NT\Terminal Services" "AllowUnsignedFiles" 1
+  ; 3) Gespeicherte Credentials (cmdkey TERMSRV/<host>) an RDP-Ziele DELEGIEREN.
+  ;    Ohne das ignoriert mstsc sie bei IP-Zielen auf domaenengejointen Clients
+  ;    (NTLM statt Kerberos) -> Passwort-Prompt trotz Injektion. Genau der Bug.
+  ; Scope BEWUSST auf das interne LAN (TERMSRV/192.168.*), NICHT TERMSRV/* - sonst
+  ; wuerden gespeicherte Credentials an JEDES RDP-Ziel delegiert (Phishing-Vektor).
+  ; Alle NKK-Ziele liegen in 192.168.x (Server .0.x, Webshop .200.x); externe Hosts
+  ; matchen nicht.
+  WriteRegDWORD HKLM "SOFTWARE\Policies\Microsoft\Windows\CredentialsDelegation" "AllowSavedCredentials" 1
+  WriteRegDWORD HKLM "SOFTWARE\Policies\Microsoft\Windows\CredentialsDelegation" "AllowSavedCredentialsWhenNTLMOnly" 1
+  WriteRegDWORD HKLM "SOFTWARE\Policies\Microsoft\Windows\CredentialsDelegation" "ConcatenateDefaults_AllowSaved" 1
+  WriteRegDWORD HKLM "SOFTWARE\Policies\Microsoft\Windows\CredentialsDelegation" "ConcatenateDefaults_AllowSavedNTLMOnly" 1
+  WriteRegStr   HKLM "SOFTWARE\Policies\Microsoft\Windows\CredentialsDelegation\AllowSavedCredentials" "1" "TERMSRV/192.168.*"
+  WriteRegStr   HKLM "SOFTWARE\Policies\Microsoft\Windows\CredentialsDelegation\AllowSavedCredentialsWhenNTLMOnly" "1" "TERMSRV/192.168.*"
+  SetRegView lastused
+
   ; --- App nach INTERAKTIVER Erstinstallation starten -----------------------
   ; Nur bei sichtbarer manueller Installation starten: NICHT bei /S (Level/SYSTEM,
   ; liefe in Session 0 unsichtbar) und NICHT bei /P (Auto-Update, der Updater startet
@@ -582,6 +610,22 @@ nkk_svc_ready:
   DetailPrint "NKK: Entferne gespeicherte Zugangsdaten ..."
   nsExec::ExecToLog 'powershell -NoProfile -NonInteractive -inputformat none -ExecutionPolicy Bypass -WindowStyle Hidden -Command "try { cmdkey /list | ForEach-Object { if ($_ -match \"target=(\S+)\") { $t = $matches[1]; if (($t -match \"nkk-secure-access\") -or ($t -match \"TERMSRV/\")) { cmdkey /delete:$t | Out-Null } } } } catch {}"'
   Pop $NkkExitCode
+
+  ; RDP-Policies aus POSTINSTALL wieder entfernen: auf einem ECHTEN Uninstall
+  ; (der _?=-Guard oben hat Update/Reinstall bereits abgezweigt) den Vorzustand
+  ; herstellen, damit die maschinenweiten RDP-Lockerungen + die CredentialsDelegation
+  ; nicht dauerhaft auf dem Rechner zurueckbleiben.
+  DetailPrint "NKK: Setze RDP-Richtlinien zurueck ..."
+  SetRegView 64
+  DeleteRegValue HKLM "SOFTWARE\Policies\Microsoft\Windows NT\Terminal Services\Client" "RedirectionWarningDialogVersion"
+  DeleteRegValue HKLM "SOFTWARE\Policies\Microsoft\Windows NT\Terminal Services" "AllowUnsignedFiles"
+  DeleteRegValue HKLM "SOFTWARE\Policies\Microsoft\Windows\CredentialsDelegation\AllowSavedCredentials" "1"
+  DeleteRegValue HKLM "SOFTWARE\Policies\Microsoft\Windows\CredentialsDelegation\AllowSavedCredentialsWhenNTLMOnly" "1"
+  DeleteRegValue HKLM "SOFTWARE\Policies\Microsoft\Windows\CredentialsDelegation" "AllowSavedCredentials"
+  DeleteRegValue HKLM "SOFTWARE\Policies\Microsoft\Windows\CredentialsDelegation" "AllowSavedCredentialsWhenNTLMOnly"
+  DeleteRegValue HKLM "SOFTWARE\Policies\Microsoft\Windows\CredentialsDelegation" "ConcatenateDefaults_AllowSaved"
+  DeleteRegValue HKLM "SOFTWARE\Policies\Microsoft\Windows\CredentialsDelegation" "ConcatenateDefaults_AllowSavedNTLMOnly"
+  SetRegView lastused
 
   ; Remove NKK app data: ProgramData, logs, AND the Tauri roaming AppData
   ; (enrolled.flag, user-disconnected.flag, rdp.json) so a reinstall starts clean

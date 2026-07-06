@@ -81,40 +81,46 @@ export function NewsScreen({ branding, onBack }: Props) {
 
   useEffect(() => {
     if (!branding.newsUrl) return;
+    let alive = true;
     setLoading(true);
     const validTypes = new Set(["announcement", "update", "feedback"]);
-    // Feature-detect: AbortSignal.timeout is unavailable on older WebViews
-    // (macOS < 13 / old WebKit). Evaluating it inline would throw synchronously
-    // before the promise chain exists, so .finally() never runs and the loading
-    // spinner would hang forever. Build the init object defensively.
-    const signal =
-      typeof AbortSignal !== "undefined" && "timeout" in AbortSignal
-        ? AbortSignal.timeout(8000)
-        : undefined;
-    fetch(branding.newsUrl, signal ? { signal } : undefined)
-      .then((r) => r.json())
+    // Bulletproof: garantierter Timeout auf JEDER WebView. AbortSignal.timeout
+    // fehlt auf aelteren WebKits (macOS < 13) UND WebView2 kann bei blockiertem
+    // Netz ohne Abbruch haengen -> ohne harten Timeout dreht der Spinner ewig
+    // ("News spinnt"). Manueller AbortController + setTimeout wirkt ueberall.
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 8000);
+    fetch(branding.newsUrl, { signal: controller.signal, cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error("HTTP " + r.status))))
       .then((data: unknown) => {
-        if (Array.isArray(data) && data.length > 0) {
-          const items = data.filter((d): d is NewsItem => {
-            if (!d || typeof d !== "object") return false;
-            const o = d as Record<string, unknown>;
-            return (
-              typeof o.id === "string" &&
-              typeof o.type === "string" &&
-              validTypes.has(o.type) && // guards against typeConfig[type] crash
-              typeof o.body === "string" &&
-              typeof o.title === "string" &&
-              typeof o.date === "string"
-            );
-          });
-          if (items.length > 0) setNews(items);
-        }
+        if (!alive || !Array.isArray(data) || data.length === 0) return;
+        const items = data.filter((d): d is NewsItem => {
+          if (!d || typeof d !== "object") return false;
+          const o = d as Record<string, unknown>;
+          return (
+            typeof o.id === "string" &&
+            typeof o.type === "string" &&
+            validTypes.has(o.type) && // guards against typeConfig[type] crash
+            typeof o.body === "string" &&
+            typeof o.title === "string" &&
+            typeof o.date === "string"
+          );
+        });
+        if (items.length > 0) setNews(items);
       })
       .catch((e) => {
         // Fall back to bundled news; log so a broken feed is visible.
         console.warn("News laden fehlgeschlagen:", e);
       })
-      .finally(() => setLoading(false));
+      .finally(() => {
+        clearTimeout(timer);
+        if (alive) setLoading(false);
+      });
+    return () => {
+      alive = false;
+      clearTimeout(timer);
+      controller.abort();
+    };
   }, [branding.newsUrl]);
 
   return (
@@ -160,11 +166,6 @@ export function NewsScreen({ branding, onBack }: Props) {
                       >
                         {cfg.label}
                       </span>
-                      {item.version && (
-                        <span className="text-[9px] font-mono font-bold text-[color:var(--brand-fg)]/50 bg-[color:var(--brand-fg)]/5 px-1.5 py-0.5 rounded-full">
-                          v{item.version}
-                        </span>
-                      )}
                       <span className="text-[9px] text-[color:var(--brand-fg)]/40">
                         {item.date}
                       </span>

@@ -2581,7 +2581,21 @@ fn apply_app_settings(s: &AppSettings) {
 }
 
 // Gueltige Profil-/Rollen-Token (muss mit src/lib/roles.ts USER_ROLES uebereinstimmen).
-const VALID_ROLES: [&str; 4] = ["user", "manager", "it_admin", "infact"];
+// Opakes Profil-Token -> Rolle. Der Onboarding-One-Liner traegt bewusst NICHT die
+// Klartext-Rolle (sonst koennte ein Nutzer sie ablesen oder sich auf it_admin
+// umschreiben), sondern ein festes, nicht-erratbares Token pro Rolle. MUSS synchron
+// mit admin-panel/src/lib/profiles.ts (PROFILE_TOKENS) bleiben. WICHTIG: Das Token
+// steuert NUR die angezeigten Kacheln - der echte Netzwerkzugriff wird IMMER durch
+// die NetBird-Gruppe (ueber den Setup-Key kryptografisch vergeben) begrenzt. Selbst
+// ein gefaelschtes it_admin-Token bringt einem InFact-Geraet keinen Server-Zugriff.
+fn role_for_token(token: &str) -> Option<&'static str> {
+    match token.trim() {
+        "hK7pR2xW" => Some("manager"),
+        "zB4nT9qL" => Some("it_admin"),
+        "vY6cF3mP" => Some("infact"),
+        _ => None,
+    }
+}
 
 // Install-Zeit-Profil-Bootstrap: der Onboarding-One-Liner legt optional eine
 // Datei mit dem gewuenschten Profil (z.B. "infact") ab. Bewusst ein fixer,
@@ -2617,12 +2631,9 @@ fn consume_profile_bootstrap() -> Option<String> {
     }
     let raw = std::fs::read_to_string(&path).ok();
     let _ = std::fs::remove_file(&path);
-    let role = raw?.trim().to_string();
-    if VALID_ROLES.contains(&role.as_str()) {
-        Some(role)
-    } else {
-        None
-    }
+    // Nur ueber ein gueltiges opakes Token; Klartext-Rollen werden bewusst NICHT
+    // mehr akzeptiert (sonst koennte man "it_admin" in die Datei schreiben).
+    role_for_token(raw?.trim()).map(|r| r.to_string())
 }
 
 // Settings ohne Admin-Gate persistieren (nur intern, fuer den Startup-Bootstrap).
@@ -3165,6 +3176,10 @@ pub async fn open_rdp(
         // immun gegen die ~6-Monats-Rotation des Serverzerts).
         let mut lines: Vec<String> = vec![
             "authentication level:i:0".into(),
+            // Keine Client-seitige Kennwortabfrage: die per cmdkey injizierte
+            // TERMSRV-Credential wird genutzt (zusammen mit der CredentialsDelegation-
+            // Policy aus dem Installer, die sie an IP-Ziele delegiert).
+            "prompt for credentials:i:0".into(),
             "screen mode id:i:2".into(),
             "smart sizing:i:1".into(),
             "redirectcomports:i:0".into(),
@@ -6152,6 +6167,20 @@ mod tests {
         assert!(version_lt("v0.68.0", "0.68.1"));
         assert!(!version_lt("0.73.2", "0.73.2"));
         assert!(!version_lt("0.73.2", "0.73.1"));
+    }
+
+    #[test]
+    fn profile_token_maps_only_known_tokens() {
+        // Gueltige Tokens -> Rolle (muss mit Panel PROFILE_TOKENS uebereinstimmen).
+        assert_eq!(role_for_token("vY6cF3mP"), Some("infact"));
+        assert_eq!(role_for_token("zB4nT9qL"), Some("it_admin"));
+        assert_eq!(role_for_token("hK7pR2xW"), Some("manager"));
+        assert_eq!(role_for_token("  vY6cF3mP  "), Some("infact")); // getrimmt
+        // Klartext-Rollen werden bewusst NICHT akzeptiert (Anti-Fake).
+        assert_eq!(role_for_token("it_admin"), None);
+        assert_eq!(role_for_token("infact"), None);
+        assert_eq!(role_for_token(""), None);
+        assert_eq!(role_for_token("beliebig"), None);
     }
 
     #[test]

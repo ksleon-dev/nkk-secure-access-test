@@ -6,6 +6,10 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), [SemVer](https
 
 ## [Unreleased]
 
+## [0.3.24] - 2026-07-07
+
+- RDP oeffnet ohne Warnung und ohne Passwort-Prompt (die richtige Anmeldung ist hinterlegt; maschinenweit sauber gesetzt und bei Deinstallation wieder zurueckgeraeumt); das InFact-Profil erreicht die Datenbank und oeffnet die Dateiablage direkt auf serv-db; das Profil im Installations-Befehl ist nicht mehr lesbar oder auf eine hoehere Rolle umschreibbar; Aktuelles laedt immer sofort den neuesten Stand ohne haengenden Ladekreis
+
 ## [0.3.23] - 2026-07-06
 
 - macOS-Dateiablage oeffnet ohne Passwort-Prompt (Zugangsdaten aus dem Profil werden in die Verbindung eingebettet); Status-Punkt der Kacheln nicht mehr faelschlich rot bei Servern mit mehreren IP-Adressen (parallele Erreichbarkeitspruefung); InFact-Profil zeigt beim App-Server nur 'Serv-App' statt 'Serv-App, InFact'; Aktuelles laedt wieder zuverlaessig die Live-Meldungen (CORS am News-Feed)

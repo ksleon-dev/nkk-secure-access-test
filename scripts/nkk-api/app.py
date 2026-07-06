@@ -18,6 +18,12 @@ def add_cors_headers(resp):
     resp.headers["Access-Control-Allow-Origin"] = "*"
     resp.headers["Access-Control-Allow-Methods"] = "GET, POST, OPTIONS"
     resp.headers["Access-Control-Allow-Headers"] = "Content-Type"
+    # News (und alle /api-Antworten) NIE cachen: sonst zeigt die App-WebView nach
+    # einer Panel-Aenderung die alte gecachte Version -> "Panel und App driften".
+    # No-store macht jede Panel-News sofort in der App sichtbar, fuer JEDE App-Version.
+    if request.path.startswith("/api/"):
+        resp.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+        resp.headers["Pragma"] = "no-cache"
     return resp
 
 

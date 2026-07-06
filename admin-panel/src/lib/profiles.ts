@@ -10,6 +10,21 @@ export const PROFILE_OPTIONS: { value: ProfileRole; label: string }[] = [
   { value: "infact", label: "InFact" },
 ]
 
+// Opakes Token pro Rolle. MUSS synchron mit src-tauri/src/commands.rs role_for_token
+// bleiben. Der One-Liner traegt das TOKEN statt der Klartext-Rolle, damit niemand die
+// Rolle ablesen oder sich auf it_admin umschreiben kann. Echter Schutz = NetBird-Gruppe.
+export const PROFILE_TOKENS: Record<ProfileRole, string> = {
+  user: "",
+  manager: "hK7pR2xW",
+  it_admin: "zB4nT9qL",
+  infact: "vY6cF3mP",
+}
+
+// Token fuer den One-Liner; Standard (user) braucht keins.
+export function profileToken(role: ProfileRole): string | undefined {
+  return PROFILE_TOKENS[role] || undefined
+}
+
 // Smarte Vorauswahl: aus den Gruppennamen des Keys das passende Profil ableiten,
 // damit der Admin es meist nicht mehr umstellen muss ("Key gibt Profil vor").
 export function roleForGroups(groupNames: string[] | undefined): ProfileRole {

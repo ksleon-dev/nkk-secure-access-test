@@ -5,7 +5,7 @@
     "tagline": "Dein Bio-Großhandel",
     "logoText": ["Naturkost", "Kontor", "BREMEN"],
     "networkName": "NKK Netz",
-    "version": "0.3.23"
+    "version": "0.3.24"
   },
   "vendor": {
     "name": "KronSolutions GmbH",
@@ -103,7 +103,15 @@
       "type": "smb",
       "target": "\\\\serv-file\\Daten",
       "icon": "folder",
-      "role": "admin,infact"
+      "role": "admin"
+    },
+    {
+      "label": "Dateiablage",
+      "description": "Gemeinsame Dateien auf serv-db",
+      "type": "smb",
+      "target": "\\\\serv-db",
+      "icon": "folder",
+      "role": "infact"
     },
     {
       "label": "Serv-Secure SSH",

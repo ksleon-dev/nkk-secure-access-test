@@ -12,7 +12,7 @@ import { Skeleton } from "@/components/ui/skeleton"
 import { cn } from "@/lib/utils"
 import { copyText } from "@/lib/clipboard"
 import { macInstallCmd, winInstallCmd } from "@/lib/installcmd"
-import { PROFILE_OPTIONS, roleForGroups, type ProfileRole } from "@/lib/profiles"
+import { PROFILE_OPTIONS, roleForGroups, profileToken, type ProfileRole } from "@/lib/profiles"
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
 } from "@/components/ui/dialog"
@@ -289,8 +289,9 @@ export function RolloutCommands({ keyValue, keyGroups }: { keyValue: string; key
   // Key-Gruppen-IDs -> Namen, daraus das Profil vorwaehlen.
   const groupNames = (keyGroups ?? []).map((id) => data?.groups.find((g) => g.id === id)?.name ?? id)
   const [profile, setProfile] = useState<ProfileRole>(() => roleForGroups(groupNames))
-  // "user" = Standard -> kein Profil noetig (Rolle ist ohnehin der Default).
-  const profileArg = profile === "user" ? undefined : profile
+  // Opakes Token statt Klartext-Rolle in den One-Liner (nicht lesbar/faelschbar).
+  // "user" = Standard -> kein Token noetig (Rolle ist ohnehin der Default).
+  const profileArg = profileToken(profile)
   const win = winInstallCmd(exe, `"/S","/SETUPKEY=${keyValue}"`, { progress: true, launch: true, profile: profileArg })
   // Bulletproof Universal-Installer/Updater + Zero-Touch-Key (ein gehostetes Skript).
   const mac = macInstallCmd({ setupKey: keyValue, dmgUrl: dmg, profile: profileArg })
