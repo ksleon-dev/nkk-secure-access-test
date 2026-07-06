@@ -3696,13 +3696,27 @@ pub async fn install_netbird() -> AppResult<String> {
         };
 
         // Sanity: nicht leer und beginnt mit einer Shebang-Zeile (#!).
-        let starts_with_shebang = script_bytes.starts_with(b"#!");
-        if script_bytes.is_empty() || !starts_with_shebang {
+        // Nicht leer, kein HTML-Redirect, sieht nach einem Shell-Skript aus.
+        // WICHTIG: NICHT auf "#!" bestehen. Viele `curl | sh`-Installer (auch das
+        // NetBird-Skript) beginnen mit einem KOMMENTAR ("# ...") oder direkt mit
+        // Code ("set -e"), nicht mit einem Shebang. Das echte install.sh startet
+        // mit "# This code is based on ..." - ein "#!"-Zwang lehnte es faelschlich
+        // ab und brach die Ersteinrichtung auf frischen Macs ab.
+        let head = String::from_utf8_lossy(&script_bytes[..script_bytes.len().min(512)]);
+        let trimmed = head.trim_start();
+        let looks_like_html = trimmed.starts_with('<');
+        let looks_like_shell = trimmed.starts_with('#') // Shebang ODER Kommentar
+            || trimmed.starts_with("set ")
+            || trimmed.contains("#!/")
+            || head.contains("netbird")
+            || head.contains("NETBIRD");
+        if script_bytes.is_empty() || looks_like_html || !looks_like_shell {
             let _ = std::fs::remove_file(&script_path);
             tracing::warn!(
-                "NetBird Install-Skript unplausibel (leer={}, shebang={})",
+                "NetBird Install-Skript unplausibel (leer={}, html={}, shell={})",
                 script_bytes.is_empty(),
-                starts_with_shebang
+                looks_like_html,
+                looks_like_shell
             );
             return Err(AppError::Internal(
                 "Das geladene Installations-Skript ist ungueltig (leer oder kein gueltiges Skript). Installation abgebrochen.".into(),

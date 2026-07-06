@@ -6,6 +6,10 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), [SemVer](https
 
 ## [Unreleased]
 
+## [0.3.20] - 2026-07-06
+
+- Hotfix: Ersteinrichtung auf frischen Macs repariert. Der in 0.3.19 verschaerfte Sanity-Check des NetBird-Installations-Skripts lehnte das echte install.sh faelschlich ab (es beginnt mit einem Kommentar, nicht mit einem Shebang) und brach die Installation ab. Jetzt werden Kommentar- und Code-beginnende Skripte korrekt akzeptiert, leere oder HTML-Antworten weiter abgelehnt
+
 ## [0.3.19] - 2026-07-06
 
 - Grosses Veredelungs-Release: neuer IT-Admin-Modus (Server-Gruppen, Live-Status, SSH-Fenster Shift+8/9, direkter Panel-Knopf, smarte Rechtsklick-Menues); 12 Bugfixes aus adversarialem Audit (serverseitige Ziel-Allowlist, Admin-Panel-Link Shift+7, Live-Status pro Host und Port, korrektes RDP-Profil, ehrliche macOS-SSH-Fehler, Doppelklick-Schutz); haertere Live-Flows (klare Update-Meldung bei fehlenden Rechten, kein Fehlreport vor Enrollment, kein Auto-Connect gegen abgelaufene Sitzung); 25 Feinschliffe (Bestaetigungsdialoge, klarere Meldungen, Finder/Explorer + Cmd/Strg getrennt, Kontrast, Tastatur-Fokus); Kabel/WLAN-Bevorzugung mit Rueckgaengig; App-Symbol im korrekten Apple-Format
