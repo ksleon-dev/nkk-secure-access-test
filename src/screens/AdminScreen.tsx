@@ -535,9 +535,9 @@ export function AdminScreen({ branding, onClose }: Props) {
                 onChange={(v) => setRdpField("audio", v)}
               />
               <SettingToggle
-                label="Mehrere Bildschirme"
-                checked={rdp.multimon}
-                onChange={(v) => setRdpField("multimon", v)}
+                label="Nur Hauptbildschirm"
+                checked={!rdp.multimon}
+                onChange={(v) => setRdpField("multimon", !v)}
               />
             </div>
           )}

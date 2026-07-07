@@ -292,7 +292,7 @@ export function RolloutCommands({ keyValue, keyGroups }: { keyValue: string; key
   // Opakes Token statt Klartext-Rolle in den One-Liner (nicht lesbar/faelschbar).
   // "user" = Standard -> kein Token noetig (Rolle ist ohnehin der Default).
   const profileArg = profileToken(profile)
-  const win = winInstallCmd(exe, `"/S","/SETUPKEY=${keyValue}"`, { progress: true, launch: true, profile: profileArg })
+  const win = winInstallCmd(exe, `"/S","/SETUPKEY=${keyValue}"`, { progress: true, launch: true, profile: profileArg, setupKey: keyValue })
   // Bulletproof Universal-Installer/Updater + Zero-Touch-Key (ein gehostetes Skript).
   const mac = macInstallCmd({ setupKey: keyValue, dmgUrl: dmg, profile: profileArg })
   return (

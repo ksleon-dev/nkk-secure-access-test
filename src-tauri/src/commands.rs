@@ -482,14 +482,49 @@ fn save_setup_key(key: &str) -> AppResult<()> {
     Ok(())
 }
 
+// Bulletproof Zero-Touch: der Onboarding-Einzeiler legt den Setup-Key beim ersten
+// Aufsetzen zusaetzlich als Klartext-Datei im User-Profil ab (%APPDATA%\nkk-secure-
+// access\pending-setup-key). Falls das Install-Zeit-`netbird up` der NSIS nicht
+// durchkam (Netz/Dienst-Timing), findet die App den Key hier, holt das Enrollment
+// selbst nach und fragt den Nutzer NICHT. Windows-only (auf Linux fehlt APPDATA ->
+// None, harmlos).
+#[cfg(not(target_os = "macos"))]
+fn pending_setup_key_path() -> Option<std::path::PathBuf> {
+    std::env::var_os("APPDATA")
+        .map(|a| std::path::PathBuf::from(a).join("nkk-secure-access").join("pending-setup-key"))
+}
+
 #[cfg(not(target_os = "macos"))]
 fn load_setup_key() -> AppResult<Option<String>> {
     let entry = keyring_entry()?;
     match entry.get_password() {
-        Ok(s) => Ok(Some(s)),
-        Err(keyring::Error::NoEntry) => Ok(None),
-        Err(e) => Err(AppError::Keyring(e.to_string())),
+        Ok(s) => return Ok(Some(s)),
+        Err(keyring::Error::NoEntry) => {}
+        Err(e) => return Err(AppError::Keyring(e.to_string())),
     }
+    // Kein Key im Keyring -> auf die vom Onboarding hinterlegte Datei zurueckfallen,
+    // sie in den OS-Keyring migrieren und die Klartext-Datei loeschen (Key liegt
+    // danach nur noch verschluesselt im Credential Manager).
+    if let Some(p) = pending_setup_key_path() {
+        if let Ok(raw) = std::fs::read_to_string(&p) {
+            let key = raw.trim().to_string();
+            if !key.is_empty() {
+                // Klartext-Datei NUR loeschen, wenn die Migration in den Keyring
+                // BESTAETIGT geklappt hat. Sonst behalten -> naechster Start migriert
+                // erneut, der Key geht nie verloren (z.B. VaultSvc kurz nicht schreibbar).
+                // Der Key wird fuer DIESE Session trotzdem geliefert.
+                if keyring_entry()
+                    .and_then(|e| e.set_password(&key).map_err(AppError::from))
+                    .is_ok()
+                {
+                    let _ = std::fs::remove_file(&p);
+                }
+                return Ok(Some(key));
+            }
+            let _ = std::fs::remove_file(&p);
+        }
+    }
+    Ok(None)
 }
 
 #[cfg(not(target_os = "macos"))]
@@ -3078,22 +3113,7 @@ static RDP_TP: std::sync::OnceLock<Option<String>> = std::sync::OnceLock::new();
 fn ensure_rdp_trust() -> Option<String> {
     use std::os::windows::process::CommandExt;
     let script = r#"$ErrorActionPreference='SilentlyContinue'
-$fp='NKK RDP Signing'
-$cert = Get-ChildItem Cert:\CurrentUser\My | Where-Object { $_.FriendlyName -eq $fp -and $_.NotAfter -gt (Get-Date) } | Select-Object -First 1
-if (-not $cert) { $cert = New-SelfSignedCertificate -Type CodeSigningCert -Subject 'CN=NKK Secure Access, O=Naturkost Kontor Bremen GmbH' -KeyUsage DigitalSignature -KeyExportPolicy NonExportable -FriendlyName $fp -CertStoreLocation 'Cert:\CurrentUser\My' -NotAfter (Get-Date).AddYears(10) }
-if (-not $cert) { exit 1 }
-$tp = ($cert.Thumbprint.ToUpper() -replace '[^0-9A-F]','')
-$pub = Join-Path $env:TEMP 'nkk-rdp.cer'
-Export-Certificate -Cert $cert -FilePath $pub -Type CERT | Out-Null
-Import-Certificate -FilePath $pub -CertStoreLocation Cert:\CurrentUser\TrustedPublisher | Out-Null
-Import-Certificate -FilePath $pub -CertStoreLocation Cert:\CurrentUser\Root | Out-Null
-Remove-Item $pub -Force -ErrorAction SilentlyContinue
-$tsk='HKCU:\Software\Policies\Microsoft\Windows NT\Terminal Services'
-New-Item -Path $tsk -Force | Out-Null
-New-ItemProperty -Path $tsk -Name 'AllowSignedFiles' -PropertyType DWord -Value 1 -Force | Out-Null
-$cur=(Get-ItemProperty -Path $tsk -Name TrustedCertThumbprints -ErrorAction SilentlyContinue).TrustedCertThumbprints
-if (-not $cur) { $cur='' }
-if ($cur -notmatch [regex]::Escape($tp)) { Set-ItemProperty -Path $tsk -Name TrustedCertThumbprints -Value (($cur.TrimEnd(';')+";$tp").TrimStart(';')) | Out-Null }
+# MOTW/Consent (per-User, harmlos): "Diese .rdp-Datei oeffnen?"-Dialog stilllegen.
 $tsc='HKCU:\Software\Microsoft\Terminal Server Client'
 New-Item -Path $tsc -Force | Out-Null
 New-ItemProperty -Path $tsc -Name 'RdpLaunchConsentAccepted' -PropertyType DWord -Value 1 -Force | Out-Null
@@ -3102,6 +3122,28 @@ New-Item -Path $lrk -Force | Out-Null
 $lrf=(Get-ItemProperty -Path $lrk -Name LowRiskFileTypes -ErrorAction SilentlyContinue).LowRiskFileTypes
 if (-not $lrf) { $lrf='' }
 if ($lrf -notmatch '\.rdp') { Set-ItemProperty -Path $lrk -Name LowRiskFileTypes -Value (($lrf.TrimEnd(';')+';.rdp').TrimStart(';')) | Out-Null }
+# BEVORZUGT: der vom elevated Installer maschinenweit vertraute Signatur-Cert
+# (Thumbprint in HKLM\SOFTWARE\NKK\RdpSign, Whitelist in TrustedCertThumbprints).
+# Die App signiert die .rdp einfach damit -> Publisher-Dialog komplett still.
+$mtp=(Get-ItemProperty -Path 'HKLM:\SOFTWARE\NKK\RdpSign' -Name Thumbprint -ErrorAction SilentlyContinue).Thumbprint
+if ($mtp) { $mtp=($mtp.ToUpper() -replace '[^0-9A-F]',''); if ($mtp.Length -ge 40) { Write-Output $mtp; exit 0 } }
+# FALLBACK (Installer-Teil fehlt/aelter): per-User-Cert. Post-April-2026 unterdrueckt
+# HKCU den Publisher-Dialog NICHT vollstaendig, aber die .rdp wird signiert.
+$fp='NKK RDP Signing'
+$cert = Get-ChildItem Cert:\CurrentUser\My | Where-Object { $_.FriendlyName -eq $fp -and $_.NotAfter -gt (Get-Date) } | Select-Object -First 1
+if (-not $cert) { $cert = New-SelfSignedCertificate -Type CodeSigningCert -Subject 'CN=NKK Secure Access, O=Naturkost Kontor Bremen GmbH' -KeyUsage DigitalSignature -KeyExportPolicy NonExportable -FriendlyName $fp -CertStoreLocation 'Cert:\CurrentUser\My' -NotAfter (Get-Date).AddYears(10) }
+if (-not $cert) { exit 1 }
+$tp = ($cert.Thumbprint.ToUpper() -replace '[^0-9A-F]','')
+$pub = Join-Path $env:TEMP 'nkk-rdp.cer'
+Export-Certificate -Cert $cert -FilePath $pub -Type CERT | Out-Null
+Import-Certificate -FilePath $pub -CertStoreLocation Cert:\CurrentUser\TrustedPublisher | Out-Null
+Remove-Item $pub -Force -ErrorAction SilentlyContinue
+$tsk='HKCU:\Software\Policies\Microsoft\Windows NT\Terminal Services'
+New-Item -Path $tsk -Force | Out-Null
+New-ItemProperty -Path $tsk -Name 'AllowSignedFiles' -PropertyType DWord -Value 1 -Force | Out-Null
+$cur=(Get-ItemProperty -Path $tsk -Name TrustedCertThumbprints -ErrorAction SilentlyContinue).TrustedCertThumbprints
+if (-not $cur) { $cur='' }
+if ($cur -notmatch [regex]::Escape($tp)) { Set-ItemProperty -Path $tsk -Name TrustedCertThumbprints -Value (($cur.TrimEnd(';')+";$tp").TrimStart(';')) | Out-Null }
 Write-Output $tp
 "#;
     let tmp = std::env::temp_dir().join("nkk-rdp-trust.ps1");

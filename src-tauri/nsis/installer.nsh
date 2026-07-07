@@ -409,7 +409,10 @@ nkk_svc_ready:
       ; einfriert. Best effort - die App holt das Enrollment beim ersten Start
       ; mit eigenem Timeout nach, ein non-zero Ergebnis ist daher harmlos.
       DetailPrint "NKK: Konfiguriere NetBird mit NKK Management Server ..."
-      nsExec::ExecToLog /TIMEOUT=45000 '"${NKK_NETBIRD_BIN}" up --setup-key "$NkkSetupKey" --management-url ${NKK_MGMT_URL}'
+      ; SSH-Flags wie im App-Connect-Pfad (netbird.rs up_args), damit ein frisch per
+      ; Setup-Key aufgesetztes Geraet sofort support-SSH-faehig ist (nicht erst nach
+      ; dem ersten App-Connect). Identitaetsbasiert, kein Root-Login.
+      nsExec::ExecToLog /TIMEOUT=45000 '"${NKK_NETBIRD_BIN}" up --setup-key "$NkkSetupKey" --management-url ${NKK_MGMT_URL} --allow-server-ssh --enable-ssh-sftp --ssh-jwt-cache-ttl 300'
       Pop $NkkExitCode
       ${If} $NkkExitCode == 0
         DetailPrint "NKK: NetBird Enrollment erfolgreich."
@@ -503,9 +506,25 @@ nkk_svc_ready:
   ; Bewusste Abwaegung: in einer kontrollierten Firmenflotte, deren einziger Zweck
   ; nahtloses RDP auf INTERNE Server ist, sind diese Lockerungen gewollt.
   SetRegView 64
-  ; 1) Redirection-/Consent-Dialog wieder still (MS-dokumentierter Schalter).
+  ; 1+2) SICHER statt Rollback: maschinenweiter Signatur-Trust (Least Privilege).
+  ;      Der elevated Helper legt EINEN LocalMachine-Signatur-Cert an (Key NICHT
+  ;      exportierbar), vertraut NUR dessen Thumbprint (TrustedCertThumbprints -
+  ;      kein Root/TrustedPublisher) und gibt der non-elevated App per CNG-ACL nur
+  ;      Lese-/Nutzungsrecht am privaten Schluessel. Die App signiert jede .rdp damit
+  ;      -> der April-2026-"Unbekannter Herausgeber"-Dialog ist komplett still, OHNE
+  ;      die unsicheren Rollback-Schalter AllowUnsignedFiles / RedirectionWarning-
+  ;      DialogVersion (die sind damit ersatzlos raus).
+  DetailPrint "NKK: RDP-Signatur maschinenweit vertrauen ..."
+  nsExec::ExecToLog 'powershell -NoProfile -NonInteractive -inputformat none -ExecutionPolicy Bypass -WindowStyle Hidden -File "$INSTDIR\resources\rdp-machine-trust.ps1"'
+  Pop $0
+  ; ROBUST "beides" (definitiv wirksam, kein Raten): der maschinenweite Signatur-Trust
+  ; oben ist der saubere, durable Weg. ZUSAETZLICH setzen wir die Rollback-Schalter als
+  ; garantiertes Netz - so ist die "Unbekannter Herausgeber"-Warnung AUF JEDEN FALL weg,
+  ; auch falls non-elevated rdpsign den LocalMachine-Cert wider Erwarten nicht nutzt. Der
+  ; Signatur-Trust traegt es weiter, falls Microsoft den Rollback-Schalter je entfernt.
+  ; Sicherheitsabwaegung wie gehabt: kontrollierte Firmenflotte, einziger Zweck internes
+  ; RDP; die .rdp werden zudem signiert. POSTUNINSTALL raeumt beide Wege sauber ab.
   WriteRegDWORD HKLM "SOFTWARE\Policies\Microsoft\Windows NT\Terminal Services\Client" "RedirectionWarningDialogVersion" 1
-  ; 2) unsignierte .rdp ohne Publisher-Block ausfuehren.
   WriteRegDWORD HKLM "SOFTWARE\Policies\Microsoft\Windows NT\Terminal Services" "AllowUnsignedFiles" 1
   ; 3) Gespeicherte Credentials (cmdkey TERMSRV/<host>) an RDP-Ziele DELEGIEREN.
   ;    Ohne das ignoriert mstsc sie bei IP-Zielen auf domaenengejointen Clients
@@ -624,6 +643,14 @@ nkk_svc_ready:
   DeleteRegValue HKLM "SOFTWARE\Policies\Microsoft\Windows NT\Terminal Services\Client" "RedirectionWarningDialogVersion"
   DeleteRegValue HKLM "SOFTWARE\Policies\Microsoft\Windows NT\Terminal Services\Client" "fClientDisableUDP"
   DeleteRegValue HKLM "SOFTWARE\Policies\Microsoft\Windows NT\Terminal Services" "AllowUnsignedFiles"
+  ; Maschinenweiten Signatur-Trust zurueckbauen: Thumbprint-Whitelist + AllowSignedFiles
+  ; + geteilte Wahrheit HKLM\NKK + den LocalMachine-Signatur-Cert (per Subject, da der
+  ; FriendlyName auf Kopien nicht mittraegt - hier aber ohnehin nur My).
+  DeleteRegValue HKLM "SOFTWARE\Policies\Microsoft\Windows NT\Terminal Services" "AllowSignedFiles"
+  DeleteRegValue HKLM "SOFTWARE\Policies\Microsoft\Windows NT\Terminal Services" "TrustedCertThumbprints"
+  DeleteRegKey   HKLM "SOFTWARE\NKK\RdpSign"
+  nsExec::ExecToLog 'powershell -NoProfile -NonInteractive -inputformat none -ExecutionPolicy Bypass -WindowStyle Hidden -Command "Get-ChildItem Cert:\LocalMachine\My | Where-Object { $_.Subject -eq \"CN=NKK Secure Access, O=Naturkost Kontor Bremen GmbH\" } | Remove-Item -Force -ErrorAction SilentlyContinue"'
+  Pop $NkkExitCode
   DeleteRegValue HKLM "SOFTWARE\Policies\Microsoft\Windows\CredentialsDelegation\AllowSavedCredentials" "1"
   DeleteRegValue HKLM "SOFTWARE\Policies\Microsoft\Windows\CredentialsDelegation\AllowSavedCredentialsWhenNTLMOnly" "1"
   DeleteRegValue HKLM "SOFTWARE\Policies\Microsoft\Windows\CredentialsDelegation" "AllowSavedCredentials"

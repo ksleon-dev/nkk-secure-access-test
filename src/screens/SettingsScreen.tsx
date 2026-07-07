@@ -399,9 +399,10 @@ export function SettingsScreen({
                 onChange={(v) => setRdpField("drives", v)}
               />
               <RdpRow
-                label="Mehrere Bildschirme"
-                checked={rdp.multimon}
-                onChange={(v) => setRdpField("multimon", v)}
+                label="Nur Hauptbildschirm"
+                hint="Sitzung nur auf dem Hauptbildschirm statt auf allen"
+                checked={!rdp.multimon}
+                onChange={(v) => setRdpField("multimon", !v)}
               />
               <RdpRow
                 label="Kamera"

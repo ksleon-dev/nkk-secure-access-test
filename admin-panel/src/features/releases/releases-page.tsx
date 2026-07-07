@@ -204,11 +204,11 @@ export function ReleasesPage() {
         </div>
       )}
 
-      {/* Installation auf Clients — immer die neueste Version, fertig zum Kopieren */}
+      {/* Update auf bereits eingerichtete Clients (ohne Key). Erstinstallation = Onboarding-Karte unten. */}
       <div className="mb-7 rounded-xl border bg-card p-5">
-        <h2 className="mb-1 text-[15px] font-semibold">Installation auf Clients</h2>
+        <h2 className="mb-1 text-[15px] font-semibold">Update auf Clients (ohne Setup-Key)</h2>
         <p className="mb-4 text-[13px] text-muted-foreground">
-          Immer die neueste Version{cur ? ` (v${cur})` : ""}. Ohne Key nur Update; ein Onboarding mit Key und Profil steht direkt darunter.
+          Nur für <span className="font-medium">bereits eingerichtete</span> Geräte: aktualisiert auf die neueste Version{cur ? ` (v${cur})` : ""} ohne Enrollment. <span className="font-medium">Neue Geräte immer über „Onboarding mit Key und Profil" unten</span> — sonst fragt die App nach dem Key.
         </p>
         <div className="grid gap-4 lg:grid-cols-2">
           <InstallCard
@@ -222,7 +222,7 @@ export function ReleasesPage() {
           <InstallCard os="macOS" href={dl.macos_dmg ?? undefined} cmd={macCmd} />
         </div>
         <p className="mt-3 text-[12px] text-muted-foreground">
-          Windows-Befehl in PowerShell (zeigt Fortschritt und startet die App danach automatisch), macOS-Befehl im Terminal. Für ein Onboarding mit Key und Profil siehe direkt darunter.
+          Windows-Befehl in PowerShell, macOS-Befehl im Terminal. Neue Geräte NICHT hiermit aufsetzen — dafür die Onboarding-Karte mit Key und Profil unten.
         </p>
       </div>
 

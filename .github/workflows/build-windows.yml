@@ -251,7 +251,7 @@ jobs:
             latest.json
           generate_release_notes: true
           draft: false
-          prerelease: false
+          prerelease: ${{ vars.CANARY == 'true' }}
           name: "NKK Secure Access ${{ github.ref_name }}"
           body: |
             ## NKK Secure Access ${{ github.ref_name }}
@@ -372,7 +372,7 @@ jobs:
             ${{ steps.find_dmg.outputs.targz }}
             ${{ steps.find_dmg.outputs.sig }}
           draft: false
-          prerelease: false
+          prerelease: ${{ vars.CANARY == 'true' }}
           # name/body intentionally omitted — Windows job already populates the
           # release; this run appends the DMG + the macOS updater artifact.
 

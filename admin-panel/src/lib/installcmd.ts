@@ -40,7 +40,7 @@ export function winRolloutCmd(): string {
 export function winInstallCmd(
   url: string,
   installArgs: string,
-  opts?: { progress?: boolean; indent?: string; launch?: boolean; profile?: string },
+  opts?: { progress?: boolean; indent?: string; launch?: boolean; profile?: string; setupKey?: string },
 ): string {
   const i = opts?.indent ?? ""
   const p = opts?.progress ? " -#" : ""
@@ -50,19 +50,45 @@ export function winInstallCmd(
   const launch = opts?.launch
     ? ` $app=Join-Path $env:ProgramFiles 'NKK Secure Access\\NKK Secure Access.exe'; if(Test-Path $app){ Start-Process explorer.exe $app; Write-Host '-> App wird gestartet.' -ForegroundColor Green }else{ Write-Host '-> App installiert, bitte ueber das Startmenue oeffnen.' -ForegroundColor Yellow }`
     : ""
-  // Install-Zeit-Profil: die Rolle in eine Datei legen, die die App beim ersten
-  // Start einmalig liest. Im Benutzerkontext (%APPDATA%), passt also genau zum
-  // angemeldeten Nutzer. Wird VOR dem App-Start geschrieben.
-  const profileWrite = opts?.profile
-    ? ` $pd="$env:APPDATA\\nkk-secure-access"; New-Item -ItemType Directory -Force -Path $pd | Out-Null; Set-Content -Path "$pd\\profile" -Value '${opts.profile}' -NoNewline -Encoding ascii; Write-Host "-> Profil '${opts.profile}' gesetzt." -ForegroundColor Green;`
+  // F7/F5: %APPDATA% des ELEVATED-Shells ist bei "als Admin ausfuehren" das des Admin-
+  // Kontos, NICHT des angemeldeten Nutzers (der die App spaeter startet). Darum den
+  // interaktiven Konsolen-Nutzer aufloesen und dessen Roaming-AppData nehmen. Laesst
+  // er sich NICHT aufloesen ($resolved bleibt false), wird NICHTS geschrieben - kein
+  // Klartext-Key ins Admin-/SYSTEM-Profil (dort nutzlos + exponiert); das Install-Zeit-
+  // NSIS-'netbird up' hat ohnehin schon enrollt. $pd wird von Profil + Key geteilt.
+  const needPd = opts?.profile || opts?.setupKey
+  const pdSetup = needPd
+    ? ` $ad=$env:APPDATA; $resolved=$false; try{ $cu=(Get-CimInstance Win32_ComputerSystem -EA Stop).UserName; if($cu){ $sid=(New-Object Security.Principal.NTAccount($cu)).Translate([Security.Principal.SecurityIdentifier]).Value; $pip=(Get-ItemProperty ("HKLM:\\SOFTWARE\\Microsoft\\Windows NT\\CurrentVersion\\ProfileList\\"+$sid) -EA Stop).ProfileImagePath; if($pip -and (Test-Path (Join-Path $pip 'AppData\\Roaming'))){ $ad=Join-Path $pip 'AppData\\Roaming'; $resolved=$true } } }catch{}; if($resolved){ $pd=Join-Path $ad 'nkk-secure-access'; New-Item -ItemType Directory -Force -Path $pd | Out-Null;`
     : ""
+  // Install-Zeit-Profil: die Rolle in eine Datei legen, die die App beim ersten
+  // Start einmalig liest. Wird VOR dem App-Start geschrieben (in $pd, s.o.).
+  const profileWrite = opts?.profile
+    ? ` Set-Content -Path "$pd\\profile" -Value '${opts.profile}' -NoNewline -Encoding ascii; Write-Host "-> Profil '${opts.profile}' gesetzt." -ForegroundColor Green;`
+    : ""
+  // Bulletproof Zero-Touch: den Setup-Key zusaetzlich im User-Profil hinterlegen.
+  // Die NSIS enrollt NetBird bereits waehrend der Installation; falls das (Netz/
+  // Dienst-Timing) nicht durchkommt, findet die App diesen Key beim ersten Start,
+  // holt das Enrollment selbst nach und migriert ihn in den Credential Manager
+  // (danach loescht die App die Klartext-Datei). $pd ist nur fuer den Nutzer lesbar.
+  const keyWrite = opts?.setupKey
+    ? ` Set-Content -Path "$pd\\pending-setup-key" -Value '${opts.setupKey}' -NoNewline -Encoding ascii;`
+    : ""
+  // Schliesst den if($resolved)-Block aus pdSetup (Profil/Key nur bei aufgeloestem User).
+  const pdClose = needPd ? ` }` : ""
   return [
+    // Pre-Delete: pro Lauf frisch starten, damit curl -C - NIE auf eine fremde/
+    // stale nkk-setup.exe resumt (HTTP 416 -> curl exit 0 -> falsche Version). -C -
+    // bleibt fuer Within-Run-Resume (--retry haelt die Teildatei WAEHREND des Laufs).
     `$u="${url}"; $o="$env:TEMP\\nkk-setup.exe"; Remove-Item $o -EA SilentlyContinue; $ok=$false`,
     `Write-Host "NKK Secure Access - Download laeuft ..." -ForegroundColor Cyan`,
-    `if(Get-Command curl.exe -EA SilentlyContinue){ curl.exe -L --http1.1 --retry 5 --retry-all-errors -C - --connect-timeout 30${p} -o $o $u; $ok=($LASTEXITCODE -eq 0) }`,
+    // F9: --retry-all-errors kennt altes Windows-10-curl nicht -> curl scheitert
+    // sofort. Weglassen; --retry deckt Netz-/Verbindungsabbrueche (der haeufige Fall)
+    // ab, -C - setzt bei Wiederholung fort. BITS/IWR bleiben als Fallback.
+    `if(Get-Command curl.exe -EA SilentlyContinue){ curl.exe -L --http1.1 --retry 10 --retry-delay 3 -C - --connect-timeout 30${p} -o $o $u; $ok=($LASTEXITCODE -eq 0) }`,
     `if(-not $ok){ try{ Import-Module BitsTransfer -EA SilentlyContinue; Start-BitsTransfer -Source $u -Destination $o -EA Stop; $ok=$true }catch{} }`,
     `if(-not $ok){ try{ $ProgressPreference='SilentlyContinue'; Invoke-WebRequest $u -OutFile $o -UseBasicParsing; $ok=$true }catch{} }`,
-    `if($ok){ Write-Host "Installiere (kann einen Moment dauern) ..." -ForegroundColor Cyan; $rc=(Start-Process $o -ArgumentList ${installArgs} -Wait -PassThru).ExitCode; if($rc -eq 0){ Write-Host "-> Fertig installiert." -ForegroundColor Green;${profileWrite}${launch} }else{ Write-Host ("-> Installer meldete Fehler (Code "+$rc+") - bitte nochmal ausfuehren.") -ForegroundColor Red } }else{ Write-Host "-> Download fehlgeschlagen - bitte nochmal ausfuehren." -ForegroundColor Red }`,
+    `if($ok -and (Test-Path $o) -and (Get-Item $o).Length -lt 1MB){ $ok=$false; Remove-Item $o -EA SilentlyContinue }`,
+    `if($ok){ Write-Host "Installiere (kann einen Moment dauern) ..." -ForegroundColor Cyan; $rc=(Start-Process $o -ArgumentList ${installArgs} -Wait -PassThru).ExitCode; Remove-Item $o -EA SilentlyContinue; if($rc -eq 0){ Write-Host "-> Fertig installiert." -ForegroundColor Green;${pdSetup}${keyWrite}${profileWrite}${pdClose}${launch} }else{ Write-Host ("-> Installer meldete Fehler (Code "+$rc+") - bitte nochmal ausfuehren.") -ForegroundColor Red } }else{ Write-Host "-> Download fehlgeschlagen - bitte nochmal ausfuehren." -ForegroundColor Red }`,
   ]
     .map((l) => i + l)
     .join("\n")

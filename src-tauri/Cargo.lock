@@ -2496,7 +2496,7 @@ checksum = "650eef8c711430f1a879fdd01d4745a7deea475becfb90269c06775983bbf086"
 
 [[package]]
 name = "nkk-cli"
-version = "0.3.29"
+version = "0.3.30"
 dependencies = [
  "clap",
  "nkk-core",
@@ -2506,7 +2506,7 @@ dependencies = [
 
 [[package]]
 name = "nkk-core"
-version = "0.3.29"
+version = "0.3.30"
 dependencies = [
  "chrono",
  "keyring",
@@ -2522,7 +2522,7 @@ dependencies = [
 
 [[package]]
 name = "nkk-secure-access"
-version = "0.3.29"
+version = "0.3.30"
 dependencies = [
  "anyhow",
  "chrono",

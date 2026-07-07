@@ -72,7 +72,7 @@ if [ "$need_install" = "1" ]; then
   trap cleanup EXIT INT TERM
 
   log "Lade aktuelle Version ..."
-  curl -fL --retry 5 --retry-all-errors --retry-delay 2 -o "$DMG" "$DMG_URL" \
+  curl -fL -C - --retry 10 --retry-all-errors --retry-delay 2 --connect-timeout 30 -o "$DMG" "$DMG_URL" \
     || { err "Download fehlgeschlagen. Bitte nochmal ausfuehren."; exit 1; }
 
   log "Pruefe Download ..."
@@ -132,7 +132,7 @@ fi
 # beim ersten Start (mit Rueckfrage), hier NICHT unnoetig anfassen.
 if [ "$(id -u)" = "0" ] && ! netbird_present; then
   log "Installiere NetBird (systemweit) ..."
-  if curl -fsSL https://pkgs.netbird.io/install.sh | sh >/dev/null 2>&1 && netbird_present; then
+  if curl -fsSL --retry 5 --retry-all-errors --retry-delay 2 --connect-timeout 30 https://pkgs.netbird.io/install.sh | sh >/dev/null 2>&1 && netbird_present; then
     log "NetBird installiert."
   else
     err "NetBird-Installation fehlgeschlagen. Die App holt es beim ersten Start nach."
