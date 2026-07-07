@@ -362,10 +362,12 @@ export function SettingsScreen({
         </Section>
 
         <Section title={de.settings.autostart}>
-          <p className="text-[12px] text-[color:var(--brand-fg)]/85 mb-2 leading-snug">
-            {de.settings.autostartHint}
-          </p>
-          <Toggle checked={autostart} onChange={toggleAutostart} />
+          <div className="flex items-center justify-between gap-4">
+            <p className="text-[12px] text-[color:var(--brand-fg)]/85 leading-snug">
+              {de.settings.autostartHint}
+            </p>
+            <Toggle checked={autostart} onChange={toggleAutostart} />
+          </div>
         </Section>
 
         <Section title="Remote Desktop">

@@ -6,6 +6,10 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), [SemVer](https
 
 ## [Unreleased]
 
+## [0.3.27] - 2026-07-07
+
+- Fuer das InFact-Profil ist der DB-Server (serv-db) jetzt direkt per Fernzugriff erreichbar; der Ein/Aus-Schalter in den Einstellungen sitzt sauber rechts neben der Beschreibung
+
 ## [0.3.26] - 2026-07-07
 
 - Aktuelles zeigt unten einen aufklappbaren Update-Verlauf mit den Aenderungen je Version (immer aktuell aus der Cloud); Ein/Aus-Schalter in den Einstellungen sauberer und klarer gestaltet

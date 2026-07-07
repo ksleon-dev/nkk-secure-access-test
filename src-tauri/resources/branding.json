@@ -5,7 +5,7 @@
     "tagline": "Dein Bio-Großhandel",
     "logoText": ["Naturkost", "Kontor", "BREMEN"],
     "networkName": "NKK Netz",
-    "version": "0.3.26"
+    "version": "0.3.27"
   },
   "vendor": {
     "name": "KronSolutions GmbH",
@@ -78,7 +78,7 @@
       "type": "rdp",
       "target": "192.168.0.18",
       "icon": "database",
-      "role": "it_admin",
+      "role": "it_admin,infact",
       "hotkey": "5"
     },
     {
