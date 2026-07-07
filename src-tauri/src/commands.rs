@@ -854,6 +854,91 @@ async fn send_enrollment_diagnostic(
     Ok(())
 }
 
+/// Sendet EIN Aktivitaets-/Zugriffsereignis an das Ingest (branding.activity_url):
+/// Start einer RDP-/SMB-/SSH-Aktion bzw. VPN-Connect/Disconnect. Bewusst nach dem
+/// Vorbild von send_enrollment_diagnostic aufgebaut - fire-and-forget ueber curl,
+/// nie blockierend. Der Payload traegt NUR Ziel/Label/Host/Nutzer/Rolle, niemals
+/// ein Passwort. Der Server stempelt die maszgebliche Zeit + Quelle selbst.
+async fn send_activity_event(
+    app: &AppHandle,
+    nb: &NetbirdClient,
+    branding: &BrandingDto,
+    kind: &str,
+    target: &str,
+    label: &str,
+) {
+    let url = match &branding.activity_url {
+        Some(u) if !u.is_empty() => u.clone(),
+        _ => return, // kein Ingest konfiguriert -> nichts tun
+    };
+    // Rolle aus den lokalen Settings (Standard/GF/IT/InFact); Host + Overlay-IP als
+    // stabile Geraete-Identitaet, die das Panel gegen die NetBird-Peers abgleicht.
+    let role = load_app_settings(app).role;
+    let os_user = std::env::var("USER")
+        .or_else(|_| std::env::var("USERNAME"))
+        .unwrap_or_default();
+    let (hostname, nb_status) = tokio::join!(fetch_hostname(), nb.status());
+    let local_ip = nb_status.ok().and_then(|s| s.local_ip);
+
+    let payload = serde_json::json!({
+        "event": "launch",
+        "kind": kind,
+        "target": target,
+        "label": label,
+        "hostname": hostname,
+        "os_user": os_user,
+        "os_name": std::env::consts::OS,
+        "role": role,
+        "local_ip": local_ip,
+        "version": branding.product.version,
+        "timestamp": chrono::Utc::now().to_rfc3339(),
+    });
+    let Ok(json_str) = serde_json::to_string(&payload) else {
+        return;
+    };
+
+    let mut cmd = TokioCommand::new("curl");
+    cmd.args([
+        "-s", "-X", "POST",
+        "-H", "Content-Type: application/json",
+        "-d", &json_str,
+        "--max-time", "5",
+        &url,
+    ])
+    .stdout(std::process::Stdio::null())
+    .stderr(std::process::Stdio::null());
+    #[cfg(target_os = "windows")]
+    cmd.creation_flags(0x08000000);
+
+    let _ = timeout(Duration::from_secs(6), cmd.output()).await;
+}
+
+/// Nicht-blockierender Ausloeser fuer send_activity_event: klont die noetigen Werte
+/// und feuert im Hintergrund, damit der aufrufende Command (open_rdp usw.) SOFORT
+/// zurueckkehrt. Ein Fehlschlag/Timeout des Ingests darf den eigentlichen Start nie
+/// verzoegern oder verhindern. No-op, wenn kein Ingest konfiguriert ist.
+fn log_activity(
+    app: &AppHandle,
+    nb: &NetbirdClient,
+    branding: &BrandingDto,
+    kind: &str,
+    target: &str,
+    label: &str,
+) {
+    if branding.activity_url.as_deref().unwrap_or("").is_empty() {
+        return;
+    }
+    let app = app.clone();
+    let nb = nb.clone();
+    let branding = branding.clone();
+    let kind = kind.to_string();
+    let target = target.to_string();
+    let label = label.to_string();
+    tauri::async_runtime::spawn(async move {
+        send_activity_event(&app, &nb, &branding, &kind, &target, &label).await;
+    });
+}
+
 /// Light report on app startup: refreshes the version + IPs in the admin panel
 /// right after an update (the app relaunches into the new version), without
 /// waiting for a connect. No ping/speed - the server keeps the last full values.
@@ -3106,7 +3191,10 @@ pub async fn open_rdp(
     // ein Gateway-Eintrag reicht das Ziel THROUGH die RD-Gateway (kein VPN) - dort ist
     // das target ebenfalls ein Eintrag, daher greift die Allowlist auch fuer den Gateway-Pfad.
     let branding_allow = ensure_branding(&app, &state).await?;
-    allowlist_lookup(&branding_allow, "rdp", &target)?;
+    let rdp_label = allowlist_lookup(&branding_allow, "rdp", &target)?.label.clone();
+    // Zugriffsprotokoll: der Start ist autorisiert (Allowlist bestanden). Nicht-blockierend
+    // im Hintergrund melden - der eigentliche RDP-Start laeuft davon voellig unberuehrt weiter.
+    log_activity(&app, &state.netbird, &branding_allow, "rdp", &target, &rdp_label);
     let rdp = load_rdp_settings(&app);
     // A gateway entry reaches the target over HTTPS/443 (RD Gateway), entirely
     // without NetBird, so it must never touch the VPN. Empty string = no gateway.
@@ -3445,7 +3533,9 @@ pub async fn open_smb(
     }
     // #1 Allowlist: das SMB-Ziel MUSS ein gepflegter quickLaunch-Eintrag sein.
     let branding_allow = ensure_branding(&app, &state).await?;
-    allowlist_lookup(&branding_allow, "smb", &target)?;
+    let smb_label = allowlist_lookup(&branding_allow, "smb", &target)?.label.clone();
+    // Zugriffsprotokoll (Datei-Explorer/SMB): nicht-blockierend melden.
+    log_activity(&app, &state.netbird, &branding_allow, "smb", &target, &smb_label);
 
     #[cfg(target_os = "windows")]
     {
@@ -3637,6 +3727,9 @@ pub async fn open_ssh(
     // weder einen fremden Host noch abweichende Login-Daten erzwingen.
     let branding_allow = ensure_branding(&app, &state).await?;
     let entry = allowlist_lookup(&branding_allow, "ssh", &host)?;
+    // Zugriffsprotokoll (SSH): nicht-blockierend melden.
+    let ssh_label = entry.label.clone();
+    log_activity(&app, &state.netbird, &branding_allow, "ssh", &host, &ssh_label);
     // User: uebergebener Wert muss zum Eintrag passen; ohne Uebergabe den Eintrag nutzen.
     let user = match user {
         Some(u) => {

@@ -2,6 +2,7 @@ import { createBrowserRouter, useRouteError } from "react-router"
 import { AppShell } from "@/components/layout/app-shell"
 import { DashboardPage } from "@/features/dashboard/dashboard-page"
 import { DevicesPage } from "@/features/devices/devices-page"
+import { AktivitaetPage } from "@/features/aktivitaet/aktivitaet-page"
 import { StatusPage } from "@/features/status/status-page"
 import { PeersPage } from "@/features/peers/peers-page"
 import { KeysPage } from "@/features/keys/keys-page"
@@ -51,6 +52,7 @@ export const router = createBrowserRouter(
         { index: true, element: <DashboardPage /> },
         { path: "status", element: <StatusPage /> },
         { path: "devices", element: <DevicesPage /> },
+        { path: "aktivitaet", element: <AktivitaetPage /> },
         { path: "peers", element: <PeersPage /> },
         { path: "keys", element: <KeysPage /> },
         { path: "network", element: <NetworkPage /> },

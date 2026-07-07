@@ -1,4 +1,4 @@
-import { ArrowLeft, Heart, Loader2, Megaphone, Newspaper, Sparkles } from "lucide-react";
+import { ArrowLeft, Heart, Loader2, Megaphone, Newspaper, RefreshCw, Sparkles } from "lucide-react";
 import { useEffect, useState } from "react";
 import { de } from "../i18n/de";
 import type { BrandingDto } from "../types/branding";
@@ -78,6 +78,7 @@ const typeConfig = {
 export function NewsScreen({ branding, onBack }: Props) {
   const [news, setNews] = useState<NewsItem[]>(FALLBACK_NEWS);
   const [loading, setLoading] = useState(false);
+  const [reloadKey, setReloadKey] = useState(0);
 
   useEffect(() => {
     if (!branding.newsUrl) return;
@@ -90,7 +91,11 @@ export function NewsScreen({ branding, onBack }: Props) {
     // ("News spinnt"). Manueller AbortController + setTimeout wirkt ueberall.
     const controller = new AbortController();
     const timer = setTimeout(() => controller.abort(), 8000);
-    fetch(branding.newsUrl, { signal: controller.signal, cache: "no-store" })
+    // Cache-Bust: eindeutiger Query-Param je Abruf. Zusammen mit dem Server-seitigen
+    // no-store-Header schlaegt das JEDE WebView-Cache-Schicht (auch WebViews, die
+    // no-store bei bereits gecachten Antworten ignorieren) -> nie wieder alte News.
+    const bust = (branding.newsUrl.includes("?") ? "&" : "?") + "t=" + Date.now();
+    fetch(branding.newsUrl + bust, { signal: controller.signal, cache: "no-store" })
       .then((r) => (r.ok ? r.json() : Promise.reject(new Error("HTTP " + r.status))))
       .then((data: unknown) => {
         if (!alive || !Array.isArray(data) || data.length === 0) return;
@@ -121,7 +126,7 @@ export function NewsScreen({ branding, onBack }: Props) {
       clearTimeout(timer);
       controller.abort();
     };
-  }, [branding.newsUrl]);
+  }, [branding.newsUrl, reloadKey]);
 
   return (
     <div className="h-full flex flex-col">
@@ -135,6 +140,15 @@ export function NewsScreen({ branding, onBack }: Props) {
         </button>
         <Newspaper size={15} className="text-[color:var(--brand-primary)]" />
         <h1 className="text-sm font-bold flex-1">Aktuelles</h1>
+        <button
+          onClick={() => setReloadKey((k) => k + 1)}
+          disabled={loading}
+          className="p-1.5 rounded-md text-[color:var(--brand-fg)] hover:bg-[color:var(--brand-fg)]/8 transition disabled:opacity-40"
+          aria-label="Aktualisieren"
+          title="Aktualisieren"
+        >
+          <RefreshCw size={15} className={loading ? "animate-spin" : ""} />
+        </button>
       </header>
 
       <div className="flex-1 overflow-y-auto px-4 pb-4">

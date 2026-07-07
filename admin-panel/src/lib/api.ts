@@ -1,4 +1,4 @@
-import type { DashboardData, AutomationResult, RunStatus } from "./types"
+import type { DashboardData, AutomationResult, RunStatus, ActivityResponse } from "./types"
 
 export class AuthError extends Error {
   constructor() {
@@ -46,6 +46,9 @@ export const api = {
   logout: () => req("/api/logout", { method: "POST" }),
 
   data: () => req<DashboardData>("/api/data"),
+
+  activity: (limit?: number) =>
+    req<ActivityResponse>(`/api/activity${limit ? `?limit=${limit}` : ""}`),
 
   pushNews: (type: string, title: string, message: string) =>
     req("/api/news", { method: "POST", body: JSON.stringify({ type, title, message }) }),

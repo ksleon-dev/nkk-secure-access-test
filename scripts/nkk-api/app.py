@@ -7,6 +7,18 @@ DATA_DIR = "/data"
 DOWNLOAD_DIR = "/downloads"
 os.makedirs(DATA_DIR, exist_ok=True)
 
+# Aktivitaets-/Zugriffsprotokoll: append-only JSON-Lines. Eine Zeile je RDP-/SMB-/
+# SSH-Start (die App POSTet nach bestandener Allowlist). Bei Ueberlauf rotiert die
+# Datei einmal (.1), so bleibt der Plattenbedarf auf ~2x Cap begrenzt.
+ACTIVITY_FILE = f"{DATA_DIR}/activity.jsonl"
+ACTIVITY_MAX_BYTES = 8 * 1024 * 1024
+_ACTIVITY_KINDS = {"rdp", "smb", "ssh", "url", "connect", "disconnect"}
+
+
+def _clip(v, n):
+    # Fremdeingabe begrenzen: nie None, nie Riesen-Strings ins Log (Speicher-/Injektions-Schutz).
+    return ("" if v is None else str(v))[:n]
+
 
 @app.after_request
 def add_cors_headers(resp):
@@ -29,6 +41,7 @@ def add_cors_headers(resp):
 
 @app.route("/api/news", methods=["OPTIONS"])
 @app.route("/api/enrollment", methods=["OPTIONS"])
+@app.route("/api/activity", methods=["OPTIONS"])
 def cors_preflight():
     # Preflight (falls je ein Client mit Custom-Header/Content-Type-JSON anfragt):
     # leere 204-Antwort, die CORS-Header setzt der after_request-Hook.
@@ -72,6 +85,45 @@ def set_news():
     with open(f"{DATA_DIR}/news.json", "w") as f:
         json.dump(data, f, indent=2)
     return jsonify({"status": "ok"})
+
+@app.route("/api/activity", methods=["POST"])
+def activity():
+    # Ingest fuer das Zugriffsprotokoll. Bewusst OHNE oeffentlichen GET - die
+    # Auswertung laeuft ausschliesslich ueber das admin-gated Panel (server.py liest
+    # dieselbe Datei). Maszgeblich ist die SERVER-Zeit; unbekannte Typen werden leise
+    # verworfen. Ein Fehler hier darf den Client nie stoeren -> immer 200.
+    data = request.get_json(silent=True) or {}
+    kind = _clip(data.get("kind"), 16)
+    if kind not in _ACTIVITY_KINDS:
+        return jsonify({"status": "ignored"})
+    entry = {
+        "ts": datetime.utcnow().isoformat() + "Z",
+        "kind": kind,
+        "target": _clip(data.get("target"), 128),
+        "label": _clip(data.get("label"), 128),
+        "hostname": _clip(data.get("hostname"), 128),
+        "os_user": _clip(data.get("os_user"), 128),
+        "os_name": _clip(data.get("os_name"), 32),
+        "role": _clip(data.get("role"), 32),
+        "local_ip": _clip(data.get("local_ip"), 64),
+        "version": _clip(data.get("version"), 32),
+        "client_ts": _clip(data.get("timestamp"), 40),
+        # Nur die echte Peer-Adresse (kein X-Forwarded-For): dieser oeffentliche Endpunkt
+        # hat keinen vertrauenswuerdigen Proxy, der XFF setzt, ein Client koennte XFF sonst
+        # frei faelschen. src ist ohnehin nur informativ (Identitaet = Peer-Korrelation im Panel).
+        "src": _clip(request.remote_addr, 64),
+    }
+    try:
+        if os.path.exists(ACTIVITY_FILE) and os.path.getsize(ACTIVITY_FILE) > ACTIVITY_MAX_BYTES:
+            os.replace(ACTIVITY_FILE, ACTIVITY_FILE + ".1")
+        # append + O_APPEND: eine Zeile < 4 KiB ist auf POSIX prozess-atomar -> kein
+        # Verschachteln bei parallelen Requests.
+        with open(ACTIVITY_FILE, "a") as f:
+            f.write(json.dumps(entry, ensure_ascii=False) + "\n")
+    except Exception:
+        pass
+    return jsonify({"status": "ok"})
+
 
 @app.route("/api/health", methods=["GET"])
 def health():

@@ -1,5 +1,5 @@
 import {
-  LayoutDashboard, Activity, MonitorSmartphone, Radio, KeyRound, Globe, Megaphone, Rocket, HardDrive,
+  LayoutDashboard, Activity, MonitorSmartphone, Radio, KeyRound, Globe, Megaphone, Rocket, HardDrive, ScrollText,
   type LucideIcon,
 } from "lucide-react"
 
@@ -14,6 +14,7 @@ export const NAV: NavItem[] = [
   { to: "/", label: "Übersicht", icon: LayoutDashboard, end: true },
   { to: "/status", label: "Status", icon: Activity },
   { to: "/devices", label: "Geräte", icon: MonitorSmartphone },
+  { to: "/aktivitaet", label: "Aktivität", icon: ScrollText },
   { to: "/peers", label: "Peers", icon: Radio },
   { to: "/keys", label: "Setup-Keys", icon: KeyRound },
   { to: "/network", label: "Netzwerk", icon: Globe },

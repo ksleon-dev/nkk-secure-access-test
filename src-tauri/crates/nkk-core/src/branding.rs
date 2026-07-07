@@ -181,6 +181,11 @@ pub struct BrandingDto {
     pub news_url: Option<String>,
     #[serde(rename = "webhookUrl", default)]
     pub webhook_url: Option<String>,
+    /// Ingest-Endpunkt fuer das Aktivitaets-/Zugriffsprotokoll (POST je Start einer
+    /// RDP-/SMB-/SSH-Aktion). skip_serializing: die URL bleibt Rust-seitig und
+    /// erscheint nie im Branding-Objekt, das an die WebView geht.
+    #[serde(rename = "activityUrl", default, skip_serializing)]
+    pub activity_url: Option<String>,
     /// Read from branding.json but never serialized back over IPC to the
     /// webview (skip_serializing), so the hash does not reach the JS context.
     #[serde(default, skip_serializing)]

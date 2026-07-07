@@ -148,3 +148,27 @@ export interface RunStatus {
   ended_at?: string | null
   error?: string
 }
+
+// Zugriffsprotokoll: ein Ereignis = ein von der App gemeldeter Start (RDP/SMB/SSH).
+// 'device' + 'verified' setzt das Panel-Backend aus dem NetBird-Peer-Abgleich.
+export interface ActivityItem {
+  ts: string
+  kind: string
+  target?: string
+  label?: string
+  hostname?: string
+  os_user?: string
+  os_name?: string
+  role?: string
+  local_ip?: string
+  version?: string
+  client_ts?: string
+  src?: string
+  device?: string
+  verified?: boolean
+}
+
+export interface ActivityResponse {
+  items: ActivityItem[]
+  total: number
+}
