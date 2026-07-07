@@ -4842,12 +4842,22 @@ fn send_status_notification(
         ConnectionState::Connecting => return, // no notification for transient state
     };
 
-    if let Err(e) = tauri_plugin_notification::NotificationExt::notification(app)
+    let mut builder = tauri_plugin_notification::NotificationExt::notification(app)
         .builder()
         .title(product_name)
-        .body(&body)
-        .show()
+        .body(&body);
+    // Windows-Toast zeigt sonst nur ein generisches Icon. Das gebuendelte App-Icon
+    // (resource_dir/resources/notification-icon.png) explizit setzen -> NKK-Logo im Toast.
+    if let Some(icon) = app
+        .path()
+        .resource_dir()
+        .ok()
+        .map(|d| d.join("resources").join("notification-icon.png"))
+        .filter(|p| p.exists())
     {
+        builder = builder.icon(icon.to_string_lossy().to_string());
+    }
+    if let Err(e) = builder.show() {
         tracing::debug!("Toast Notification fehlgeschlagen: {}", e);
     }
 }

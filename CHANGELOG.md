@@ -6,6 +6,10 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), [SemVer](https
 
 ## [Unreleased]
 
+## [0.3.29] - 2026-07-07
+
+- Windows-Benachrichtigungen zeigen jetzt das NKK-App-Symbol statt eines generischen Icons; der Webshop-Server ist jetzt auch im InFact-Profil als Kachel verfuegbar
+
 ## [0.3.28] - 2026-07-07
 
 - Remote Desktop laeuft fluessiger: der schnellere UDP-Transport ist jetzt garantiert aktiv, mit TCP als zuverlaessigem Fallback
