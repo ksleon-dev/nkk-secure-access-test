@@ -179,6 +179,10 @@ pub struct BrandingDto {
     pub quick_launch: Vec<QuickLaunchEntry>,
     #[serde(rename = "newsUrl", default)]
     pub news_url: Option<String>,
+    /// Update-Log-Quelle (per Version); die App holt ihn hier, damit er nicht
+    /// eingebacken ist. Wird an die WebView serialisiert (kein skip_serializing).
+    #[serde(rename = "changelogUrl", default)]
+    pub changelog_url: Option<String>,
     #[serde(rename = "webhookUrl", default)]
     pub webhook_url: Option<String>,
     /// Ingest-Endpunkt fuer das Aktivitaets-/Zugriffsprotokoll (POST je Start einer

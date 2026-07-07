@@ -1,6 +1,6 @@
 from flask import Flask, request, jsonify, send_from_directory
 from datetime import datetime
-import json, os
+import json, os, re, time, urllib.request
 
 app = Flask(__name__)
 DATA_DIR = "/data"
@@ -18,6 +18,34 @@ _ACTIVITY_KINDS = {"rdp", "smb", "ssh", "url", "connect", "disconnect"}
 def _clip(v, n):
     # Fremdeingabe begrenzen: nie None, nie Riesen-Strings ins Log (Speicher-/Injektions-Schutz).
     return ("" if v is None else str(v))[:n]
+
+
+# Update-Log: die App holt den Changelog HIER (synced), damit er nicht in der App
+# eingebacken ist. Quelle = das repo-CHANGELOG.md auf GitHub (release.sh pflegt es bei
+# JEDEM Release), daher immer aktuell ohne Handarbeit. Kurzer In-Memory-Cache, damit
+# nicht jeder App-Start GitHub trifft. Fallback: lokale Kopie unter /data.
+CHANGELOG_URL = "https://raw.githubusercontent.com/ksleon-dev/nkk-secure-access-test/main/CHANGELOG.md"
+CHANGELOG_FALLBACK = f"{DATA_DIR}/changelog.md"
+CHANGELOG_TTL = 600  # 10 Min
+_changelog_cache = {"at": 0.0, "data": None}
+
+
+def _parse_changelog(raw, limit=20):
+    # "## [x.y.z] - datum" -> {version, date, notes:[...]}. [Unreleased]/leere Blocks raus.
+    out = []
+    ms = list(re.finditer(r"^##\s+\[([^\]]+)\](?:\s*-\s*(.+))?\s*$", raw, re.M))
+    for i, m in enumerate(ms):
+        ver = (m.group(1) or "").strip()
+        if ver.lower() == "unreleased":
+            continue
+        start = m.end()
+        end = ms[i + 1].start() if i + 1 < len(ms) else len(raw)
+        notes = [ln.strip()[2:].strip() for ln in raw[start:end].splitlines() if ln.strip().startswith("- ")]
+        if notes:
+            out.append({"version": ver, "date": (m.group(2) or "").strip(), "notes": notes})
+        if len(out) >= limit:
+            break
+    return out
 
 
 @app.after_request
@@ -42,6 +70,7 @@ def add_cors_headers(resp):
 @app.route("/api/news", methods=["OPTIONS"])
 @app.route("/api/enrollment", methods=["OPTIONS"])
 @app.route("/api/activity", methods=["OPTIONS"])
+@app.route("/api/changelog", methods=["OPTIONS"])
 def cors_preflight():
     # Preflight (falls je ein Client mit Custom-Header/Content-Type-JSON anfragt):
     # leere 204-Antwort, die CORS-Header setzt der after_request-Hook.
@@ -123,6 +152,38 @@ def activity():
     except Exception:
         pass
     return jsonify({"status": "ok"})
+
+
+@app.route("/api/changelog", methods=["GET"])
+def changelog():
+    # Immer aktueller Update-Log fuer die App (per Version). Quelle GitHub-CHANGELOG.md
+    # (release.sh pflegt es je Release), kurz gecacht; bei GitHub-Ausfall lokale Kopie
+    # bzw. letzter Cache-Stand. no-store/CORS setzt der after_request-Hook.
+    now = time.time()
+    if _changelog_cache["data"] is not None and (now - _changelog_cache["at"]) < CHANGELOG_TTL:
+        return jsonify(_changelog_cache["data"])
+    raw = None
+    try:
+        with urllib.request.urlopen(CHANGELOG_URL, timeout=8) as r:
+            raw = r.read().decode("utf-8", "replace")
+    except Exception:
+        try:
+            with open(CHANGELOG_FALLBACK) as f:
+                raw = f.read()
+        except Exception:
+            raw = None
+    if raw is None:
+        return jsonify(_changelog_cache["data"] or [])
+    data = _parse_changelog(raw)
+    # Leeres Ergebnis (transiente GitHub-Statusseite / nur [Unreleased] / leerer Body)
+    # NICHT als frischen Cache setzen - sonst liefert der Worker bis zum TTL weiter []
+    # und der Update-Verlauf verschwindet, obwohl die Quelle laengst wieder ok ist.
+    # Stattdessen letzten guten Stand liefern; der naechste Request versucht GitHub erneut.
+    if data:
+        _changelog_cache["at"] = now
+        _changelog_cache["data"] = data
+        return jsonify(data)
+    return jsonify(_changelog_cache["data"] or data)
 
 
 @app.route("/api/health", methods=["GET"])

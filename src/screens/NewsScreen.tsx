@@ -1,4 +1,4 @@
-import { ArrowLeft, Heart, Loader2, Megaphone, Newspaper, RefreshCw, Sparkles } from "lucide-react";
+import { ArrowLeft, ChevronDown, Heart, History, Loader2, Megaphone, Newspaper, RefreshCw, Sparkles } from "lucide-react";
 import { useEffect, useState } from "react";
 import { de } from "../i18n/de";
 import type { BrandingDto } from "../types/branding";
@@ -15,6 +15,14 @@ interface NewsItem {
   title: string;
   body: string;
   version?: string;
+}
+
+// Ein Update-Log-Eintrag pro Version (vom /api/changelog geliefert, aus dem
+// gepflegten CHANGELOG.md geparst). Wird unten aufklappbar angezeigt.
+interface ChangelogEntry {
+  version: string;
+  date: string;
+  notes: string[];
 }
 
 // Fallback news - used when remote fetch fails or no URL configured. Bewusst
@@ -79,6 +87,8 @@ export function NewsScreen({ branding, onBack }: Props) {
   const [news, setNews] = useState<NewsItem[]>(FALLBACK_NEWS);
   const [loading, setLoading] = useState(false);
   const [reloadKey, setReloadKey] = useState(0);
+  const [changelog, setChangelog] = useState<ChangelogEntry[]>([]);
+  const [showLog, setShowLog] = useState(false);
 
   useEffect(() => {
     if (!branding.newsUrl) return;
@@ -127,6 +137,39 @@ export function NewsScreen({ branding, onBack }: Props) {
       controller.abort();
     };
   }, [branding.newsUrl, reloadKey]);
+
+  // Update-Log (per Version) aus der API holen - nicht eingebacken, immer aktuell.
+  useEffect(() => {
+    if (!branding.changelogUrl) return;
+    let alive = true;
+    const controller = new AbortController();
+    const timer = setTimeout(() => controller.abort(), 8000);
+    const bust = (branding.changelogUrl.includes("?") ? "&" : "?") + "t=" + Date.now();
+    fetch(branding.changelogUrl + bust, { signal: controller.signal, cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error("HTTP " + r.status))))
+      .then((data: unknown) => {
+        if (!alive || !Array.isArray(data)) return;
+        const items = data.filter((d): d is ChangelogEntry => {
+          if (!d || typeof d !== "object") return false;
+          const o = d as Record<string, unknown>;
+          return (
+            typeof o.version === "string" &&
+            Array.isArray(o.notes) &&
+            (o.notes as unknown[]).every((n) => typeof n === "string")
+          );
+        });
+        // Nur bei nicht-leerem Ergebnis setzen (wie beim News-Pfad): ein transientes
+        // leeres API-Ergebnis darf einen bereits geladenen Verlauf nicht wegwischen.
+        if (items.length > 0) setChangelog(items);
+      })
+      .catch((e) => console.warn("Update-Log laden fehlgeschlagen:", e))
+      .finally(() => clearTimeout(timer));
+    return () => {
+      alive = false;
+      clearTimeout(timer);
+      controller.abort();
+    };
+  }, [branding.changelogUrl, reloadKey]);
 
   return (
     <div className="h-full flex flex-col">
@@ -202,6 +245,56 @@ export function NewsScreen({ branding, onBack }: Props) {
             Weitere Neuigkeiten folgen bald.
           </p>
         </div>
+
+        {changelog.length > 0 && (
+          <div className="mt-5 border-t border-[color:var(--brand-fg)]/10 pt-3">
+            <button
+              type="button"
+              onClick={() => setShowLog((v) => !v)}
+              aria-expanded={showLog}
+              className="w-full flex items-center justify-between gap-2 text-[11px] font-semibold text-[color:var(--brand-fg)]/55 hover:text-[color:var(--brand-fg)]/85 transition"
+            >
+              <span className="inline-flex items-center gap-1.5">
+                <History size={13} />
+                Update-Verlauf
+                <span className="text-[color:var(--brand-fg)]/35">({changelog.length})</span>
+              </span>
+              <ChevronDown
+                size={14}
+                className={`transition-transform ${showLog ? "rotate-180" : ""}`}
+              />
+            </button>
+            {showLog && (
+              <div className="mt-3 flex flex-col gap-3.5">
+                {changelog.map((v) => (
+                  <div key={v.version}>
+                    <div className="flex items-baseline gap-2">
+                      <span className="text-[11px] font-bold text-[color:var(--brand-primary)]">
+                        v{v.version}
+                      </span>
+                      {v.date && (
+                        <span className="text-[9px] text-[color:var(--brand-fg)]/40">
+                          {v.date}
+                        </span>
+                      )}
+                    </div>
+                    <ul className="mt-1 space-y-1">
+                      {v.notes.map((n, i) => (
+                        <li
+                          key={i}
+                          className="flex gap-1.5 text-[10px] leading-relaxed text-[color:var(--brand-fg)]/70"
+                        >
+                          <span className="mt-[5px] size-1 shrink-0 rounded-full bg-[color:var(--brand-primary)]/50" />
+                          <span>{n}</span>
+                        </li>
+                      ))}
+                    </ul>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
       </div>
 
       <div className="text-center text-[9px] py-1 shrink-0 font-bold uppercase tracking-[0.15em] text-[color:var(--brand-surface)]/85 bg-[color:var(--brand-primary)]/95">

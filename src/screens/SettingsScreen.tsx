@@ -13,7 +13,6 @@ import {
   Monitor,
   Pencil,
   Plus,
-  Power,
   RefreshCw,
   RotateCcw,
   Server,
@@ -543,22 +542,19 @@ function Toggle({
 }) {
   return (
     <button
+      type="button"
       role="switch"
       aria-checked={checked}
       onClick={() => onChange(!checked)}
-      className={`relative w-10 h-6 rounded-full transition-colors ${
-        checked ? "bg-[var(--brand-primary)]" : "bg-[color:var(--brand-fg)]/20"
+      className={`relative inline-flex h-6 w-11 shrink-0 items-center rounded-full border transition-colors duration-200 outline-none focus-visible:ring-2 focus-visible:ring-[color:var(--brand-primary)]/40 ${
+        checked
+          ? "border-[var(--brand-primary)] bg-[var(--brand-primary)]"
+          : "border-[color:var(--brand-fg)]/25 bg-[color:var(--brand-fg)]/10"
       }`}
     >
       <span
-        className={`absolute top-0.5 left-0.5 w-5 h-5 rounded-full bg-white shadow transition-transform ${
-          checked ? "translate-x-4" : "translate-x-0"
-        }`}
-      />
-      <Power
-        size={10}
-        className={`absolute top-1.5 ${
-          checked ? "left-1.5 text-white" : "right-1.5 text-[color:var(--brand-fg)]/40"
+        className={`inline-block size-5 transform rounded-full bg-white shadow-[0_1px_2px_rgba(0,0,0,0.25)] transition-transform duration-200 ${
+          checked ? "translate-x-[22px]" : "translate-x-[2px]"
         }`}
       />
     </button>

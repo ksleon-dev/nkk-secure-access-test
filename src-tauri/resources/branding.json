@@ -5,7 +5,7 @@
     "tagline": "Dein Bio-Großhandel",
     "logoText": ["Naturkost", "Kontor", "BREMEN"],
     "networkName": "NKK Netz",
-    "version": "0.3.25"
+    "version": "0.3.26"
   },
   "vendor": {
     "name": "KronSolutions GmbH",
@@ -28,6 +28,7 @@
     "internalDomainSuffix": "nkk.internal"
   },
   "newsUrl": "https://api.secure.nkk-hb.de/api/news",
+  "changelogUrl": "https://api.secure.nkk-hb.de/api/changelog",
   "webhookUrl": "https://api.secure.nkk-hb.de/api/enrollment",
   "activityUrl": "https://api.secure.nkk-hb.de/api/activity",
   "admin": {

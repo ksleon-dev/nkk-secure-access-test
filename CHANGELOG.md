@@ -6,6 +6,10 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), [SemVer](https
 
 ## [Unreleased]
 
+## [0.3.26] - 2026-07-07
+
+- Aktuelles zeigt unten einen aufklappbaren Update-Verlauf mit den Aenderungen je Version (immer aktuell aus der Cloud); Ein/Aus-Schalter in den Einstellungen sauberer und klarer gestaltet
+
 ## [0.3.25] - 2026-07-07
 
 - Aktuelles zieht jetzt garantiert den neuesten Panel-Stand und laesst sich per Knopf sofort aktualisieren (nie wieder alte Meldungen); kleinere interne Verbesserungen und Haertungen

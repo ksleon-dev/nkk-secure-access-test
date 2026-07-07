@@ -72,5 +72,6 @@ export interface BrandingDto {
   netbird: NetbirdInfo;
   quickLaunch: QuickLaunchEntry[];
   newsUrl?: string;
+  changelogUrl?: string;
   webhookUrl?: string;
 }
