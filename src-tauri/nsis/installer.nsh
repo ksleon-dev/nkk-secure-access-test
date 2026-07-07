@@ -520,6 +520,10 @@ nkk_svc_ready:
   WriteRegDWORD HKLM "SOFTWARE\Policies\Microsoft\Windows\CredentialsDelegation" "ConcatenateDefaults_AllowSavedNTLMOnly" 1
   WriteRegStr   HKLM "SOFTWARE\Policies\Microsoft\Windows\CredentialsDelegation\AllowSavedCredentials" "1" "TERMSRV/192.168.*"
   WriteRegStr   HKLM "SOFTWARE\Policies\Microsoft\Windows\CredentialsDelegation\AllowSavedCredentialsWhenNTLMOnly" "1" "TERMSRV/192.168.*"
+  ; 4) RDP-UDP client-seitig garantiert AN (fClientDisableUDP=0). RDP nutzt dann UDP
+  ;    bevorzugt (fluessige Grafik/Reaktion) mit TCP als immer-an Basiskanal und
+  ;    nahtlosem Fallback. Schuetzt gegen ein Image/GPO, das UDP abgeschaltet hat.
+  WriteRegDWORD HKLM "SOFTWARE\Policies\Microsoft\Windows NT\Terminal Services\Client" "fClientDisableUDP" 0
   SetRegView lastused
 
   ; --- App nach INTERAKTIVER Erstinstallation starten -----------------------
@@ -618,6 +622,7 @@ nkk_svc_ready:
   DetailPrint "NKK: Setze RDP-Richtlinien zurueck ..."
   SetRegView 64
   DeleteRegValue HKLM "SOFTWARE\Policies\Microsoft\Windows NT\Terminal Services\Client" "RedirectionWarningDialogVersion"
+  DeleteRegValue HKLM "SOFTWARE\Policies\Microsoft\Windows NT\Terminal Services\Client" "fClientDisableUDP"
   DeleteRegValue HKLM "SOFTWARE\Policies\Microsoft\Windows NT\Terminal Services" "AllowUnsignedFiles"
   DeleteRegValue HKLM "SOFTWARE\Policies\Microsoft\Windows\CredentialsDelegation\AllowSavedCredentials" "1"
   DeleteRegValue HKLM "SOFTWARE\Policies\Microsoft\Windows\CredentialsDelegation\AllowSavedCredentialsWhenNTLMOnly" "1"
