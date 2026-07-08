@@ -274,6 +274,12 @@ nkk-secure-access/
 | `export_support_bundle()` | Support-Paket als Datei, zeigt es im Dateimanager |
 | `check_connectivity()` | Online / Captive Portal / Offline |
 
+## Kommandozeile (nkk-secure)
+
+Ab v0.3.31 liegt auf jedem Client die CLI `nkk-secure` (Status, Verbinden,
+Trennen, Profil, Diagnose, headless Update fuer Level/RMM). Siehe
+[`docs/CLI.md`](docs/CLI.md).
+
 ## Rollout / Distribution
 
 Siehe [`docs/ROLLOUT.md`](docs/ROLLOUT.md) für detaillierte Anleitung zur Verteilung an NKK Mitarbeiter (GPO, File Share, Mail, etc.).
