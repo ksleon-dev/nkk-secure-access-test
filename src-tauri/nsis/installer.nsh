@@ -545,6 +545,16 @@ nkk_svc_ready:
   WriteRegDWORD HKLM "SOFTWARE\Policies\Microsoft\Windows NT\Terminal Services\Client" "fClientDisableUDP" 0
   SetRegView lastused
 
+  ; --- INSTDIR in den Maschinen-PATH (fuer die nkk-secure CLI) ---------------
+  ; Die mitinstallierte nkk-secure.exe (Sidecar) soll in cmd/PowerShell direkt
+  ; tippbar sein. Bewusst per .NET-API statt NSIS-Registry-Schreiben oder setx:
+  ; keine 1024-Zeichen-Truncation, und SetEnvironmentVariable('...','Machine')
+  ; broadcastet WM_SETTINGCHANGE selbst (neue Terminals sehen den PATH sofort).
+  ; Idempotent: nur anhaengen, wenn der Eintrag fehlt.
+  DetailPrint "NKK: Registriere nkk-secure CLI im System-PATH ..."
+  nsExec::ExecToLog 'powershell -NoProfile -NonInteractive -inputformat none -ExecutionPolicy Bypass -WindowStyle Hidden -Command "try { $d=\"$INSTDIR\"; $p=[Environment]::GetEnvironmentVariable(\"Path\",\"Machine\"); if (($p -split \";\") -notcontains $d) { [Environment]::SetEnvironmentVariable(\"Path\", ($p.TrimEnd(\";\")+\";\"+$d), \"Machine\") } } catch {}"'
+  Pop $NkkExitCode
+
   ; --- App nach INTERAKTIVER Erstinstallation starten -----------------------
   ; Nur bei sichtbarer manueller Installation starten: NICHT bei /S (Level/SYSTEM,
   ; liefe in Session 0 unsichtbar) und NICHT bei /P (Auto-Update, der Updater startet
@@ -667,6 +677,11 @@ nkk_svc_ready:
   RMDir /r "${NKK_LOG_DIR}"
   RMDir /r "$APPDATA\de.kronsolutions.nkksecureaccess"
   RMDir /r "$LOCALAPPDATA\de.kronsolutions.nkksecureaccess"
+
+  ; PATH-Eintrag der nkk-secure CLI (aus POSTINSTALL) wieder entfernen.
+  DetailPrint "NKK: Entferne nkk-secure CLI aus dem System-PATH ..."
+  nsExec::ExecToLog 'powershell -NoProfile -NonInteractive -inputformat none -ExecutionPolicy Bypass -WindowStyle Hidden -Command "try { $d=\"$INSTDIR\"; $p=[Environment]::GetEnvironmentVariable(\"Path\",\"Machine\"); $n=(($p -split \";\") | Where-Object { $_ -and ($_ -ne $d) }) -join \";\"; if ($n -ne $p) { [Environment]::SetEnvironmentVariable(\"Path\",$n,\"Machine\") } } catch {}"'
+  Pop $NkkExitCode
 
   ; Remove Start Menu + desktop shortcuts (per-user and per-machine)
   DetailPrint "NKK: Entferne Startmenu Eintraege ..."

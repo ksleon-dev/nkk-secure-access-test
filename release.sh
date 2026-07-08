@@ -43,7 +43,17 @@ npm run build >/dev/null
 # Rust pruefen UND dabei Cargo.lock auf die neue Version ziehen (sonst bleibt der
 # committete Lock im Repo auf der alten Version stehen = Drift).
 echo "  - Rust pruefen + Cargo.lock syncen (cargo check)"
-( cd src-tauri && cargo check --quiet )
+# Sidecar-Voraussetzung: generate_context! verlangt das nkk-secure-CLI-Binary
+# fuer das Host-Triple unter binaries/ (frischer Clone haette es nicht).
+( cd src-tauri
+  TRIPLE=$(rustc -vV | sed -n 's/^host: //p')
+  if [[ ! -f "binaries/nkk-secure-$TRIPLE" ]]; then
+    echo "  - nkk-secure CLI-Sidecar bauen ($TRIPLE)"
+    cargo build -p nkk-cli --release --quiet
+    mkdir -p binaries
+    cp "target/release/nkk-secure-access-cli" "binaries/nkk-secure-$TRIPLE"
+  fi
+  cargo check --quiet )
 for f in package.json src-tauri/tauri.conf.json src-tauri/resources/branding.json; do
   grep -q "\"version\": \"$VER\"" "$f" || { echo "FEHLER: $f nicht gebumpt"; exit 1; }
 done

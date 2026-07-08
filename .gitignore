@@ -7,6 +7,9 @@ dist-ssr
 # Tauri
 src-tauri/target
 src-tauri/gen
+# Sidecar-Binaries (nkk-secure CLI): werden von CI/release.sh aus nkk-cli
+# gebaut und pro Target-Triple hier abgelegt, nie eingecheckt.
+src-tauri/binaries/
 
 # OS
 .DS_Store

@@ -36,17 +36,25 @@ $nbUrl  = "https://pkgs.netbird.io/windows/x64"   # offizieller NSIS-Installer, 
 $latestJson = "https://github.com/ksleon-dev/nkk-secure-access-test/releases/latest/download/latest.json"
 
 # --- Helper: robuster Download (curl.exe -> BITS -> Invoke-WebRequest) -------
+# Gehaertet wie install-windows.ps1: KEIN Resume (-C -), KEIN --retry-all-errors
+# (kennt altes Win10-curl nicht -> sofortiger Fehlschlag), --fail + --proto =https,
+# und ein exakter Content-Length-Abgleich als Integritaetspruefung (faengt auch einen
+# verkuerzten BITS/IWR-Fallback). Server ohne Content-Length -> nur 1-MB-Untergrenze.
 function Get-File($url, $out) {
   Remove-Item $out -Force -ErrorAction SilentlyContinue
+  $expected = 0
+  try { $expected = [int64]((Invoke-WebRequest -Uri $url -Method Head -UseBasicParsing -ErrorAction Stop).Headers['Content-Length']) } catch {}
+  function Test-Ok { (Test-Path $out) -and ((Get-Item $out).Length -gt 1MB) -and ($expected -le 0 -or (Get-Item $out).Length -eq $expected) }
   $curl = Join-Path $env:WINDIR "System32\curl.exe"
   if (Test-Path $curl) {
-    & $curl -L --fail --retry 3 --retry-all-errors --connect-timeout 30 -o $out $url 2>$null
-    if (($LASTEXITCODE -eq 0) -and (Test-Path $out) -and ((Get-Item $out).Length -gt 1MB)) { return $true }
+    & $curl -L --fail --proto =https --retry 5 --retry-delay 2 --connect-timeout 30 -o $out $url 2>$null
+    if (($LASTEXITCODE -eq 0) -and (Test-Ok)) { return $true }
   }
   try { Start-BitsTransfer -Source $url -Destination $out -ErrorAction Stop
-        if ((Test-Path $out) -and ((Get-Item $out).Length -gt 1MB)) { return $true } } catch {}
+        if (Test-Ok) { return $true } } catch {}
   try { Invoke-WebRequest -Uri $url -OutFile $out -UseBasicParsing -ErrorAction Stop
-        if ((Test-Path $out) -and ((Get-Item $out).Length -gt 1MB)) { return $true } } catch {}
+        if (Test-Ok) { return $true } } catch {}
+  Remove-Item $out -Force -ErrorAction SilentlyContinue
   return $false
 }
 

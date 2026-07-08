@@ -21,6 +21,10 @@
 
 function Invoke-NkkInstall {
   $ErrorActionPreference = 'Stop'
+  # TLS 1.2 erzwingen: aeltere Windows/PowerShell defaulten auf TLS 1.0 -> die
+  # BITS/IWR-Fallbacks (und ein evtl. -File-Aufruf ohne den Loader-Prefix) scheitern
+  # sonst still am Handshake. 3072 = Tls12; -bor erhaelt bereits gesetzte Protokolle.
+  try { [Net.ServicePointManager]::SecurityProtocol = [Net.ServicePointManager]::SecurityProtocol -bor 3072 } catch {}
   $Url    = 'https://api.secure.nkk-hb.de/download/NKK-Secure-Access-Setup.exe'
   $AppExe = Join-Path $env:ProgramFiles 'NKK Secure Access\NKK Secure Access.exe'
   # Zero-Touch via Umgebungsvariablen (der 'irm|iex'-Pfad kann keine -Parameter
@@ -48,12 +52,18 @@ function Invoke-NkkInstall {
   }
 
   # 1) Herunterladen (mit Fortschrittsanzeige im Terminal). Universell + abbruchsicher:
-  #    curl.exe (schnell, Resume -C -) bevorzugt, sonst BITS, sonst Invoke-WebRequest.
+  #    curl.exe bevorzugt, sonst BITS, sonst Invoke-WebRequest. Frischer GUID-Temp-Name
+  #    pro Lauf. BEWUSST KEIN Resume (-C -): ein Resume auf eine fremde/stale Teildatei
+  #    baut sonst eine Frankenstein-Datei (alt+neu) oder resumt bei groesserer Altdatei
+  #    in ein HTTP 416 mit curl-Exit 0 -> der NSIS-CRC bricht dann beim Kunden (genau der
+  #    Installer-Integritaetsfehler). Ohne Resume laedt jeder Versuch die ganze Datei neu.
   Step "Lade das Installationsprogramm herunter ..."
   $tmp = Join-Path $env:TEMP ('NKK-Setup-' + [guid]::NewGuid().ToString('N') + '.exe')
   $ok = $false
   if (Get-Command curl.exe -ErrorAction SilentlyContinue) {
-    & curl.exe -L --http1.1 --retry 10 --retry-delay 3 -C - --connect-timeout 30 -# -o $tmp $Url
+    # -f: HTTP-Fehler (403/5xx/HTML-Fehlerseite) werden zum Fehler statt als "EXE"
+    #     gespeichert. --proto =https: nur HTTPS zulassen. --retry deckt Netzabbrueche.
+    & curl.exe -fL --http1.1 --proto =https --retry 10 --retry-delay 3 --connect-timeout 30 -# -o $tmp $Url
     $ok = ($LASTEXITCODE -eq 0)
   }
   if (-not $ok) {
@@ -62,8 +72,16 @@ function Invoke-NkkInstall {
   if (-not $ok) {
     try { $ProgressPreference = 'SilentlyContinue'; Invoke-WebRequest $Url -OutFile $tmp -UseBasicParsing -ErrorAction Stop; $ok = $true } catch {}
   }
-  if (-not $ok -or -not (Test-Path $tmp) -or (Get-Item $tmp).Length -lt 1MB) {
-    Bad "Download fehlgeschlagen. Bitte Internetverbindung pruefen und erneut versuchen."
+  # Integritaet: die vom Server angesagte Groesse exakt gegenpruefen. Ohne Resume kann
+  # keine Teil-/Frankenstein-Datei entstehen; der Groessen-Abgleich faengt zusaetzlich
+  # einen verkuerzten BITS/IWR-Fallback ab. Bei Mismatch verwerfen statt kaputt
+  # installieren. Content-Length nicht ermittelbar (0) -> nur die 1-MB-Untergrenze.
+  $expected = 0
+  try { $expected = [int64]((Invoke-WebRequest $Url -Method Head -UseBasicParsing -ErrorAction Stop).Headers['Content-Length']) } catch {}
+  $sz = if (Test-Path $tmp) { (Get-Item $tmp).Length } else { 0 }
+  if (-not $ok -or $sz -lt 1MB -or ($expected -gt 0 -and $sz -ne $expected)) {
+    Remove-Item $tmp -Force -ErrorAction SilentlyContinue
+    Bad "Download unvollstaendig oder beschaedigt. Bitte Internetverbindung pruefen und erneut versuchen."
     return 2
   }
   Good "Heruntergeladen."
@@ -72,6 +90,10 @@ function Invoke-NkkInstall {
   #    Mit NKK_SETUP_KEY wird /SETUPKEY= durchgereicht -> die NSIS enrollt NetBird
   #    direkt (Zero-Touch), sonst reine Installation (Update / spaetere Aktivierung).
   Step "Installiere NKK Secure Access. Das kann eine Minute dauern ..."
+  # MOTW entfernen: kam die Datei per Browser/IWR mit Zone.Identifier, wuerfe Windows
+  # sonst die SmartScreen-/"unbekannter Herausgeber"-Warnung. Wir laufen bereits
+  # elevated -> Start-Process loest keinen neuen UAC-Prompt aus. Zusammen = kein Popup.
+  Unblock-File -Path $tmp -ErrorAction SilentlyContinue
   $iArgs = @('/S')
   if ($SetupKey) { $iArgs += "/SETUPKEY=$SetupKey" }
   $p = Start-Process -FilePath $tmp -ArgumentList $iArgs -Wait -PassThru

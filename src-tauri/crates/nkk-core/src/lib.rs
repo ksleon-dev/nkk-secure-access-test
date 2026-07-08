@@ -9,4 +9,6 @@ pub mod branding;
 pub mod error;
 pub mod logging;
 pub mod netbird;
+pub mod profile;
 pub mod sys;
+pub mod updater;

@@ -11,7 +11,7 @@ import { Label } from "@/components/ui/label"
 import { Skeleton } from "@/components/ui/skeleton"
 import { cn } from "@/lib/utils"
 import { copyText } from "@/lib/clipboard"
-import { macInstallCmd, winInstallCmd } from "@/lib/installcmd"
+import { macInstallCmd, winInstallCmd, winOnboardCmd } from "@/lib/installcmd"
 import { PROFILE_OPTIONS, roleForGroups, profileToken, type ProfileRole } from "@/lib/profiles"
 import {
   Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle,
@@ -284,7 +284,6 @@ function CmdBlock({ label, cmd, note }: { label: string; cmd: string; note?: str
 // eingebettet; die App startet danach direkt im richtigen Profil.
 export function RolloutCommands({ keyValue, keyGroups }: { keyValue: string; keyGroups?: string[] }) {
   const { data } = useData()
-  const exe = data?.downloads?.windows_exe ?? FALLBACK_EXE
   const dmg = data?.downloads?.macos_dmg ?? FALLBACK_DMG
   // Key-Gruppen-IDs -> Namen, daraus das Profil vorwaehlen.
   const groupNames = (keyGroups ?? []).map((id) => data?.groups.find((g) => g.id === id)?.name ?? id)
@@ -292,7 +291,8 @@ export function RolloutCommands({ keyValue, keyGroups }: { keyValue: string; key
   // Opakes Token statt Klartext-Rolle in den One-Liner (nicht lesbar/faelschbar).
   // "user" = Standard -> kein Token noetig (Rolle ist ohnehin der Default).
   const profileArg = profileToken(profile)
-  const win = winInstallCmd(exe, `"/S","/SETUPKEY=${keyValue}"`, { progress: true, launch: true, profile: profileArg, setupKey: keyValue })
+  // Onboarding-Loader (gehostetes, gehaertetes Skript) + Zero-Touch-Key/Profil per Env.
+  const win = winOnboardCmd({ setupKey: keyValue, profile: profileArg })
   // Bulletproof Universal-Installer/Updater + Zero-Touch-Key (ein gehostetes Skript).
   const mac = macInstallCmd({ setupKey: keyValue, dmgUrl: dmg, profile: profileArg })
   return (

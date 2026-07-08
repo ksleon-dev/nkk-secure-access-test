@@ -72,7 +72,10 @@ if [ "$need_install" = "1" ]; then
   trap cleanup EXIT INT TERM
 
   log "Lade aktuelle Version ..."
-  curl -fL -C - --retry 10 --retry-all-errors --retry-delay 2 --connect-timeout 30 -o "$DMG" "$DMG_URL" \
+  # BEWUSST KEIN Resume (-C -): ein Resume auf eine fremde/stale Teildatei baut sonst
+  # eine Frankenstein-DMG (alt+neu). --retry deckt Netzabbrueche; jeder Versuch laedt
+  # ganz neu. -f faengt HTTP-Fehler/HTML statt sie als DMG zu speichern.
+  curl -fL --retry 10 --retry-all-errors --retry-delay 2 --connect-timeout 30 -o "$DMG" "$DMG_URL" \
     || { err "Download fehlgeschlagen. Bitte nochmal ausfuehren."; exit 1; }
 
   log "Pruefe Download ..."
@@ -113,6 +116,10 @@ if [ "$need_install" = "1" ]; then
 
   log "Gatekeeper entschaerfen ..."
   xattr -cr "$DEST" 2>/dev/null || true                       # ALLE xattrs strippen (vor codesign)
+  # Inside-out signieren: erst die nested CLI (Sidecar in Contents/MacOS/nkk-secure),
+  # dann das Bundle. Ohne das bliebe die CLI auf Apple Silicon unsigniert -> "killed"
+  # beim Aufruf ueber den nkk-secure-Symlink. --deep waere unsauber, daher explizit.
+  [ -f "$DEST/Contents/MacOS/nkk-secure" ] && codesign --force --sign - "$DEST/Contents/MacOS/nkk-secure" >/dev/null 2>&1 || true
   codesign --force --sign - "$DEST" >/dev/null 2>&1 || true   # Ad-hoc, Intel UND Apple Silicon
   xattr -dr com.apple.quarantine "$DEST" 2>/dev/null || true  # Quarantaene erneut weg
 
@@ -122,6 +129,20 @@ if [ "$need_install" = "1" ]; then
     archs="$(lipo -archs "$exe" 2>/dev/null || echo '?')"
     case "$(uname -m):$archs" in arm64:*arm64*|x86_64:*x86_64*) : ;; *) log "Hinweis: App-Architektur ($archs) passt evtl. nicht zu diesem Mac ($(uname -m))."; ;; esac
   fi
+fi
+
+# --- 1a) CLI-Symlink: nkk-secure in den PATH ----------------------------------
+# Die mitgelieferte CLI (Sidecar) liegt in Contents/MacOS/nkk-secure. Ein Symlink
+# in einem PATH-Verzeichnis macht sie als `nkk-secure` im Terminal tippbar. Pfad
+# ueber $DEST stabil, ueberlebt App-Updates. Best effort, nie fatal: /usr/local/bin
+# braucht als Nutzer evtl. Rechte (dann still uebersprungen), als root klappt es.
+if [ -n "$DEST" ] && [ -x "$DEST/Contents/MacOS/nkk-secure" ]; then
+  for bindir in /usr/local/bin /opt/homebrew/bin; do
+    if [ -d "$bindir" ] && { [ -w "$bindir" ] || [ "$(id -u)" = "0" ]; }; then
+      ln -sf "$DEST/Contents/MacOS/nkk-secure" "$bindir/nkk-secure" 2>/dev/null \
+        && { log "CLI verfuegbar: nkk-secure ($bindir)"; break; }
+    fi
+  done
 fi
 
 # --- 1b) NetBird mitinstallieren (nur als root, z.B. Level/MDM) ----------------

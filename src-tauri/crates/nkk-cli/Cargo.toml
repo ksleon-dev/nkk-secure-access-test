@@ -15,3 +15,7 @@ nkk-core = { path = "../nkk-core" }
 tokio = { workspace = true }
 serde_json = { workspace = true }
 clap = { version = "4", features = ["derive"] }
+# Linux-Self-Update: dieselbe minisign-Signatur wie der GUI-Updater verifizieren
+# (beide Crates liegen bereits im Workspace-Lock via tauri-plugin-updater).
+minisign-verify = "0.2"
+base64 = "0.21"

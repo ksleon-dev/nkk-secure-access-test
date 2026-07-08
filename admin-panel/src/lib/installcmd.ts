@@ -37,6 +37,24 @@ export function winRolloutCmd(): string {
   return `[Net.ServicePointManager]::SecurityProtocol=3072;$f="$env:TEMP\\nkk-rollout.ps1";iwr '${WIN_ROLLOUT_URL}' -OutFile $f -UseBasicParsing;powershell -ExecutionPolicy Bypass -NoProfile -File $f`
 }
 
+// Onboarding-Einzeiler (Nutzer, in einer Admin-PowerShell). Laedt das EINE gehostete,
+// gehaertete Skript install-windows.ps1 und fuehrt es aus - wie der Mac-Befehl und
+// winRolloutCmd. Vorteil gegenueber einem Inline-Block: der Befehl ist kurz, die ganze
+// Download-/Install-Robustheit lebt server-seitig im Skript, Fixes wirken SOFORT ohne
+// neuen Befehl oder App-Release, und ein alter, beim Kunden liegender Befehl kann nicht
+// mehr veralten (er ist nur noch ein Loader). TLS 1.2 erzwungen (aelteres Windows laedt
+// sonst gar nicht). Key/Profil per Env, weil der irm|iex-Pfad keine -Parameter nimmt;
+// das Skript liest NKK_SETUP_KEY / NKK_PROFILE. Single-quotes: Key/Profil sind
+// [A-Za-z0-9-]-Tokens (kein ' darin), daher keine Escape-Falle.
+const WIN_INSTALL_SCRIPT_URL = "https://api.secure.nkk-hb.de/download/install-windows.ps1"
+export function winOnboardCmd(opts?: { setupKey?: string; profile?: string }): string {
+  const env: string[] = []
+  if (opts?.setupKey) env.push(`$env:NKK_SETUP_KEY='${opts.setupKey}'`)
+  if (opts?.profile) env.push(`$env:NKK_PROFILE='${opts.profile}'`)
+  const prefix = env.length ? env.join("; ") + "; " : ""
+  return `[Net.ServicePointManager]::SecurityProtocol=3072; ${prefix}irm '${WIN_INSTALL_SCRIPT_URL}' | iex`
+}
+
 export function winInstallCmd(
   url: string,
   installArgs: string,
@@ -76,19 +94,26 @@ export function winInstallCmd(
   // Schliesst den if($resolved)-Block aus pdSetup (Profil/Key nur bei aufgeloestem User).
   const pdClose = needPd ? ` }` : ""
   return [
-    // Pre-Delete: pro Lauf frisch starten, damit curl -C - NIE auf eine fremde/
-    // stale nkk-setup.exe resumt (HTTP 416 -> curl exit 0 -> falsche Version). -C -
-    // bleibt fuer Within-Run-Resume (--retry haelt die Teildatei WAEHREND des Laufs).
-    `$u="${url}"; $o="$env:TEMP\\nkk-setup.exe"; Remove-Item $o -EA SilentlyContinue; $ok=$false`,
+    // Frischer GUID-Temp-Name pro Lauf + TLS 1.2 erzwingen (aelteres Windows).
+    // KEIN Resume (-C -): ein Resume auf eine fremde/stale Teildatei baut sonst eine
+    // Frankenstein-Datei oder resumt bei groesserer Altdatei in ein HTTP 416 mit
+    // curl-Exit 0 -> der NSIS-CRC bricht beim Kunden (der Installer-Integritaetsfehler).
+    // Der GUID-Name macht Kollisionen ohnehin unmoeglich; ohne Resume laedt jeder
+    // Versuch die ganze Datei neu.
+    `[Net.ServicePointManager]::SecurityProtocol=3072; $u="${url}"; $o=Join-Path $env:TEMP ("nkk-setup-"+[guid]::NewGuid().ToString('N')+".exe"); $ok=$false`,
     `Write-Host "NKK Secure Access - Download laeuft ..." -ForegroundColor Cyan`,
-    // F9: --retry-all-errors kennt altes Windows-10-curl nicht -> curl scheitert
-    // sofort. Weglassen; --retry deckt Netz-/Verbindungsabbrueche (der haeufige Fall)
-    // ab, -C - setzt bei Wiederholung fort. BITS/IWR bleiben als Fallback.
-    `if(Get-Command curl.exe -EA SilentlyContinue){ curl.exe -L --http1.1 --retry 10 --retry-delay 3 -C - --connect-timeout 30${p} -o $o $u; $ok=($LASTEXITCODE -eq 0) }`,
+    // -f: HTTP-Fehler (403/5xx/HTML) werden zum Fehler statt als "EXE" gespeichert.
+    // --proto =https: nur HTTPS. --retry deckt Netzabbrueche; kein --retry-all-errors
+    // (kennt altes Windows-10-curl nicht -> sofortiger Fehlschlag).
+    `if(Get-Command curl.exe -EA SilentlyContinue){ curl.exe -fL --http1.1 --proto =https --retry 10 --retry-delay 3 --connect-timeout 30${p} -o $o $u; $ok=($LASTEXITCODE -eq 0) }`,
     `if(-not $ok){ try{ Import-Module BitsTransfer -EA SilentlyContinue; Start-BitsTransfer -Source $u -Destination $o -EA Stop; $ok=$true }catch{} }`,
     `if(-not $ok){ try{ $ProgressPreference='SilentlyContinue'; Invoke-WebRequest $u -OutFile $o -UseBasicParsing; $ok=$true }catch{} }`,
-    `if($ok -and (Test-Path $o) -and (Get-Item $o).Length -lt 1MB){ $ok=$false; Remove-Item $o -EA SilentlyContinue }`,
-    `if($ok){ Write-Host "Installiere (kann einen Moment dauern) ..." -ForegroundColor Cyan; $rc=(Start-Process $o -ArgumentList ${installArgs} -Wait -PassThru).ExitCode; Remove-Item $o -EA SilentlyContinue; if($rc -eq 0){ Write-Host "-> Fertig installiert." -ForegroundColor Green;${pdSetup}${keyWrite}${profileWrite}${pdClose}${launch} }else{ Write-Host ("-> Installer meldete Fehler (Code "+$rc+") - bitte nochmal ausfuehren.") -ForegroundColor Red } }else{ Write-Host "-> Download fehlgeschlagen - bitte nochmal ausfuehren." -ForegroundColor Red }`,
+    // Integritaet: vom Server angesagte Groesse exakt gegenpruefen (faengt auch einen
+    // verkuerzten BITS/IWR-Fallback). Content-Length nicht ermittelbar -> nur 1-MB-Floor.
+    `if($ok){ try{ $exp=[int64]((Invoke-WebRequest $u -Method Head -UseBasicParsing).Headers['Content-Length']); if($exp -gt 0 -and (Get-Item $o).Length -ne $exp){ $ok=$false } }catch{} }`,
+    `if($ok -and (Get-Item $o).Length -lt 1MB){ $ok=$false }`,
+    `if(-not $ok){ Remove-Item $o -EA SilentlyContinue }`,
+    `if($ok){ Write-Host "Installiere (kann einen Moment dauern) ..." -ForegroundColor Cyan; Unblock-File $o -EA SilentlyContinue; $rc=(Start-Process $o -ArgumentList ${installArgs} -Wait -PassThru).ExitCode; Remove-Item $o -EA SilentlyContinue; if($rc -eq 0){ Write-Host "-> Fertig installiert." -ForegroundColor Green;${pdSetup}${keyWrite}${profileWrite}${pdClose}${launch} }else{ Write-Host ("-> Installer meldete Fehler (Code "+$rc+") - bitte nochmal ausfuehren.") -ForegroundColor Red } }else{ Write-Host "-> Download unvollstaendig oder beschaedigt - bitte nochmal ausfuehren." -ForegroundColor Red }`,
   ]
     .map((l) => i + l)
     .join("\n")

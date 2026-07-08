@@ -5,7 +5,7 @@ mod tray;
 // the crate root so the rest of the app keeps referring to crate::netbird,
 // crate::branding, crate::error and crate::logging unchanged - no drift, one
 // implementation shared with the headless CLI.
-pub use nkk_core::{branding, error, logging, netbird};
+pub use nkk_core::{branding, error, logging, netbird, profile};
 
 use tauri::{Emitter, Manager};
 
@@ -93,6 +93,9 @@ pub fn run() {
             commands::init_user_disconnected(app.handle());
             commands::cleanup_stale_credentials(&rdp_targets, &smb_targets);
             commands::start_status_polling(app.handle().clone());
+            // Netz-Standort (Firmennetz/unterwegs) nativ pollen, damit die Anzeige auch
+            // im Tray (gedrosselte JS-Timer) live bleibt - nicht nur bei App-Interaktion.
+            commands::start_network_context_polling(app.handle().clone());
             // RDP-Vertrauen (Zertifikat + Registry) im Hintergrund einrichten, damit der
             // erste Terminalserver-Klick keine Windows-Warnung zeigt und nicht traege ist.
             commands::warm_rdp_trust();

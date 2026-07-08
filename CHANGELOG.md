@@ -6,6 +6,10 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), [SemVer](https
 
 ## [Unreleased]
 
+## [0.3.31] - 2026-07-08
+
+- Neue Kommandozeile nkk-secure auf jedem Geraet (Status, Verbinden, Trennen, Profil, Diagnose und headless Update fuer die IT); die Anzeige Firmennetz/unterwegs aktualisiert sich zuverlaessig von selbst, auch im Hintergrund; Installation und Updates nochmals robuster gegen Netzabbrueche
+
 ## [0.3.30] - 2026-07-07
 
 - Der Fernzugriff oeffnet jetzt auf jedem Geraet ohne die Herausgeber-Warnung; neue Geraete richten sich ohne Key-Nachfrage ein (Zero-Touch); neue Einstellung 'Nur Hauptbildschirm' fuer die Fernsitzung; Download und Installation robuster gegen Netzabbrueche

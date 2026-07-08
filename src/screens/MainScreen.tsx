@@ -1,4 +1,5 @@
 import { invoke } from "@tauri-apps/api/core";
+import { listen } from "@tauri-apps/api/event";
 import clsx from "clsx";
 import {
   Activity,
@@ -116,6 +117,25 @@ export function MainScreen({
       clearTimeout(settle);
     };
   }, [state]);
+  // Live-Updates vom nativen Standort-Poller (Rust). Der pusht Aenderungen
+  // fensterfokus-unabhaengig, auch wenn die App im Tray liegt und der Webview die
+  // JS-Timer drosselt. So bleibt "im Firmennetz/unterwegs" genauso frisch wie der
+  // Verbindungsstatus, ohne dass man die App anfassen muss. Der [state]-Probe oben
+  // bleibt fuer die sofortige Reaktion beim Verbinden/Trennen.
+  useEffect(() => {
+    let alive = true;
+    let un: (() => void) | undefined;
+    listen<NetworkContext>("network-context-changed", (ev) => {
+      if (alive) setNetCtx(ev.payload);
+    }).then((u) => {
+      if (alive) un = u;
+      else u();
+    });
+    return () => {
+      alive = false;
+      un?.();
+    };
+  }, []);
   // Right after a disconnect the tunnel is still tearing down, so the on-site
   // probe can briefly read the server as directly reachable and flash a wrong
   // "no VPN needed" banner. Ignore the on-site read during that settle window

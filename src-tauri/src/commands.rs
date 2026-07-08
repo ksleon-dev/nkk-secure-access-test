@@ -687,9 +687,13 @@ pub async fn nb_connect(
         Some(ConnectGuard(&state.connect_in_flight))
     };
 
-    // User explicitly connecting - clear the disconnect flag so auto-reconnect works again
-    state.user_disconnected.store(false, Ordering::Relaxed);
+    // User explicitly connecting - clear the disconnect flag so auto-reconnect works again.
+    // Reihenfolge WICHTIG: erst die persistente Marker-Datei, dann das Atomic. Der
+    // Poll-Loop rekonzilliert das Atomic pro Tick aus der Datei (fuer CLI-Konsistenz);
+    // schriebe man das Atomic zuerst, koennte ein Tick im Mikro-Fenster die noch alte
+    // Datei lesen und die gerade getroffene Wahl kurz zuruecksetzen.
     set_user_disconnected_marker(&app, false);
+    state.user_disconnected.store(false, Ordering::Relaxed);
     reset_reconnect_state();
     let branding = ensure_branding(&app, &state).await?;
 
@@ -1053,9 +1057,11 @@ pub async fn nb_disconnect(
     state: State<'_, AppState>,
 ) -> AppResult<()> {
     // User explicitly disconnecting - set flag so auto-reconnect won't fight them,
-    // and persist it so the choice survives a restart / autostart.
-    state.user_disconnected.store(true, Ordering::Relaxed);
+    // and persist it so the choice survives a restart / autostart. Reihenfolge wie
+    // bei nb_connect: erst Marker-Datei, dann Atomic (der Poll-Loop liest die Datei
+    // pro Tick zurueck; sonst koennte ein Tick das Disconnect kurz zuruueckflippen).
     set_user_disconnected_marker(&app, true);
+    state.user_disconnected.store(true, Ordering::Relaxed);
     state.netbird.down().await?;
     if let Ok(s) = state.netbird.status().await {
         let _ = app.emit("netbird-status-changed", &s);
@@ -2700,46 +2706,10 @@ fn apply_app_settings(s: &AppSettings) {
     NOTIFICATIONS.store(s.notifications, Ordering::Relaxed);
 }
 
-// Gueltige Profil-/Rollen-Token (muss mit src/lib/roles.ts USER_ROLES uebereinstimmen).
-// Opakes Profil-Token -> Rolle. Der Onboarding-One-Liner traegt bewusst NICHT die
-// Klartext-Rolle (sonst koennte ein Nutzer sie ablesen oder sich auf it_admin
-// umschreiben), sondern ein festes, nicht-erratbares Token pro Rolle. MUSS synchron
-// mit admin-panel/src/lib/profiles.ts (PROFILE_TOKENS) bleiben. WICHTIG: Das Token
-// steuert NUR die angezeigten Kacheln - der echte Netzwerkzugriff wird IMMER durch
-// die NetBird-Gruppe (ueber den Setup-Key kryptografisch vergeben) begrenzt. Selbst
-// ein gefaelschtes it_admin-Token bringt einem InFact-Geraet keinen Server-Zugriff.
-fn role_for_token(token: &str) -> Option<&'static str> {
-    match token.trim() {
-        "hK7pR2xW" => Some("manager"),
-        "zB4nT9qL" => Some("it_admin"),
-        "vY6cF3mP" => Some("infact"),
-        _ => None,
-    }
-}
-
-// Install-Zeit-Profil-Bootstrap: der Onboarding-One-Liner legt optional eine
-// Datei mit dem gewuenschten Profil (z.B. "infact") ab. Bewusst ein fixer,
-// plattform-einheitlicher Pfad, den der One-Liner OHNE Kenntnis des Tauri-
-// Identifiers beschreiben kann (Windows: %APPDATA%\nkk-secure-access\profile,
-// sonst ~/.config/nkk-secure-access/profile - dieselbe Konvention wie die
-// setup-key-Datei auf macOS).
-fn profile_bootstrap_path() -> Option<std::path::PathBuf> {
-    #[cfg(target_os = "windows")]
-    {
-        let base = std::env::var("APPDATA").ok()?;
-        Some(std::path::PathBuf::from(base).join("nkk-secure-access").join("profile"))
-    }
-    #[cfg(not(target_os = "windows"))]
-    {
-        let home = std::env::var("HOME").ok()?;
-        Some(
-            std::path::PathBuf::from(home)
-                .join(".config")
-                .join("nkk-secure-access")
-                .join("profile"),
-        )
-    }
-}
+// Profil-Token-Mapping + Bootstrap-Pfad leben jetzt in nkk-core::profile
+// (geteilt mit der nkk-secure-CLI, eine Implementierung, kein Drift). Doku
+// und Sicherheitsbegruendung dort.
+use crate::profile::{profile_bootstrap_path, role_for_token};
 
 // Profil-Datei EINMALIG lesen und danach immer loeschen (auch bei ungueltigem
 // Inhalt), damit sie nicht bei jedem Start erneut greift und eine spaetere
@@ -4571,6 +4541,9 @@ fn reconnect_backoff_secs(failures: u32) -> u64 {
 /// ACTUAL state transitions - not on every 30s poll tick.
 use std::sync::Mutex as StdMutex;
 static LAST_KNOWN_STATE: StdMutex<Option<String>> = StdMutex::new(None);
+/// Letzter an die UI gemeldeter Netz-Standort (serialisiert), damit der native
+/// Standort-Poller nur bei echter Aenderung ein Event feuert (kein UI-Flackern).
+static LAST_NET_CONTEXT: StdMutex<Option<String>> = StdMutex::new(None);
 
 /// Clean up any stale credentials left over from a previous crash.
 /// If the app was killed before the 90s cleanup timer fired, cmdkey entries
@@ -4629,6 +4602,60 @@ pub fn start_status_polling(app: AppHandle) {
     });
 }
 
+/// Netz-Standort (im Firmennetz vs. unterwegs) NATIV pollen und bei Aenderung an die
+/// UI melden. Wichtig: der Webview drosselt/pausiert JS-Timer, sobald das Fenster im
+/// Tray liegt - ein reines Frontend-Intervall wuerde den Standort dann nicht mehr
+/// aktualisieren (Symptom: "Firmennetz/unterwegs" bleibt stehen, obwohl der Status
+/// frisch bleibt, weil der Status aus diesem nativen Poller kommt). Dieser Poller laeuft
+/// wie der Status-Poller unabhaengig vom Fensterfokus weiter. Ruft dieselbe
+/// detect_network_context-Logik wie der Command auf (kein zweiter Pfad, kein Drift) und
+/// emittiert nur bei echter Aenderung.
+///
+/// SCHNELL UND ZUVERLAESSIG ohne Dauerlast: alle 5s nur ein BILLIGER Netz-Fingerabdruck
+/// (Default-Routen inkl. Gateway/Interface). Der aendert sich sofort bei Kabel/WLAN-
+/// Wechsel, Umzug Buero<->unterwegs oder VPN-Flip. Nur DANN (oder als Sicherheitsnetz
+/// alle ~45s) laeuft die teurere Onsite-Pruefung. So wird eine Aenderung binnen ~5s
+/// erkannt, ohne im Leerlauf staendig TCP-Proben gegen die Server zu feuern.
+pub fn start_network_context_polling(app: AppHandle) {
+    tauri::async_runtime::spawn(async move {
+        // Erste Messung leicht verzoegern, bis Branding/Routen nach dem Start stehen.
+        sleep(Duration::from_secs(2)).await;
+        let mut last_fingerprint = String::new();
+        // u32::MAX -> die erste Runde erzwingt eine Voll-Pruefung.
+        let mut ticks_since_full: u32 = u32::MAX;
+        loop {
+            let fingerprint = enumerate_default_routes().await.join("|");
+            let net_changed = fingerprint != last_fingerprint;
+            ticks_since_full = ticks_since_full.saturating_add(1);
+            // Voll-Pruefung bei echter Netz-Aenderung (schnelle Reaktion) oder als
+            // Sicherheitsnetz alle 9 Ticks (~45s), falls sich serverseitig etwas aendert.
+            if net_changed || ticks_since_full >= 9 {
+                last_fingerprint = fingerprint;
+                ticks_since_full = 0;
+                if let Some(state) = app.try_state::<AppState>() {
+                    if let Ok(ctx) = detect_network_context(app.clone(), state).await {
+                        if let Ok(json) = serde_json::to_string(&ctx) {
+                            let changed = {
+                                let mut last =
+                                    LAST_NET_CONTEXT.lock().unwrap_or_else(|e| e.into_inner());
+                                let changed = last.as_deref() != Some(json.as_str());
+                                if changed {
+                                    *last = Some(json);
+                                }
+                                changed
+                            };
+                            if changed {
+                                let _ = app.emit("network-context-changed", ctx);
+                            }
+                        }
+                    }
+                }
+            }
+            sleep(Duration::from_secs(5)).await;
+        }
+    });
+}
+
 async fn poll_loop(app: AppHandle) {
     sleep(Duration::from_millis(500)).await;
     // Adaptive interval: fast while unsettled, slow once stably connected.
@@ -4639,6 +4666,15 @@ async fn poll_loop(app: AppHandle) {
                 .is_ok()
             {
                 if let Some(state) = app.try_state::<AppState>() {
+                    // CLI-Konsistenz: nkk-secure connect/disconnect schreibt denselben
+                    // user-disconnected-Marker (nkk-core::profile). Pro Tick billig
+                    // nachlesen (ein stat), damit ein CLI-Trennen nicht vom
+                    // Auto-Reconnect ueberstimmt wird und ein CLI-Connect ihn wieder
+                    // freigibt. GUI-Aktionen setzen Marker + Atomic weiterhin selbst.
+                    state.user_disconnected.store(
+                        read_user_disconnected_marker(&app),
+                        Ordering::Relaxed,
+                    );
                     let payload = match state.netbird.status().await {
                         Ok(s) => {
                             MISSING_NOTIFIED.store(false, Ordering::Relaxed);

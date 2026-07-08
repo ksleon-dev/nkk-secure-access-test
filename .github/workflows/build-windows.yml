@@ -36,13 +36,46 @@ jobs:
         run: |
           cargo test -p nkk-core --release --quiet
           cargo build -p nkk-cli --release
-      - name: Upload Linux CLI binary
+          # Stabiler Asset-Name (das latest.json linux-x86_64 zeigt darauf).
+          cp target/release/nkk-secure-access-cli target/release/nkk-secure-linux-x86_64
+      - name: Upload Linux CLI binary (workflow artifact)
         uses: actions/upload-artifact@v4
         with:
           name: nkk-secure-access-cli-linux
-          path: src-tauri/target/release/nkk-secure-access-cli
+          path: src-tauri/target/release/nkk-secure-linux-x86_64
           if-no-files-found: error
           retention-days: 30
+
+      # Tag-Build: Linux-CLI mit demselben minisign-Key wie die App signieren und
+      # als Release-Asset publishen -> `nkk-secure update` (Linux) zieht die Datei
+      # und verifiziert die Signatur gegen den eingebackenen Pubkey. Best effort:
+      # faellt Signatur/Upload aus, bleibt latest.json ohne linux-Eintrag und die
+      # Linux-CLI meldet sauber "noch nicht verfuegbar" (kein Bruch fuer Win/Mac).
+      - name: Setup Node (fuer tauri signer)
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+      - name: Sign Linux CLI (minisign via tauri signer)
+        if: startsWith(github.ref, 'refs/tags/v')
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ""
+        run: |
+          npm ci
+          npx @tauri-apps/cli signer sign --private-key "$TAURI_SIGNING_PRIVATE_KEY" --password "" \
+            src-tauri/target/release/nkk-secure-linux-x86_64
+          ls -la src-tauri/target/release/nkk-secure-linux-x86_64*
+      - name: Publish Linux CLI to GitHub Release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: |
+            src-tauri/target/release/nkk-secure-linux-x86_64
+            src-tauri/target/release/nkk-secure-linux-x86_64.sig
+          draft: false
+          prerelease: ${{ vars.CANARY == 'true' }}
 
   build-windows:
     runs-on: windows-latest
@@ -122,6 +155,18 @@ jobs:
             if ($len -lt $checks[$f]) { Write-Error "Bundle-Datei zu klein/leer: $f ($len B, min $($checks[$f]))"; exit 1 }
             Write-Host "OK: $f ($len B)"
           }
+
+      # Sidecar: die nkk-secure-CLI wird mit der App ausgeliefert (externalBin).
+      # MUSS vor jedem Compile des App-Crates liegen - generate_context! validiert
+      # binaries/nkk-secure-<triple>.exe zur Compile-Zeit.
+      - name: Build nkk-secure CLI sidecar
+        working-directory: src-tauri
+        shell: pwsh
+        run: |
+          cargo build -p nkk-cli --release
+          New-Item -ItemType Directory -Force -Path binaries | Out-Null
+          Copy-Item target/release/nkk-secure-access-cli.exe binaries/nkk-secure-x86_64-pc-windows-msvc.exe
+          Write-Host "Sidecar: $((Get-Item binaries/nkk-secure-x86_64-pc-windows-msvc.exe).Length) B"
 
       # The app crate's lib test compiles run(), which invokes
       # tauri::generate_context!() - a proc macro that validates frontendDist
@@ -324,6 +369,27 @@ jobs:
           node -e "const f='src-tauri/tauri.conf.json';const fs=require('fs');const j=JSON.parse(fs.readFileSync(f));j.plugins.updater.endpoints=['$URL'];fs.writeFileSync(f,JSON.stringify(j,null,2))"
           echo "Updater endpoint pinned to $URL"
 
+      # Sidecar: nkk-secure-CLI fuer beide Arches bauen und als Universal-Binary
+      # bereitstellen. generate_context! prueft beim Universal-Build je Arch das
+      # Triple-File, der Bundler will -universal-apple-darwin: alle drei ablegen.
+      - name: Build nkk-secure CLI sidecar (universal)
+        working-directory: src-tauri
+        run: |
+          set -e
+          cargo build -p nkk-cli --release --target x86_64-apple-darwin
+          cargo build -p nkk-cli --release --target aarch64-apple-darwin
+          mkdir -p binaries
+          cp target/x86_64-apple-darwin/release/nkk-secure-access-cli binaries/nkk-secure-x86_64-apple-darwin
+          cp target/aarch64-apple-darwin/release/nkk-secure-access-cli binaries/nkk-secure-aarch64-apple-darwin
+          lipo -create -output binaries/nkk-secure-universal-apple-darwin \
+            binaries/nkk-secure-x86_64-apple-darwin binaries/nkk-secure-aarch64-apple-darwin
+          # KRITISCH: lipo bricht die Ad-hoc-Signatur der Einzel-Arches -> die
+          # Universal-Datei ist ungueltig signiert und wuerde auf Apple Silicon
+          # beim Start gekillt. Neu ad-hoc signieren (das bundelt Tauri dann mit).
+          codesign --force --sign - binaries/nkk-secure-universal-apple-darwin
+          codesign --verify --verbose binaries/nkk-secure-universal-apple-darwin || true
+          ls -la binaries/
+
       - name: Build Tauri (universal app + DMG, with updater artifact)
         run: npm run tauri build -- --bundles app,dmg --target universal-apple-darwin
         env:
@@ -383,10 +449,10 @@ jobs:
   # windows-only and never clobbers a good manifest.
   patch-manifest:
     runs-on: ubuntu-latest
-    needs: [build-windows, build-macos]
+    needs: [build-windows, build-macos, build-linux-cli]
     if: startsWith(github.ref, 'refs/tags/v')
     steps:
-      - name: Add darwin to latest.json
+      - name: Add darwin + linux to latest.json
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
@@ -401,8 +467,13 @@ jobs:
           SIG_URL=$(gh api "$API" --jq '.assets[] | select(.name | endswith(".app.tar.gz.sig")) | .browser_download_url' | head -1)
           MAC_SIG=""
           if [ -n "$SIG_URL" ]; then MAC_SIG=$(curl -fsSL "$SIG_URL"); fi
+          # Headless-Linux-CLI (Self-Update): eigenes signiertes Asset + .sig.
+          LINUX_URL=$(gh api "$API" --jq '.assets[] | select(.name=="nkk-secure-linux-x86_64") | .browser_download_url' | head -1)
+          LINUX_SIG_URL=$(gh api "$API" --jq '.assets[] | select(.name=="nkk-secure-linux-x86_64.sig") | .browser_download_url' | head -1)
+          LINUX_SIG=""
+          if [ -n "$LINUX_SIG_URL" ]; then LINUX_SIG=$(curl -fsSL "$LINUX_SIG_URL"); fi
           curl -fsSL -o latest.json "https://github.com/$REPO/releases/download/$TAG/latest.json"
-          EXE_URL="$EXE_URL" TARGZ_URL="$TARGZ_URL" MAC_SIG="$MAC_SIG" node -e '
+          EXE_URL="$EXE_URL" TARGZ_URL="$TARGZ_URL" MAC_SIG="$MAC_SIG" LINUX_URL="$LINUX_URL" LINUX_SIG="$LINUX_SIG" node -e '
             const fs = require("fs");
             const m = JSON.parse(fs.readFileSync("latest.json", "utf8"));
             if (!m.platforms || !m.platforms["windows-x86_64"]) {
@@ -420,8 +491,16 @@ jobs:
             } else {
               console.log("::warning::macOS updater artifact absent - manifest stays windows-only");
             }
+            // Headless-Linux-CLI (nur die CLI, nicht die GUI): fuer nkk-secure update.
+            const lurl = process.env.LINUX_URL;
+            const lsig = (process.env.LINUX_SIG || "").trim();
+            if (lurl && lsig) {
+              m.platforms["linux-x86_64"] = { signature: lsig, url: lurl };
+            } else {
+              console.log("::warning::linux CLI asset absent - nkk-secure update (Linux) bleibt inaktiv");
+            }
             fs.writeFileSync("latest.json", JSON.stringify(m, null, 2));
             console.log("platforms now: " + Object.keys(m.platforms).join(", "));
           '
           gh release upload "$TAG" latest.json --repo "$REPO" --clobber
-          echo "latest.json finalized (windows url corrected; darwin merged when present)."
+          echo "latest.json finalized (windows url corrected; darwin + linux merged when present)."

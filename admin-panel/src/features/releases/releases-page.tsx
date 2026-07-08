@@ -8,7 +8,7 @@ import { Button } from "@/components/ui/button"
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select"
 import { CheckCircle2, XCircle, Download, FileText, Copy, Check, Loader2 } from "lucide-react"
 import { copyText } from "@/lib/clipboard"
-import { macInstallCmd, winInstallCmd, winRolloutCmd } from "@/lib/installcmd"
+import { macInstallCmd, winOnboardCmd, winRolloutCmd } from "@/lib/installcmd"
 import { RolloutCommands } from "@/features/keys/keys-page"
 import { cn } from "@/lib/utils"
 import changelogRaw from "@/data/changelog.md?raw"
@@ -150,7 +150,8 @@ export function ReleasesPage() {
   const cur = data.current_version
   const channelOk = !!uc?.ok
   const dl = data.downloads ?? { windows_exe: DL_EXE, windows_zip: DL_ZIP, macos_dmg: null }
-  const winCmd = winInstallCmd(dl.windows_exe, '"/S"', { progress: true, launch: true })
+  // Onboarding-Loader (ein gehostetes, gehaertetes Skript, kein Drift) statt Inline-Block.
+  const winCmd = winOnboardCmd()
   // Bulletproof Universal-Installer/Updater (ein gehostetes Skript, kein Drift).
   const macCmd = macInstallCmd()
 
