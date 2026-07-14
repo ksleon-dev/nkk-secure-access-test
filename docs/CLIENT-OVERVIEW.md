@@ -318,7 +318,7 @@ Webhook Beispiel: Discord, Slack, eigener Endpoint, oder leer lassen zum Deaktiv
 ## 13. Kontakt
 
 - **Entwicklung:** KronSolutions GmbH
-- **Support:** support@ticket.kronsolutions.de
+- **Support:** support@tickets.kronsolutions.de
 - **Website:** https://kronsolutions.de
 
 ---

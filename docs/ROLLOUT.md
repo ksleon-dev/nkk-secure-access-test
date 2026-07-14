@@ -66,7 +66,7 @@ EXE auf den NKK Fileserver legen den die Mitarbeiter sowieso schon gemappt haben
 > 4. Setup Key eingeben (in der separaten Mail von KronSolutions)
 > 5. Verbinden klicken — fertig
 >
-> Bei Fragen: support@ticket.kronsolutions.de
+> Bei Fragen: support@tickets.kronsolutions.de
 >
 > KronSolutions GmbH
 
@@ -158,6 +158,6 @@ Der Custom Uninstaller:
 | Bitdefender blockiert NetBird | Im Wizard Log nach „bitdefender-pause" suchen, ggf. Bitdefender Admin manuell pausieren lassen |
 | Setup Key abgelaufen | Im NetBird Dashboard einen neuen erstellen, Mitarbeiter macht Re-Install |
 | Mitarbeiter weiß Key nicht mehr | Aus dem Diagnose Panel der App: User-Identität ist sichtbar |
-| App startet nicht | `C:\ProgramData\KronSolutions\NKK-Secure-Access\logs\` an support@ticket.kronsolutions.de schicken |
+| App startet nicht | `C:\ProgramData\KronSolutions\NKK-Secure-Access\logs\` an support@tickets.kronsolutions.de schicken |
 
 Vollständige Liste in [`TROUBLESHOOTING.md`](TROUBLESHOOTING.md).

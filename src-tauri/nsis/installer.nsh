@@ -53,7 +53,7 @@ Var NkkErrors
   UserInfo::GetAccountType
   Pop $0
   ${If} $0 != "Admin"
-    MessageBox MB_ICONSTOP|MB_OK "Bitte den Installer mit Administratorrechten ausfuehren.$\r$\nRechtsklick auf die Datei, dann 'Als Administrator ausfuehren'.$\r$\n$\r$\nCode: ELEV$\r$\nSupport: support@ticket.kronsolutions.de"
+    MessageBox MB_ICONSTOP|MB_OK "Bitte den Installer mit Administratorrechten ausfuehren.$\r$\nRechtsklick auf die Datei, dann 'Als Administrator ausfuehren'.$\r$\n$\r$\nCode: ELEV$\r$\nSupport: support@tickets.kronsolutions.de"
     Abort
   ${EndIf}
 
@@ -118,7 +118,7 @@ Var NkkErrors
     nsExec::ExecToStack 'cmd /c ver'
     Pop $0
     Pop $1
-    MessageBox MB_ICONSTOP|MB_OK "Dein Betriebssystem wird leider nicht unterstützt.$\r$\n$\r$\nMindestvoraussetzung: Windows 10$\r$\nDein System: $1$\r$\n$\r$\nBitte mach ein Foto von dieser Meldung und schicke es an:$\r$\nsupport@ticket.kronsolutions.de$\r$\n$\r$\nWir helfen dir weiter."
+    MessageBox MB_ICONSTOP|MB_OK "Dein Betriebssystem wird leider nicht unterstützt.$\r$\n$\r$\nMindestvoraussetzung: Windows 10$\r$\nDein System: $1$\r$\n$\r$\nBitte mach ein Foto von dieser Meldung und schicke es an:$\r$\nsupport@tickets.kronsolutions.de$\r$\n$\r$\nWir helfen dir weiter."
     Abort
   ${EndIf}
 
@@ -467,7 +467,7 @@ nkk_svc_ready:
   DetailPrint "================================================================"
   DetailPrint "  NKK Secure Access - Setup abgeschlossen."
   DetailPrint "  Logs: ${NKK_LOG_DIR}"
-  DetailPrint "  Support: support@ticket.kronsolutions.de"
+  DetailPrint "  Support: support@tickets.kronsolutions.de"
   DetailPrint "================================================================"
 
   ; --- Desktop-Verknuepfung zur App, damit Mitarbeiter sie direkt finden ----
@@ -493,7 +493,7 @@ nkk_svc_ready:
       Goto nkk_skip_msgbox
     ${EndIf}
     IfSilent nkk_skip_msgbox
-    MessageBox MB_ICONEXCLAMATION|MB_OK "NKK Secure Access wurde installiert, aber mit Hinweisen:$\r$\n$\r$\n$NkkErrors$\r$\nLog: ${NKK_LOG_DIR}$\r$\n$\r$\nBitte ein Foto dieser Meldung an support@ticket.kronsolutions.de"
+    MessageBox MB_ICONEXCLAMATION|MB_OK "NKK Secure Access wurde installiert, aber mit Hinweisen:$\r$\n$\r$\n$NkkErrors$\r$\nLog: ${NKK_LOG_DIR}$\r$\n$\r$\nBitte ein Foto dieser Meldung an support@tickets.kronsolutions.de"
     nkk_skip_msgbox:
   ${EndIf}
 

@@ -4423,7 +4423,7 @@ async fn install_netbird_windows(app: &AppHandle, state: &AppState) -> AppResult
         .filter(|p| p.exists());
 
     const MANUAL_MSG: &str =
-        "NetBird ist nicht installiert. Bitte den Installer NKK-Secure-Access-Setup.exe erneut als Administrator ausfuehren oder bei der IT melden (support@ticket.kronsolutions.de).";
+        "NetBird ist nicht installiert. Bitte den Installer NKK-Secure-Access-Setup.exe erneut als Administrator ausfuehren oder bei der IT melden (support@tickets.kronsolutions.de).";
 
     let installer = match installer {
         Some(p) => p,

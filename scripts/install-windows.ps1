@@ -99,7 +99,7 @@ function Invoke-NkkInstall {
   $p = Start-Process -FilePath $tmp -ArgumentList $iArgs -Wait -PassThru
   Remove-Item $tmp -Force -ErrorAction SilentlyContinue
   if ($p.ExitCode -ne 0) {
-    Bad ("Installation fehlgeschlagen (Code " + $p.ExitCode + "). Bitte erneut versuchen oder bei der IT melden: support@ticket.kronsolutions.de")
+    Bad ("Installation fehlgeschlagen (Code " + $p.ExitCode + "). Bitte erneut versuchen oder bei der IT melden: support@tickets.kronsolutions.de")
     return 3
   }
   Good "Installiert."
@@ -142,7 +142,7 @@ function Invoke-NkkInstall {
   }
 
   Write-Host ""
-  Good "Fertig. Bei Fragen: support@ticket.kronsolutions.de"
+  Good "Fertig. Bei Fragen: support@tickets.kronsolutions.de"
   Write-Host ""
   return 0
 }

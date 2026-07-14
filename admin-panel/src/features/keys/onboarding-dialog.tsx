@@ -35,7 +35,7 @@ So geht die Einrichtung:
 6. Den gewuenschten Server auswaehlen und wie gewohnt arbeiten.
 
 Bei Problemen: in der App oben rechts auf das Kopfhoerer-Symbol,
-dann "Diagnose kopieren" und an support@ticket.kronsolutions.de senden.
+dann "Diagnose kopieren" und an support@tickets.kronsolutions.de senden.
 
 Viele Gruesse
 Euer IT-Team

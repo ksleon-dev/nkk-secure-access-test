@@ -31,7 +31,7 @@ Im Anhang findet ihr auch eine **Anleitung.html** mit Bildern und allen Details.
 
 Updates kommen in Zukunft ganz automatisch, da muesst ihr euch um nichts kuemmern.
 
-Falls etwas nicht klappt: In der App oben rechts auf das Kopfhoerer-Symbol klicken, dann "Diagnose kopieren" und das Ganze per Mail an support@ticket.kronsolutions.de schicken.
+Falls etwas nicht klappt: In der App oben rechts auf das Kopfhoerer-Symbol klicken, dann "Diagnose kopieren" und das Ganze per Mail an support@tickets.kronsolutions.de schicken.
 
 Wir entschuldigen uns fuer die Schwierigkeiten in dieser Woche und arbeiten daran, alles so schnell wie moeglich zu optimieren. Vielen Dank fuer eure Geduld!
 

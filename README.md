@@ -133,7 +133,7 @@ Alle Brand-spezifischen Werte stehen in `src-tauri/resources/branding.json`. Bei
   "vendor": {
     "name": "KronSolutions GmbH",
     "footer": "Powered by KronSolutions",
-    "supportEmail": "support@ticket.kronsolutions.de",
+    "supportEmail": "support@tickets.kronsolutions.de",
     "supportUrl": "https://kronsolutions.de"
   },
   "theme": {

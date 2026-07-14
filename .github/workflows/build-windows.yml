@@ -307,7 +307,7 @@ jobs:
 
             **Neuinstallation macOS:** die `.dmg` aus den Assets unten herunterladen, doppelklicken, App in Programme ziehen.
 
-            Support: support@ticket.kronsolutions.de
+            Support: support@tickets.kronsolutions.de
 
   build-macos:
     runs-on: macos-latest

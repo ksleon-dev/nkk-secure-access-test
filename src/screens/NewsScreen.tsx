@@ -34,7 +34,7 @@ const FALLBACK_NEWS: NewsItem[] = [
     date: "Juli 2026",
     type: "announcement",
     title: "Willkommen bei NKK Secure Access",
-    body: "Diese App bringt dich sicher ins NKK-Netz. Tippe unten auf Verbinden. Sobald es grün ist, erreichst du Terminalserver und Dateiablage mit einem Klick. Fragen oder Probleme? Melde dich bei support@ticket.kronsolutions.de, wir helfen sofort.",
+    body: "Diese App bringt dich sicher ins NKK-Netz. Tippe unten auf Verbinden. Sobald es grün ist, erreichst du Terminalserver und Dateiablage mit einem Klick. Fragen oder Probleme? Melde dich bei support@tickets.kronsolutions.de, wir helfen sofort.",
   },
   {
     id: "terminalserver",

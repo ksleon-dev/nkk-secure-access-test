@@ -7,7 +7,7 @@ Bevor du ein Ticket aufmachst:
 1. NKK Secure Access öffnen
 2. Oben rechts auf das **(i)** Info Icon klicken → Diagnose Panel öffnet sich
 3. Unten auf **„Diagnose für Support kopieren"** klicken
-4. Den kopierten Text in eine Mail an `support@ticket.kronsolutions.de` einfügen
+4. Den kopierten Text in eine Mail an `support@tickets.kronsolutions.de` einfügen
 
 Der Block enthält:
 - OS User, Hostname, Betriebssystem Version
@@ -200,6 +200,6 @@ Wenn nichts hilft:
 1. Diagnose Bundle aus der App kopieren
 2. Letzte 100 Zeilen aus `netbird.log`
 3. Screenshot der App + Screenshot vom Diagnose Panel
-4. Mail an `support@ticket.kronsolutions.de` mit allem im Anhang
+4. Mail an `support@tickets.kronsolutions.de` mit allem im Anhang
 
 KronSolutions Reaktionszeit: innerhalb 4 Stunden Werktags.
