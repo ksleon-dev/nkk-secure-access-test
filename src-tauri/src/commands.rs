@@ -6579,4 +6579,20 @@ mod tests {
         assert!(r[0].contains("192.168.0.1") && r[0].contains("en0"));
         assert!(r[1].contains("192.168.60.1") && r[1].contains("en1"));
     }
+
+    #[test]
+    fn tauri_is_patched_against_ghsa_w28w_mhc8_qvjv() {
+        // Up to 2.11.5 `plugin:__TAURI_CHANNEL__|fetch` hands large channel
+        // responses to any webview that guesses the id; 2.11.6 binds them.
+        let version: Vec<u32> = tauri::VERSION
+            .split(['.', '-', '+'])
+            .take(3)
+            .map(|part| part.parse().expect("Tauri version without a number"))
+            .collect();
+        assert!(
+            version.as_slice() >= [2, 11, 6].as_slice(),
+            "Tauri {} is in the range of GHSA-w28w-mhc8-qvjv (up to 2.11.5)",
+            tauri::VERSION
+        );
+    }
 }
