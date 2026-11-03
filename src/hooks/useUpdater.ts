@@ -90,10 +90,12 @@ export function useUpdater() {
           const pct = total > 0 ? Math.min(100, Math.round((downloaded / total) * 100)) : 0;
           setState((s) => ({ ...s, progress: pct }));
         }
+        // Finished meldet nur das Herunterladen; installiert ist erst, wenn downloadAndInstall zurueckkehrt
         if (event.event === "Finished") {
-          setState((s) => ({ ...s, ready: true, downloading: false, progress: 100 }));
+          setState((s) => ({ ...s, progress: 100 }));
         }
       });
+      setState((s) => ({ ...s, ready: true, downloading: false, progress: 100 }));
     } catch (e: unknown) {
       console.error("Update-Installation fehlgeschlagen:", e);
       const raw = e instanceof Error ? e.message : String(e);
@@ -112,6 +114,7 @@ export function useUpdater() {
         );
       setState((s) => ({
         ...s,
+        ready: false,
         downloading: false,
         error: uacCancelled
           ? "Für das Update bitte die Windows-Abfrage einmal mit 'Ja' bestätigen."

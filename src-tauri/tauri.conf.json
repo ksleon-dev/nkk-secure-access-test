@@ -92,6 +92,7 @@
       "windows": {
         "installMode": "passive"
       },
+      "requireSignedVersion": true,
       "endpoints": [
         "https://github.com/ksleon-dev/nkk-secure-access-test/releases/latest/download/latest.json"
       ],

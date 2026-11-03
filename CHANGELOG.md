@@ -9,6 +9,7 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), [SemVer](https
 ## [0.3.33] - 2026-11-03
 
 - Sicherheitsupdate: Updates werden strenger geprüft. Eine ältere Fassung lässt sich nicht mehr als neue ausgeben.
+- Scheitert ein Update, etwa weil die Windows-Abfrage abgebrochen wurde, meldet die App das jetzt und bietet einen neuen Versuch an.
 
 ## [0.3.32] - 2026-11-02
 
