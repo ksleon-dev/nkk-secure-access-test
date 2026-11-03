@@ -138,8 +138,9 @@ export function useUpdater() {
     }
   }, []);
 
+  // Ohne den alten Fehler, sonst oeffnet der naechste Check das Fenster gleich im Fehlerzustand
   const dismiss = useCallback(() => {
-    setState((s) => ({ ...s, available: false }));
+    setState((s) => ({ ...s, available: false, error: null }));
   }, []);
 
   return { ...state, install, restart, dismiss };

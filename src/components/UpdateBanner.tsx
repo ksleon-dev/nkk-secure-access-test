@@ -124,12 +124,20 @@ export function UpdateBanner({ state, footer, onInstall, onRestart, onDismiss }:
                 Bitte einen Moment Geduld …
               </div>
             ) : state.error ? (
-              <button
-                onClick={onInstall}
-                className="flex-1 bg-white/20 hover:bg-white/30 font-bold text-[13px] rounded-xl py-2.5 transition"
-              >
-                Erneut versuchen
-              </button>
+              <>
+                <button
+                  onClick={onDismiss}
+                  className="flex-1 bg-white/20 hover:bg-white/30 font-bold text-[13px] rounded-xl py-2.5 transition"
+                >
+                  Später
+                </button>
+                <button
+                  onClick={onInstall}
+                  className="flex-1 bg-white/20 hover:bg-white/30 font-bold text-[13px] rounded-xl py-2.5 transition"
+                >
+                  Erneut versuchen
+                </button>
+              </>
             ) : (
               <>
                 <button
