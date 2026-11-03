@@ -389,7 +389,8 @@ jobs:
           # Universal-Datei ist ungueltig signiert und wuerde auf Apple Silicon
           # beim Start gekillt. Neu ad-hoc signieren (das bundelt Tauri dann mit).
           codesign --force --sign - binaries/nkk-secure-universal-apple-darwin
-          codesign --verify --verbose binaries/nkk-secure-universal-apple-darwin || true
+          # Ohne gueltige Ad-hoc-Signatur stirbt die CLI auf Apple Silicon beim Start: die Pruefung bricht den Bau ab
+          codesign --verify --verbose binaries/nkk-secure-universal-apple-darwin
           ls -la binaries/
 
       - name: Build Tauri (universal app + DMG, with updater artifact)
