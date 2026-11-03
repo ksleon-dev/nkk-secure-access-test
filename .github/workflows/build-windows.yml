@@ -64,7 +64,9 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ""
         run: |
           npm ci
+          # Die Fassung gehoert in jede Signatur von latest.json; ohne sie lehnt die App mit requireSignedVersion ab
           npx @tauri-apps/cli signer sign --private-key "$TAURI_SIGNING_PRIVATE_KEY" --password "" \
+            --app-version "$(node -p "require('./package.json').version")" \
             src-tauri/target/release/nkk-secure-linux-x86_64
           ls -la src-tauri/target/release/nkk-secure-linux-x86_64*
       - name: Publish Linux CLI to GitHub Release
