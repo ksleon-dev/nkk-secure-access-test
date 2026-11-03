@@ -6,9 +6,9 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), [SemVer](https
 
 ## [Unreleased]
 
-## [0.3.32] - 2026-11-02
+## [0.3.33] - 2026-11-03
 
-- Sicherheitsupdate: Eine Lücke in der technischen Grundlage der App ist geschlossen.
+- Sicherheitsupdate: Updates werden strenger geprüft. Eine ältere Fassung lässt sich nicht mehr als neue ausgeben.
 
 ## [0.3.32] - 2026-11-02
 
