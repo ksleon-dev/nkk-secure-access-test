@@ -13,11 +13,22 @@ $nbTarget = Join-Path $scriptDir "netbird-installer.exe"
 $nbArch = if ($env:NETBIRD_ARCH) { $env:NETBIRD_ARCH }
           elseif ($env:PROCESSOR_ARCHITECTURE -eq "ARM64") { "arm64" }
           else { "x64" }
-$nbUrl = if ($env:NETBIRD_INSTALLER_URL) { $env:NETBIRD_INSTALLER_URL } else { "https://pkgs.netbird.io/windows/$nbArch" }
+# NetBird fest auf die Fassung von 0.3.31: ein Release der Altapp hebt NetBird nie ungeplant (fuer arm64 gibt es dort keinen Installer).
+$nbFassung = "0.74.3"
+$nbSha256 = "D8C6D22E0F702400420B8DA79EFB05DA6485A50B0BE4E9693F94F65A43BB3BEA"
+$nbFest = (-not $env:NETBIRD_INSTALLER_URL) -and ($nbArch -eq "x64")
+$nbUrl = if ($env:NETBIRD_INSTALLER_URL) { $env:NETBIRD_INSTALLER_URL }
+         elseif ($nbFest) { "https://github.com/netbirdio/netbird/releases/download/v$nbFassung/netbird_installer_${nbFassung}_windows_amd64.exe" }
+         else { "https://pkgs.netbird.io/windows/$nbArch" }
 
 Write-Host "NKK: Lade NetBird Windows Installer von $nbUrl ..."
 Invoke-WebRequest -Uri $nbUrl -OutFile $nbTarget -UseBasicParsing -MaximumRedirection 5
 
+if ($nbFest) {
+    $nbHash = (Get-FileHash $nbTarget -Algorithm SHA256).Hash
+    if ($nbHash -ne $nbSha256) { Write-Error "NetBird $nbFassung mit fremder Pruefsumme $nbHash."; exit 1 }
+    Write-Host "NKK: NetBird $nbFassung, Pruefsumme stimmt"
+}
 $nbSize = (Get-Item $nbTarget).Length
 if ($nbSize -lt 500000) {
     Write-Error "NetBird Download zu klein ($nbSize Bytes)."
