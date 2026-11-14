@@ -6,9 +6,11 @@ Format: [Keep a Changelog](https://keepachangelog.com/en/1.1.0/), [SemVer](https
 
 ## [Unreleased]
 
-## [0.3.34] - 2026-11-03
+## [0.3.34] - 2026-11-14
 
 - Sicherheitsupdate: Updates werden strenger geprüft. Eine ältere Fassung lässt sich nicht mehr als neue ausgeben.
+- Der Installer legt keine Ausnahme mehr im Microsoft Defender an und hält Bitdefender nicht mehr an.
+- NetBird bleibt auf Version 0.74.3.
 - Scheitert ein Update, etwa weil die Windows-Abfrage abgebrochen wurde, meldet die App das jetzt und bietet einen neuen Versuch an.
 
 ## [0.3.33] - 2026-11-03
