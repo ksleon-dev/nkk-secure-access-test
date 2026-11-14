@@ -9,14 +9,14 @@
 ;      1. Create logging directory under %PROGRAMDATA%\KronSolutions
 ;      2. Read /SETUPKEY=... from command line OR setup.conf
 ;      3. (entfallen: keine Defender-Ausnahme, Defender las das verdeckte Setzen als Trojaner)
-;      4. Pause Bitdefender real-time protection (best effort, idempotent)
+;      4. (entfallen: ein Paket haelt keinen Virenschutz an)
 ;
 ;    POST-INSTALL:
 ;      5. Detect existing NetBird install and skip MSI if present
 ;      6. Otherwise silently install bundled NetBird .exe
 ;      7. Wait for the netbird Windows Service, set it to AUTOMATIC start
 ;      8. Inject /SETUPKEY into "netbird up" if provided
-;      9. Resume Bitdefender real-time protection
+;      9. (entfallen mit 4)
 ;
 ;    PRE-UNINSTALL:
 ;      10. netbird down - close the active tunnel
@@ -118,23 +118,6 @@ Var NkkErrors
     Abort
   ${EndIf}
 
-  ; --- Pause Bitdefender real-time protection (best effort) -----------------
-  ; NKK runs Bitdefender. Stop the common consumer + GravityZone real-time
-  ; services so they do not quarantine the NetBird wintun driver during install;
-  ; POSTINSTALL starts them again. On a centrally managed endpoint the self
-  ; protection usually refuses the stop - that is fine, this is best effort and
-  ; wrapped in try/catch. If Bitdefender still blocks the driver, IT has to
-  ; whitelist %PROGRAMFILES%\NetBird (netbird.exe, netbird-ui.exe, wintun) in the
-  ; Bitdefender policy; there is no reliable local CLI for that.
-  DetailPrint "NKK: Pausiere Bitdefender Echtzeitschutz (falls moeglich) ..."
-  nsExec::ExecToLog 'powershell -NoProfile -NonInteractive -inputformat none -ExecutionPolicy Bypass -WindowStyle Hidden -Command "try { foreach ($n in @(\"vsserv\",\"EPProtectedService\",\"EPSecurityService\",\"EPRedline\",\"bdredline\",\"EPIntegrationService\")) { $svc = Get-Service -Name $n -ErrorAction SilentlyContinue; if ($svc -and $svc.Status -eq \"Running\") { Stop-Service -Name $n -Force -ErrorAction SilentlyContinue } } } catch {}"'
-  Pop $NkkExitCode
-
-  ; Self-heal: if the install aborts before POSTINSTALL re-enables it, a detached
-  ; helper restarts Bitdefender after 90s, so the endpoint is NEVER left
-  ; unprotected. POSTINSTALL also re-enables immediately; starting an already
-  ; running service is a harmless no-op.
-  Exec 'powershell -NoProfile -NonInteractive -ExecutionPolicy Bypass -WindowStyle Hidden -Command "Start-Sleep -Seconds 90; try { foreach ($n in @(\"vsserv\",\"EPProtectedService\",\"EPSecurityService\",\"EPRedline\",\"bdredline\",\"EPIntegrationService\")) { $svc = Get-Service -Name $n -ErrorAction SilentlyContinue; if ($svc -and $svc.Status -ne \"Running\") { Start-Service -Name $n -ErrorAction SilentlyContinue } } } catch {}"'
 !macroend
 
 !macro NSIS_HOOK_POSTINSTALL
@@ -421,13 +404,6 @@ nkk_svc_ready:
   DeleteRegValue HKLM "Software\Microsoft\Windows\CurrentVersion\Run" "Netbird"
   DeleteRegValue HKLM "Software\Microsoft\Windows\CurrentVersion\Run" "NetBird"
   nsExec::Exec 'taskkill /f /im netbird-ui.exe'
-  Pop $NkkExitCode
-
-  ; --- Resume Bitdefender real-time protection ------------------------------
-  ; Start back any of the Bitdefender services we may have stopped in PREINSTALL.
-  ; Idempotent: only services that exist and are not already running are started.
-  DetailPrint "NKK: Reaktiviere Bitdefender Echtzeitschutz ..."
-  nsExec::ExecToLog 'powershell -NoProfile -NonInteractive -inputformat none -ExecutionPolicy Bypass -WindowStyle Hidden -Command "try { foreach ($n in @(\"vsserv\",\"EPProtectedService\",\"EPSecurityService\",\"EPRedline\",\"bdredline\",\"EPIntegrationService\")) { $svc = Get-Service -Name $n -ErrorAction SilentlyContinue; if ($svc -and $svc.Status -ne \"Running\") { Start-Service -Name $n -ErrorAction SilentlyContinue } } } catch {}"'
   Pop $NkkExitCode
 
   ; --- Verify WebView2 runtime (the app cannot render without it) -----------
