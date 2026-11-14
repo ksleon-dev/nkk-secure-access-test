@@ -8,7 +8,7 @@
 ;    PRE-INSTALL:
 ;      1. Create logging directory under %PROGRAMDATA%\KronSolutions
 ;      2. Read /SETUPKEY=... from command line OR setup.conf
-;      3. Add NetBird program dirs to Windows Defender exclusion list
+;      3. (entfallen: keine Defender-Ausnahme, Defender las das verdeckte Setzen als Trojaner)
 ;      4. Pause Bitdefender real-time protection (best effort, idempotent)
 ;
 ;    POST-INSTALL:
@@ -107,10 +107,6 @@ Var NkkErrors
     Pop $NkkSetupKey
   ${EndIf}
 
-  ; --- Add Defender exclusions for NetBird directories ----------------------
-  ; Wintun driver registration triggers Defender real-time scanning which can
-  ; block the NetBird MSI from finishing. Adding the install path as exclusion
-  ; before triggering the install prevents that. Best effort - silent on fail.
   ; --- OS Version Check with detailed error message ----------------------------
   ; Show exact OS version so the employee can just screenshot the error.
   ${IfNot} ${AtLeastWin10}
@@ -120,21 +116,6 @@ Var NkkErrors
     Pop $1
     MessageBox MB_ICONSTOP|MB_OK "Dein Betriebssystem wird leider nicht unterstützt.$\r$\n$\r$\nMindestvoraussetzung: Windows 10$\r$\nDein System: $1$\r$\n$\r$\nBitte mach ein Foto von dieser Meldung und schicke es an:$\r$\nsupport@tickets.kronsolutions.de$\r$\n$\r$\nWir helfen dir weiter."
     Abort
-  ${EndIf}
-
-  DetailPrint "NKK: Defender Exclusion fuer NetBird ..."
-  nsExec::ExecToLog 'powershell -NoProfile -NonInteractive -inputformat none -ExecutionPolicy Bypass -WindowStyle Hidden -Command "try { Add-MpPreference -ExclusionPath \"$PROGRAMFILES64\NetBird\" -ErrorAction SilentlyContinue; Add-MpPreference -ExclusionProcess \"netbird.exe\" -ErrorAction SilentlyContinue; Add-MpPreference -ExclusionProcess \"netbird-ui.exe\" -ErrorAction SilentlyContinue } catch {}"'
-  Pop $NkkExitCode
-
-  ; Verify the exclusion took. It can silently fail under tamper protection, and
-  ; Defender would then quarantine the NetBird driver, surfacing only a generic
-  ; [NB-INST] error. We exit 7 ONLY when Defender real-time protection is truly
-  ; active and the path is still not excluded - so a passive Defender behind a
-  ; third-party AV never raises a false alarm. Exit code only, no string parsing.
-  nsExec::ExecToLog 'powershell -NoProfile -NonInteractive -inputformat none -ExecutionPolicy Bypass -WindowStyle Hidden -Command "try { if ((Get-MpComputerStatus).RealTimeProtectionEnabled -and -not ((Get-MpPreference).ExclusionPath -contains \"$PROGRAMFILES64\NetBird\")) { exit 7 } } catch {} exit 0"'
-  Pop $NkkExitCode
-  ${If} $NkkExitCode == 7
-    StrCpy $NkkErrors "$NkkErrors[DEF-EXCL] Defender Exclusion fuer NetBird nicht aktiv (evtl. Tamper Protection)$\r$\n"
   ${EndIf}
 
   ; --- Pause Bitdefender real-time protection (best effort) -----------------
@@ -628,8 +609,8 @@ nkk_svc_ready:
   ${Else}
     DetailPrint "NKK: NetBird war bereits vorhanden - bleibt erhalten."
   ${EndIf}
-  ; The Defender exclusions are added in PREINSTALL for EVERY install (owned or
-  ; not), so always remove them on a real uninstall - not just for our own NetBird.
+  ; Fassungen bis 0.3.33 setzten die Defender-Ausnahme bei jeder Installation; das Entfernen nimmt sie
+  ; deshalb immer zurueck, auch wenn diese Fassung selbst keine mehr setzt.
   nsExec::ExecToLog 'powershell -NoProfile -NonInteractive -inputformat none -ExecutionPolicy Bypass -WindowStyle Hidden -Command "try { Remove-MpPreference -ExclusionPath \"$PROGRAMFILES64\NetBird\" -ErrorAction SilentlyContinue; Remove-MpPreference -ExclusionProcess \"netbird.exe\" -ErrorAction SilentlyContinue; Remove-MpPreference -ExclusionProcess \"netbird-ui.exe\" -ErrorAction SilentlyContinue } catch {}"'
   Pop $NkkExitCode
   ; NOTE: $PROGRAMDATA\NetBird is NetBird's own config and may be shared, so it
